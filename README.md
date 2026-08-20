@@ -8,7 +8,7 @@ Eigene Karten für Home-Assistant-Dashboards, installierbar über HACS.
 ## Installation über HACS
 
 1. HACS → ⋮ → **Custom repositories**
-2. Repository: `https://github.com/buschi/busch-cards`, Kategorie: **Dashboard**
+2. Repository: `https://github.com/luukkii123/ha-busch-cards`, Kategorie: **Dashboard**
 3. **Busch Cards** herunterladen, Seite neu laden (Strg+F5)
 
 Manuell: `dist/busch-cards.js` nach `<config>/www/busch-cards.js` kopieren und
