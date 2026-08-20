@@ -260,5 +260,5 @@ window.customCards.push({
   name: "Busch Entities",
   description: "Entitätenliste mit Spalten, Icons und Detaildialog.",
   preview: true,
-  documentationURL: "https://github.com/GITHUB_USER/busch-cards",
+  documentationURL: "https://github.com/buschi/busch-cards",
 });
