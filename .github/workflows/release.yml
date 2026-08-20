@@ -1,0 +1,20 @@
+name: Release
+
+# Hängt die fertige JS-Datei als Asset ans Release. HACS nimmt bevorzugt das
+# Asset; ohne Asset fällt es auf die Datei im Repo (dist/busch-cards.js) zurück.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Asset ans Release hängen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/busch-cards.js
