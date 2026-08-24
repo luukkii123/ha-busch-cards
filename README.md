@@ -4,20 +4,14 @@
 [![Release](https://img.shields.io/github/v/release/luukkii123/ha-busch-cards)](https://github.com/luukkii123/ha-busch-cards/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-**Zwei eigene Lovelace-Karten für Home Assistant: ein Zeitplan-Editor direkt im
-Dashboard und ein Tagesverlauf auf der Landkarte.**
-
-| Karte | Wofür | Braucht |
-| --- | --- | --- |
-| `busch-schedule-card` | Zeitplan-Helfer (`schedule.*`) im Dashboard bearbeiten | nichts weiter |
-| `busch-timeline-card` | Tages-Track einer Person auf der Karte | Integration [Local Track](https://github.com/luukkii123/ha-localtrack-integrations) |
+**Ein Zeitplan-Editor als Lovelace-Karte: Zeitplan-Helfer (`schedule.*`) direkt
+im Dashboard bearbeiten.**
 
 ![Die Zeitplan-Karte im hellen Theme](docs/preview.png)
 
-Beide Karten stecken in einer Datei. **Kein Build-Schritt** —
-`dist/busch-cards.js` ist Quelltext *und* Auslieferung: reines Vanilla-JS mit
-Custom Elements. Leaflet steckt für die Timeline-Karte mit drin, samt CSS und
-Marker-Bildern; nachgeladen wird nichts. Das erklärt die Dateigröße.
+**Kein Build-Schritt** — `dist/busch-cards.js` ist Quelltext *und* Auslieferung:
+reines Vanilla-JS mit Custom Elements, keine Abhängigkeit, nichts wird
+nachgeladen.
 
 ## Installation über HACS
 
@@ -30,8 +24,8 @@ Manuell: `dist/busch-cards.js` nach `<config>/www/busch-cards.js` kopieren und
 unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 `/local/busch-cards.js`, Typ **JavaScript-Modul**.
 
-Danach tauchen beide Karten in der Kartenauswahl auf — als **Busch Zeitplan**
-und **Busch Timeline**, jeweils mit Vorschau und grafischem Editor.
+Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
+Vorschau und grafischem Editor.
 
 Voraussetzung: Home Assistant **2024.11.0** oder neuer.
 
@@ -135,97 +129,34 @@ busch-schedule-track-color: "#37474f"  # Hintergrund der Tagesspur
 
 ---
 
-# `busch-timeline-card`
+## Die Timeline-Karte ist umgezogen
 
-Tages-Track einer Person auf der Landkarte: Route, Aufenthalte und ein
-Zeit-Scrubber — Googles Zeitachse als eigene Karte.
+Bis `v0.3.0` steckte in dieser Datei zusätzlich `busch-timeline-card` — der
+Tages-Track einer Person auf der Landkarte, samt eingebettetem Leaflet. Sie hat
+seit `v0.4.0` ein eigenes Repository:
 
-![Die Timeline-Karte: Route, nummerierte Aufenthalte, Scrubber und Segmentliste](docs/preview-timeline.png)
+**→ [`ha-localtrack-cards`](https://github.com/luukkii123/ha-localtrack-cards)**,
+dort heißt sie `localtrack-timeline-card`.
 
-```yaml
-type: custom:busch-timeline-card
-entity: person.beispiel
-title: Mein Tag         # optional, sonst die Entitäts-ID
-height: 320             # Kartenhöhe in px
-stay_radius_m: 150      # Radius, in dem Punkte als „Aufenthalt" gelten
-min_stay_minutes: 10    # Mindestdauer eines Aufenthalts
-show_scrubber: true     # Zeit-Scrubber ein-/ausblenden
-reverse_geocode: false  # Ortsnamen über OSM/Nominatim abfragen
-max_points: 2000        # max. Punkte pro Tag
-tile_url: ""            # leer = OpenStreetMap, sonst eigener Kachelserver
-```
+Zwei Gründe. Erstens gehört sie zur Integration
+[Local Track](https://github.com/luukkii123/ha-localtrack-integrations), nicht
+zum Zeitplan-Helfer; ein gemeinsames Repo hieße eine gemeinsame Version und ein
+gemeinsames Release für Karten, die nichts miteinander zu tun haben. Zweitens
+musste, wer nur den Zeitplan-Editor wollte, bisher 200 kB Leaflet
+mitinstallieren.
 
-## Voraussetzung
+**Die Trennung hat einen Fehler behoben.** Beide Karten hatten eine Funktion
+namens `formatClock`, jede mit eigener Bedeutung: die Zeitplan-Karte rechnete
+Minuten seit Mitternacht in `HH:MM` um, die Timeline-Karte formatierte ein
+`Date`. In einer gemeinsamen Datei liegen beide im selben Gültigkeitsbereich,
+und die zweite Deklaration gewinnt — in `v0.3.0` bekam die Zeitplan-Karte also
+die Timeline-Fassung und deutete ihre Minutenzahl als Zeitstempel. Jede Uhrzeit
+im Balken stand als `01:00 AM` da. Seit `v0.4.0` gibt es `formatClock` in dieser
+Datei genau einmal.
 
-Die Karte braucht die Integration
-[**Local Track**](https://github.com/luukkii123/ha-localtrack-integrations) —
-sie liefert das WebSocket-Kommando `localtrack/history`, über das die Karte
-ausschließlich liest. Ist die Integration installiert, aber kein Eintrag
-angelegt, meldet die Karte „Local-Track-Integration nicht eingerichtet."; geht
-die Abfrage aus einem anderen Grund schief, „Daten konnten nicht geladen
-werden."
-
-Warum zwei Repos: In HACS gehört ein Repository zu **genau einer** Kategorie.
-Karten und Integrationen lassen sich deshalb nicht zusammen ausliefern.
-
-## Optionen
-
-| Option | Pflicht | Standard | Bedeutung |
-| --- | --- | --- | --- |
-| `entity` | ja | — | eine `person.*`- oder `device_tracker.*`-Entität |
-| `title` | nein | Entitäts-ID | Überschrift der Karte |
-| `height` | nein | `320` | Kartenhöhe in px (Editor: 240–720) |
-| `stay_radius_m` | nein | `150` | bis zu diesem Abstand vom laufenden Mittelpunkt zählen Punkte als ein Aufenthalt (Editor: 10–1000) |
-| `min_stay_minutes` | nein | `10` | so lange muss ein Aufenthalt gedauert haben, um zu zählen (Editor: 1–240) |
-| `show_scrubber` | nein | `true` | Zeit-Scrubber unter der Karte anzeigen |
-| `reverse_geocode` | nein | `false` | Aufenthalte ohne passende Zone über OSM/Nominatim benennen |
-| `max_points` | nein | `2000` | so viele Punkte holt die Karte höchstens (Editor: 100–5000) |
-| `tile_url` | nein | leer | leer = OpenStreetMap, sonst eine eigene Kachel-URL im Leaflet-Format |
-
-## Bedienung
-
-- **Datum** oben rechts wählen (Standard: heute); die Karte lädt den Track
-  dieses Tages.
-- **Zeit-Scrubber** unter der Karte: entlang der Route fahren, daneben stehen
-  Uhrzeit und Zone (oder „unterwegs").
-- **Aufenthalte** und **Strecken** erscheinen als Liste unter der Karte, mit
-  Zeitspanne und Dauer bzw. Länge in Kilometern. Ein Klick zentriert die Karte
-  darauf.
-- Start (grün) und Ende (rot) sind markiert, Aufenthalte als nummerierte Pins in
-  der Reihenfolge des Tages.
-
-Aufenthalte werden zuerst gegen die **Zonen** von Home Assistant beschriftet;
-passt keine, heißt der Eintrag „Aufenthalt" — oder, mit
-`reverse_geocode: true`, wie der von OSM gelieferte Straßen- bzw. Ortsname.
-
-Steht das Datum auf **heute**, lädt die Karte nach einer Positionsänderung
-verzögert nach (rund 30 Sekunden). Vergangene Tage ändern sich nicht und werden
-nicht neu geladen.
-
-Auf schmalen Spalten rückt die Karte zusammen, die Segmentliste bleibt lesbar:
-
-<img src="docs/preview-timeline-mobile.png" width="330" alt="Die Timeline-Karte in einer schmalen Spalte">
-
-## Grenzen
-
-- **Noch nicht in einem laufenden Home Assistant getestet.** Die Karte wurde in
-  einem Chromium-Container gegen erfundene Daten gerendert; das Zusammenspiel
-  mit einer echten Installation steht aus.
-- **Kartenkacheln kommen von openstreetmap.org**, solange `tile_url` leer ist.
-  Wer das nicht will, trägt einen eigenen Kachelserver ein.
-- **`reverse_geocode: true` schickt Koordinaten an einen Dritten**
-  (nominatim.openstreetmap.org). Standardmäßig ist das aus; die Zonen-Zuordnung
-  bleibt vollständig lokal.
-- **Die Routenqualität hängt an der Quelle, nicht am Code.** Die Companion-App
-  meldet den Standort im Standardmodus nur bei deutlicher Bewegung oder
-  Zonenwechsel — die Linien zwischen den Punkten sind dann gerade. „Hohe
-  Genauigkeit" in der App (kostet Akku) liefert dichtere Spuren.
-- **Ein Tag auf einmal.** Es gibt keine Wochen- oder Monatsansicht und keinen
-  Vergleich mehrerer Personen in einer Karte.
-- Liegen mehr Punkte vor als `max_points`, reduziert die **Integration** sie mit
-  Douglas-Peucker, bevor die Karte sie sieht.
-
----
+**Wer die alte Karte auf einem Dashboard hat**, ändert `type:` von
+`custom:busch-timeline-card` auf `custom:localtrack-timeline-card` und
+installiert das neue Repo. Die Optionen sind unverändert.
 
 ## Eine weitere Karte hinzufügen
 
@@ -241,17 +172,21 @@ Der Dateiname bleibt `busch-cards.js` — er steht in `hacs.json` unter `filenam
 und ist der Vertrag mit HACS. Wird er geändert, findet HACS die Karten nicht
 mehr.
 
+Gehört die neue Karte zu einer eigenen Integration, gehört sie **nicht hierher**,
+sondern in ein eigenes Kartenrepo — siehe den Umzug oben. Dieses Repo ist die
+Sammlung für alles, was zu keiner eigenen Integration gehört.
+
 ## Veröffentlichen
 
 `CARD_VERSION` in `dist/busch-cards.js` hochziehen, committen, dann:
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.4.0 && git push origin v0.4.0
 ```
 
 Das Release entsteht **automatisch**: `.github/workflows/release.yml` reagiert
-auf den Tag, legt das Release an und hängt `busch-cards.js` als Asset dran. In
-HACS erscheint danach ein Update.
+auf den Tag, prüft `CARD_VERSION` gegen den Tag, legt das Release an und hängt
+`busch-cards.js` als Asset dran. In HACS erscheint danach ein Update.
 
 `.github/workflows/validate.yml` prüft bei jedem Push mit der HACS-Action, ob
 das Repo installierbar bleibt.
