@@ -1458,6 +1458,308 @@ function calListeHtml(tage, optionen) {
   return zeilen.join("");
 }
 
+const CAL_STANDARD = {
+  month_offset: 0,
+  navigation: true,
+  show_empty_days: true,
+  show_total: false,
+  title: "",
+  open_event_on_tap: true,
+};
+
+function calNormalisiereKonfig(config) {
+  const roh = Array.isArray(config && config.entities) ? config.entities : [];
+  const entities = roh.map((eintrag, i) => {
+    const objekt = typeof eintrag === "string" ? { entity: eintrag } : { ...eintrag };
+    return {
+      entity: objekt.entity,
+      color: objekt.color || calPalette[i % calPalette.length],
+      label: objekt.label || "",
+    };
+  }).filter((e) => Boolean(e.entity));
+  return { ...CAL_STANDARD, ...config, entities };
+}
+
+/**
+ * Zaehlt die Termine, die `calGruppiereNachTag` fallen laesst: ohne lesbaren
+ * Start gibt es keinen Tag, an dem sie stehen koennten (Begruendung dort und
+ * in `calSummeStunden`). Das Auslassen bleibt richtig — still bleiben darf es
+ * nicht. Die Bedingungen hier sind woertlich dieselben wie dort, damit die
+ * Zahl nicht neben der Wirklichkeit steht.
+ */
+function calZaehleOhneDatum(termine) {
+  let zahl = 0;
+  for (const termin of termine || []) {
+    if (!termin || !termin.start) {
+      zahl += 1;
+      continue;
+    }
+    if (Number.isNaN(calStartDatum(termin).getTime())) zahl += 1;
+  }
+  return zahl;
+}
+
+/**
+ * Der Text der Hinweiszeile. Steht ausserhalb der Klasse, weil `_render()` ein
+ * Dokument braucht und unter Node nicht pruefbar waere — die Aussage selbst
+ * soll aber belegbar sein, nicht nur der Weg dorthin.
+ * Ohne Fehler und ohne uebersprungene Termine ist das Ergebnis leer; die
+ * Zeile entfaellt dann ganz.
+ */
+function calHinweisText(fehler, ohneDatum) {
+  const teile = [];
+  if (fehler && fehler.length) teile.push(`Nicht erreichbar: ${fehler.join(", ")}`);
+  if (ohneDatum > 0) {
+    teile.push(
+      ohneDatum === 1
+        ? "1 Termin ohne lesbares Datum, nicht angezeigt."
+        : `${ohneDatum} Termine ohne lesbares Datum, nicht angezeigt.`
+    );
+  }
+  return teile.join(" · ");
+}
+
+const CAL_STIL = `
+  .cal-kopf { display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px 8px; }
+  .cal-monat { font-size:1.1em; font-weight:600; color:var(--primary-text-color); }
+  .cal-pfeil { background:none; border:none; cursor:pointer; padding:6px 10px;
+    color:var(--secondary-text-color); font-size:1.2em; line-height:1; border-radius:6px; }
+  .cal-pfeil:hover { background:var(--divider-color); color:var(--primary-text-color); }
+  .cal-titel-zeile { padding:12px 16px 0; font-weight:600;
+    color:var(--primary-text-color); }
+  .cal-liste { padding:0 8px 8px; }
+  .cal-tag { display:flex; gap:12px; padding:6px 8px; border-radius:8px;
+    border-bottom:1px solid var(--divider-color); }
+  .cal-tag:last-child { border-bottom:none; }
+  .cal-wochenende { background:var(--secondary-background-color); }
+  .cal-heute { outline:2px solid var(--primary-color); outline-offset:-2px; }
+  .cal-datum { display:flex; gap:6px; min-width:64px; align-items:baseline;
+    color:var(--secondary-text-color); font-variant-numeric:tabular-nums; }
+  .cal-nr { font-weight:600; color:var(--primary-text-color); }
+  .cal-inhalt { flex:1; min-width:0; }
+  .cal-termin { display:flex; gap:8px; align-items:baseline; padding:2px 0;
+    cursor:pointer; }
+  .cal-leer .cal-termin { cursor:default; min-height:1.2em; }
+  .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
+    align-self:center; }
+  .cal-zeit { color:var(--secondary-text-color); font-variant-numeric:tabular-nums;
+    white-space:nowrap; }
+  .cal-titel { color:var(--primary-text-color); overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .cal-fuss { display:flex; justify-content:space-between; padding:10px 16px;
+    border-top:1px solid var(--divider-color); color:var(--secondary-text-color); }
+  .cal-hinweis { padding:12px 16px; color:var(--error-color, #db4437); }
+  .cal-leermeldung { padding:16px; color:var(--secondary-text-color); }
+`;
+
+class BuschCalendarCard extends HTMLElement {
+  static getConfigElement() {
+    return document.createElement("busch-calendar-card-editor");
+  }
+
+  static getStubConfig(hass) {
+    const ersterKalender = hass
+      ? Object.keys(hass.states).find((id) => id.startsWith("calendar."))
+      : undefined;
+    return {
+      type: "custom:busch-calendar-card",
+      entities: ersterKalender ? [ersterKalender] : [],
+      month_offset: 0,
+    };
+  }
+
+  setConfig(config) {
+    this._config = calNormalisiereKonfig(config);
+    // Der Blaetterzustand lebt nur im Speicher. Ein Klick auf einen Pfeil
+    // schreibt NICHTS in die Konfiguration zurueck — sonst aenderte ein Blick
+    // in den Vormonat das Dashboard fuer alle.
+    this._versatzLaufend = this._config.month_offset;
+    this._tage = null;
+    this._fehler = [];
+    this._ohneDatum = 0;
+    this._geladenFuer = null;
+    this._render();
+  }
+
+  set hass(hass) {
+    const ersterAufruf = !this._hass;
+    this._hass = hass;
+    if (ersterAufruf) this._lade();
+    else this._ladeWennVeraendert();
+  }
+
+  getCardSize() {
+    return this._config && this._config.show_empty_days ? 12 : 6;
+  }
+
+  _ladeWennVeraendert() {
+    if (!this._config || !this._hass) return;
+    const stempel = this._config.entities
+      .map((e) => {
+        const zustand = this._hass.states[e.entity];
+        return zustand ? `${e.entity}:${zustand.last_changed}` : `${e.entity}:fehlt`;
+      })
+      .join("|");
+    if (stempel !== this._letzterStempel) {
+      this._letzterStempel = stempel;
+      this._lade();
+    }
+  }
+
+  async _lade() {
+    if (!this._hass || !this._config) return;
+    const { start, ende } = calMonatsGrenzen(new Date(), this._versatzLaufend);
+    const marke = `${start.getTime()}-${this._config.entities.length}`;
+    this._geladenFuer = marke;
+
+    if (this._config.entities.length === 0) {
+      this._tage = [];
+      this._alleTermine = [];
+      this._fehler = [];
+      this._ohneDatum = 0;
+      this._render();
+      return;
+    }
+
+    const anfragen = this._config.entities.map((e) =>
+      this._hass.callApi(
+        "GET",
+        `calendars/${e.entity}?start=${encodeURIComponent(start.toISOString())}` +
+          `&end=${encodeURIComponent(ende.toISOString())}`
+      )
+    );
+    const ergebnisse = await Promise.allSettled(anfragen);
+    if (this._geladenFuer !== marke) return; // zwischenzeitlich weitergeblättert
+
+    const alle = [];
+    const fehler = [];
+    ergebnisse.forEach((r, i) => {
+      const eintrag = this._config.entities[i];
+      if (r.status === "fulfilled" && Array.isArray(r.value)) {
+        for (const termin of r.value) {
+          // Flache Kopie, kein Feld am Original: ein mehrtaegiger Termin liegt
+          // als DASSELBE Objekt in mehreren Tageslisten — wer daran schreibt,
+          // trifft alle seine Tage.
+          alle.push({ ...termin, _entity: eintrag.entity });
+        }
+      } else {
+        fehler.push(eintrag.entity);
+      }
+    });
+
+    this._alleTermine = alle;
+    this._tage = calGruppiereNachTag(alle, start, ende);
+    this._fehler = fehler;
+    this._ohneDatum = calZaehleOhneDatum(alle);
+    this._render();
+  }
+
+  _blaettern(schritt) {
+    this._versatzLaufend += schritt;
+    // `_tage` wird BEWUSST nicht geleert: die alte Liste bleibt stehen, bis
+    // die neue da ist. Sonst blitzt zwischen zwei Monaten „Wird geladen …" auf.
+    this._lade();
+    this._render();
+  }
+
+  /**
+   * Home Assistant hat KEINE oeffentliche Schnittstelle, um einen einzelnen
+   * Termin als Dialog zu oeffnen. Der Klick oeffnet deshalb den
+   * Info-Dialog der Kalender-Entitaet. Beschreibung und Ort des Termins
+   * stehen zusaetzlich im `title` der Zeile und erscheinen beim Ueberfahren.
+   * Das ist bewusst weniger, als ein Termin-Dialog waere — es tut aber nicht
+   * so, als koennte es mehr.
+   */
+  _oeffneTermin(uid, entity) {
+    if (!this._config.open_event_on_tap || !entity) return;
+    this.dispatchEvent(
+      new CustomEvent("hass-more-info", {
+        detail: { entityId: entity },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  _render() {
+    if (!this._config) return;
+    const locale = (this._hass && this._hass.locale && this._hass.locale.language) || "de-DE";
+    const { start } = calMonatsGrenzen(new Date(), this._versatzLaufend);
+
+    if (!this._karte) {
+      this._karte = document.createElement("ha-card");
+      const stil = document.createElement("style");
+      stil.textContent = CAL_STIL;
+      this._karte.appendChild(stil);
+      this._koerper = document.createElement("div");
+      this._karte.appendChild(this._koerper);
+      this.appendChild(this._karte);
+
+      this._koerper.addEventListener("click", (ereignis) => {
+        const pfeil = ereignis.target.closest(".cal-pfeil");
+        if (pfeil) {
+          this._blaettern(Number(pfeil.dataset.schritt));
+          return;
+        }
+        const zeile = ereignis.target.closest(".cal-termin");
+        if (zeile && zeile.dataset.uid) {
+          this._oeffneTermin(zeile.dataset.uid, zeile.dataset.entity);
+        }
+      });
+    }
+
+    const farben = {};
+    for (const e of this._config.entities) farben[e.entity] = e.color;
+
+    const kopf =
+      (this._config.title
+        ? `<div class="cal-titel-zeile">${calEscape(this._config.title)}</div>`
+        : "") +
+      `<div class="cal-kopf">` +
+      (this._config.navigation
+        ? `<button class="cal-pfeil" data-schritt="-1" aria-label="Voriger Monat">‹</button>`
+        : `<span></span>`) +
+      `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>` +
+      (this._config.navigation
+        ? `<button class="cal-pfeil" data-schritt="1" aria-label="Naechster Monat">›</button>`
+        : `<span></span>`) +
+      `</div>`;
+
+    let rumpf;
+    if (this._config.entities.length === 0) {
+      rumpf = `<div class="cal-leermeldung">Kein Kalender gewählt. Im Karteneditor einen auswählen.</div>`;
+    } else if (this._tage === null) {
+      rumpf = `<div class="cal-leermeldung">Wird geladen …</div>`;
+    } else {
+      const liste = calListeHtml(this._tage, {
+        zeigeLeereTage: this._config.show_empty_days,
+        locale,
+        farben,
+        mehrereKalender: this._config.entities.length > 1,
+      });
+      rumpf = liste
+        ? `<div class="cal-liste">${liste}</div>`
+        : `<div class="cal-leermeldung">Keine Termine in diesem Monat.</div>`;
+    }
+
+    let fuss = "";
+    if (this._config.show_total && this._tage) {
+      const s = calSummeStunden(this._alleTermine || []);
+      const teile = [`${s.tageMitTermin} Tage`, `${calFormatStunden(s.stunden, locale)} h`];
+      if (s.ganztags) teile.push(`${s.ganztags} ganztägig`);
+      fuss = `<div class="cal-fuss">${teile.map((t) => `<span>${calEscape(t)}</span>`).join("")}</div>`;
+    }
+
+    const hinweisText = calHinweisText(this._fehler || [], this._ohneDatum || 0);
+    const hinweis = hinweisText
+      ? `<div class="cal-hinweis">${calEscape(hinweisText)}</div>`
+      : "";
+
+    this._koerper.innerHTML = kopf + rumpf + fuss + hinweis;
+  }
+}
+
 customElements.define("busch-schedule-card", BuschScheduleCard);
 customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
