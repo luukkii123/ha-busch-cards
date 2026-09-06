@@ -17,8 +17,12 @@ function quelle() {
  * `const` und `class` auf oberster Ebene landen NICHT als Eigenschaft am
  * globalen Objekt. Deshalb wird ein Ausdruck angehängt, der im selben
  * Gültigkeitsbereich läuft und die Namen einsammelt.
+ *
+ * `zusatz` ersetzt einzelne Einträge der Sandbox-Umgebung — gedacht für eine
+ * reichere DOM-Attrappe, mit der sich die Kartenklasse selbst ausführen lässt.
+ * Ersetzt wird jeweils der ganze Eintrag, nicht in die Tiefe gemischt.
  */
-function ladeKarte(namen) {
+function ladeKarte(namen, zusatz) {
   const kontext = {
     console: { info() {}, warn() {}, error() {}, log() {} },
     window: { customCards: [] },
@@ -35,6 +39,7 @@ function ladeKarte(namen) {
       },
     },
   };
+  Object.assign(kontext, zusatz || {});
   kontext.globalThis = kontext;
   vm.createContext(kontext);
   const sammler = `\n;({ ${namen.join(", ")} });`;
