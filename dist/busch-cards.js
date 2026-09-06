@@ -1186,6 +1186,35 @@ class BuschScheduleCardEditor extends HTMLElement {
   }
 }
 
+/* ==========================================================================
+ * busch-calendar-card — Terminliste je Kalendermonat
+ *
+ * Alle Namen auf oberster Ebene beginnen mit `cal`. Diese Datei hat einen
+ * flachen Gueltigkeitsbereich: ein zweites `clamp` oder `formatClock` wuerde
+ * die Zeitplan-Karte still kaputtmachen.
+ * ========================================================================== */
+
+/**
+ * Erster und letzter Moment des Zielmonats, in lokaler Zeit.
+ * `new Date(jahr, monat + 1, 0)` ist der letzte Tag des Monats davor — das
+ * erledigt Monatslaengen und Schaltjahre ohne eigene Tabelle.
+ */
+function calMonatsGrenzen(basis, versatz) {
+  const jahr = basis.getFullYear();
+  const monat = basis.getMonth() + (versatz || 0);
+  return {
+    start: new Date(jahr, monat, 1, 0, 0, 0, 0),
+    ende: new Date(jahr, monat + 1, 0, 23, 59, 59, 999),
+  };
+}
+
+function calMonatsName(datum, locale) {
+  return datum.toLocaleDateString(locale || "de-DE", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 customElements.define("busch-schedule-card", BuschScheduleCard);
 customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
