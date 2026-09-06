@@ -110,7 +110,7 @@ existiert nur in YAML.
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
 | `show_total` | ja/nein | `false` | Fußzeile mit Summe der Termindauern |
 | `title` | Text | leer | Überschrift über dem Monatsnamen |
-| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin-Dialog |
+| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Kalender-Dialog |
 
 `month_offset` ist bewusst eine Zahl und kein Auswahlfeld, damit auch minus drei
 möglich ist.
@@ -209,7 +209,11 @@ Fehler dieses Repos direkt adressiert.
 - **Wetter.** Die jetzige Karte zeigt es, die neue nicht. Für einen vergangenen
   Monat liefert die Vorhersage nichts, bei `month_offset: -1` bliebe die Spalte
   dauerhaft leer. Nachrüstbar, falls gewünscht.
-- **Termine anlegen oder ändern.** Die Karte zeigt an. Zum Bearbeiten öffnet der
-  Klick den Dialog von Home Assistant.
+- **Termine anlegen oder ändern.** Die Karte zeigt an.
+- **Einen Dialog für den einzelnen Termin.** Home Assistant bietet dafür keine
+  öffentliche Schnittstelle. Der Klick öffnet den Info-Dialog der
+  Kalender-Entität; Beschreibung und Ort des Termins stehen im `title` der
+  Zeile und erscheinen beim Überfahren. Das ist bewusst weniger als ein
+  Termin-Dialog, tut aber nicht so, als wäre es mehr.
 - **Wochen- oder Rasteransicht.** Es ist eine Liste. Für ein Raster gibt es die
   eingebaute Kalenderkarte.
