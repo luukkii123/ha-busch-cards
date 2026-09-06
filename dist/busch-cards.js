@@ -1343,6 +1343,12 @@ function calSummeStunden(termine) {
     gesehen.add(kennung);
 
     const von = calStartDatum(termin);
+    // Ohne lesbaren Start ist `bis - von` NaN, und ein einziger kaputter
+    // Termin macht die Summe des ganzen Monats zu NaN. Eine unbrauchbare
+    // Summe sieht falsch aus statt unvollstaendig — deshalb hier dasselbe
+    // Ueberspringen wie in `calGruppiereNachTag`. In der Liste bleibt der
+    // Termin trotzdem sichtbar.
+    if (Number.isNaN(von.getTime())) continue;
     const bis = calEndDatum(termin);
     let lauf = new Date(von.getFullYear(), von.getMonth(), von.getDate());
     const letzter = new Date(bis.getFullYear(), bis.getMonth(), bis.getDate());
@@ -1387,7 +1393,9 @@ function calWochentagKurz(datum, locale) {
 }
 
 function calTerminHtml(termin, optionen) {
-  const farbe = optionen.farben[termin._entity] || calPalette[0];
+  // `farben` ist optional: ein von Hand gebautes Optionsobjekt (Pruefungen,
+  // spaetere Nachweise) soll die Liste nicht sprengen.
+  const farbe = (optionen.farben || {})[termin._entity] || calPalette[0];
   const punkt = optionen.mehrereKalender
     ? `<span class="cal-punkt" style="background:${calEscape(farbe)}"></span>`
     : "";
@@ -1408,7 +1416,10 @@ function calTerminHtml(termin, optionen) {
 }
 
 function calListeHtml(tage, optionen) {
-  const heuteSchluessel = calTagesSchluessel(new Date());
+  // `optionen.heute` ist einspeisbar, damit die Hervorhebung pruefbar wird —
+  // vor allem der Fall, dass sie im Vormonat gerade NICHT erscheinen darf.
+  // Ohne Angabe bleibt es bei der Uhr; fuer die Karte aendert sich nichts.
+  const heuteSchluessel = calTagesSchluessel(optionen.heute || new Date());
   const zeilen = [];
   for (const tag of tage) {
     if (!optionen.zeigeLeereTage && tag.termine.length === 0) continue;

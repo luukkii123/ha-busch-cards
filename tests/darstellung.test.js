@@ -132,3 +132,50 @@ test("bei einem einzigen Kalender wird kein Farbpunkt gezeichnet", () => {
   assert.ok(!einer.includes("cal-punkt"));
   assert.ok(mehrere.includes("cal-punkt"));
 });
+
+/* --------------------------------------------------------------------------
+ * Fix-Runde 1
+ * ------------------------------------------------------------------------ */
+
+test("ein Termin mit unlesbarem Start zerstoert die Summe nicht", () => {
+  const kaputt = {
+    start: { dateTime: "morgen frueh" },
+    end: { dateTime: "2026-08-06T10:00:00+02:00" },
+    summary: "Unlesbar",
+    uid: "k",
+  };
+  const s = calSummeStunden([ACHT_STUNDEN, kaputt]);
+  assert.ok(!Number.isNaN(s.stunden), "eine NaN-Summe sieht falsch aus, nicht unvollstaendig");
+  assert.strictEqual(s.stunden, 8, "die Stunden des gesunden Termins bleiben stehen");
+});
+
+test("cal-heute haengt an optionen.heute, nicht an der Uhr", () => {
+  // Positiv: der gezeigte Monat ist August 2026, `heute` faellt hinein.
+  const august = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const drin = calListeHtml(calGruppiereNachTag([], august.start, august.ende), {
+    zeigeLeereTage: true, locale: "de-DE", farben: {}, mehrereKalender: false,
+    heute: new Date(2026, 7, 12),
+  });
+  assert.ok(drin.includes("cal-heute"), "der 12. August muss hervorgehoben sein");
+
+  // Negativ: der gezeigte Monat ist der LAUFENDE Monat der Uhr, `heute` liegt
+  // aber in einem anderen. Wer die Uhr liest statt `optionen.heute`, markiert
+  // hier faelschlich einen Tag — genau der Vormonatsfall aus der Spec.
+  const laufend = calMonatsGrenzen(new Date(), 0);
+  const anderswo = new Date(laufend.start.getFullYear(), laufend.start.getMonth() - 2, 12);
+  const draussen = calListeHtml(calGruppiereNachTag([], laufend.start, laufend.ende), {
+    zeigeLeereTage: true, locale: "de-DE", farben: {}, mehrereKalender: false,
+    heute: anderswo,
+  });
+  assert.ok(!draussen.includes("cal-heute"), "ausserhalb des gezeigten Monats keine Hervorhebung");
+});
+
+test("fehlende farben in den Optionen werfen nicht", () => {
+  const { start, ende } = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const tage = calGruppiereNachTag([ACHT_STUNDEN], start, ende);
+  let html;
+  assert.doesNotThrow(() => {
+    html = calListeHtml(tage, { zeigeLeereTage: false, locale: "de-DE", mehrereKalender: true });
+  }, "ein von Hand gebautes Optionsobjekt darf die Liste nicht sprengen");
+  assert.ok(html.includes("cal-punkt"), "ohne Zuordnung greift die erste Palettenfarbe");
+});
