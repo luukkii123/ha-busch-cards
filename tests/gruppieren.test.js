@@ -146,3 +146,29 @@ test("ein end ohne date und ohne dateTime faellt auf den Start zurueck", () => {
   assert.strictEqual(calEndDatum(leeresEnde).getDate(), 7,
                      "kein Rueckrechnen des ausschliessenden Endes auf den 6.");
 });
+
+test("ein unlesbares end.dateTime laesst den Termin nicht verschwinden", () => {
+  const muell = { start: { dateTime: "2026-08-06T09:00:00+02:00" },
+                  end: { dateTime: "morgen frueh" },
+                  summary: "Ende unlesbar", uid: "muell" };
+  const { start, ende } = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const tage = calGruppiereNachTag([muell, ZEITTERMIN], start, ende);
+  assert.strictEqual(tage[5].termine.length, 1, "6. August, der Termin bleibt sichtbar");
+  assert.strictEqual(tage[5].termine[0].uid, "muell");
+  assert.strictEqual(tage[2].termine.length, 1, "der gesunde Termin am 3. ueberlebt");
+  assert.strictEqual(calEndDatum(muell).getTime(), calStartDatum(muell).getTime(),
+                     "Rueckfall auf den Start, Dauer null");
+});
+
+test("ein unlesbarer Start wird uebersprungen, ohne die Liste mitzunehmen", () => {
+  const ohneStart = { start: { dateTime: "irgendwann" },
+                      end: { dateTime: "2026-08-06T10:00:00+02:00" },
+                      summary: "Start unlesbar", uid: "kein-start" };
+  const { start, ende } = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const tage = calGruppiereNachTag([ohneStart, ZEITTERMIN, GANZTAGS_DREI_TAGE], start, ende);
+  assert.strictEqual(tage.length, 31, "die Monatsliste ist vollstaendig");
+  assert.strictEqual(tage[2].termine.length, 1, "der gesunde Termin am 3. ueberlebt");
+  assert.strictEqual(tage[9].termine.length, 1, "der Ganztagstermin am 10. ueberlebt");
+  const summe = tage.reduce((n, t) => n + t.termine.length, 0);
+  assert.strictEqual(summe, 4, "1 am 3. plus 3 vom 10.-12.; der unlesbare gehoert nirgendwohin");
+});

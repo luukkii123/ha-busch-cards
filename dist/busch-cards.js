@@ -1254,8 +1254,12 @@ function calEndDatum(termin) {
     ? ende && ende.date
     : ende && ende.dateTime;
   if (!roher) return calStartDatum(termin);
-  if (!calIstGanztags(termin)) return new Date(roher);
-  const roh = calDatumAusText(roher);
+  // Ein vorhandenes, aber unlesbares Datum ("morgen frueh") ist dasselbe wie
+  // ein fehlendes: `new Date(...)` liefert dann ein Invalid Date, und jeder
+  // Vergleich damit ist false — der Termin faellt still aus der Tagesschleife.
+  const roh = calIstGanztags(termin) ? calDatumAusText(roher) : new Date(roher);
+  if (Number.isNaN(roh.getTime())) return calStartDatum(termin);
+  if (!calIstGanztags(termin)) return roh;
   return new Date(roh.getFullYear(), roh.getMonth(), roh.getDate() - 1, 23, 59, 59, 999);
 }
 
@@ -1290,6 +1294,12 @@ function calGruppiereNachTag(termine, start, ende) {
   for (const termin of termine || []) {
     if (!termin || !termin.start) continue;
     const von = calStartDatum(termin);
+    // Die einzige Stelle, an der Ueberspringen richtig ist: ohne lesbaren Start
+    // gibt es keinen Tag, an dem der Termin stehen koennte. Er wird nicht
+    // versteckt, es fehlt schlicht der Ort. Ausdruecklich statt als Nebenwirkung
+    // eines NaN-Vergleichs, damit die Absicht im Code steht — und die
+    // Monatsliste laeuft weiter, statt am naechsten Termin zu haengen.
+    if (Number.isNaN(von.getTime())) continue;
     const bis = calEndDatum(termin);
     // Jeden betroffenen Tag anfassen, damit mehrtaegige Termine ueberall stehen.
     let lauf = new Date(von.getFullYear(), von.getMonth(), von.getDate());
