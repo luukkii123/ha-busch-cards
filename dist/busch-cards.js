@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.8.0";
+const CARD_VERSION = "0.8.1";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1455,11 +1455,19 @@ function calTerminHtml(termin, optionen) {
     ? "ganztägig"
     : `${calFormatUhrzeit(calStartDatum(termin), optionen.locale)} – ` +
       `${calFormatUhrzeit(calEndDatum(termin), optionen.locale)}`;
-  // Beschreibung und Ort landen im `title`, weil es keinen Termin-Dialog gibt.
+  // Beschreibung und Ort stehen zusaetzlich im `title` und erscheinen beim
+  // Ueberfahren — auch dann, wenn der Termin-Dialog nicht erreichbar ist.
   const hinweis = [termin.description, termin.location].filter(Boolean).join(" · ");
+  // `data-idx` ist der Platz des Termins in `_alleTermine`, `data-rid` seine
+  // Wiederholung. Beide braucht der Klick, um von der Zeile zurueck auf den
+  // vollstaendigen Termin zu kommen — die Kennung allein reicht bei einer
+  // Serie nicht, dort tragen alle Vorkommen dieselbe `uid`.
+  const idx = Number.isInteger(termin._idx) ? String(termin._idx) : "";
   return (
     `<div class="cal-termin" data-uid="${calEscape(termin.uid || "")}" ` +
     `data-entity="${calEscape(termin._entity || "")}" ` +
+    `data-idx="${calEscape(idx)}" ` +
+    `data-rid="${calEscape(termin.recurrence_id || "")}" ` +
     `title="${calEscape(hinweis)}">` +
     `${punkt}<span class="cal-zeit">${calEscape(zeit)}</span>` +
     `<span class="cal-titel">${calEscape(termin.summary || "(ohne Titel)")}</span>` +
@@ -1610,6 +1618,228 @@ const CAL_STIL = `
   .cal-leermeldung { padding:16px; color:var(--secondary-text-color); }
 `;
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Der Termin-Dialog von Home Assistant
+ *
+ * Bis v0.8.0 oeffnete ein Klick auf eine Terminzeile nur den Info-Dialog der
+ * Kalender-ENTITAET, weil es keinen bekannten Weg zum Dialog des einzelnen
+ * Termins gab. Es gibt einen, und er ist am ausgelieferten Frontend belegt
+ * (Home Assistant 2026.8.3).
+ *
+ * Wie HA selbst den Dialog oeffnet
+ * (`src/panels/calendar/show-dialog-calendar-event-detail.ts`):
+ *
+ *     fireEvent(element, "show-dialog", {
+ *       dialogTag: "dialog-calendar-event-detail",
+ *       dialogImport: () => import("./dialog-calendar-event-detail"),
+ *       dialogParams,
+ *     });
+ *
+ * Das Ereignis koennen wir selbst feuern — `dialogImport` aber nicht bauen:
+ * es ist eine Closure ueber einen bundle-internen Import, an den eine fremde
+ * Karte nicht herankommt. `window.loadCardHelpers()` gibt ihn nicht her.
+ *
+ * DER AUSWEG: HA sein eigenes Kalenderelement bauen lassen, dessen
+ * Klickbehandlung auf einer NICHT EINGEHAENGTEN Sonde aufrufen und den Import
+ * aus dem dabei gefeuerten Ereignis abgreifen. Die Sonde haengt in keinem
+ * Dokument — ihr Ereignis erreicht niemanden ausser unserem eigenen Lauscher,
+ * es oeffnet also nichts und stoert nichts.
+ *
+ * Belegt am ausgelieferten Bundle: `_handleEventClick(e){…}` steht dort
+ * unverkuerzt, ebenso `i.eventClick=e=>this._handleEventClick(e)` und die
+ * Zeichenketten `ha-full-calendar` und `dialog-calendar-event-detail`.
+ *
+ * WAS DARAN NICHT BEWIESEN IST: dass der Weg zur Laufzeit greift. Unter Node
+ * gibt es HAs Frontend nicht, und eine Attrappe, die `_handleEventClick`
+ * nachbaut, wuerde nur belegen, dass die Attrappe funktioniert. Deshalb ist
+ * jeder einzelne Schritt abgefangen und faellt auf den Entitaets-Dialog
+ * zurueck. Ein toter Klick darf dabei NIE herauskommen.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const CAL_DIALOG_TAG = "dialog-calendar-event-detail";
+
+/** Bitmaske von `supported_features` der Kalender-Entitaet:
+ *  1 = anlegen (braucht die Karte nicht), 2 = loeschen, 4 = aendern. */
+const CAL_MERKMAL_LOESCHEN = 2;
+const CAL_MERKMAL_AENDERN = 4;
+
+/** Wie lange auf die Definition von `ha-full-calendar` gewartet wird. */
+const CAL_SONDE_ZEITGRENZE = 5000;
+
+/** Die abgegriffene Ladefunktion, sobald sie einmal da ist. */
+let calDialogImport = null;
+/**
+ * Der EINE Versuch, sie zu holen — als Zusage gemerkt, nicht als Ergebnis.
+ * Damit laufen zwei schnelle Klicks nicht in zwei Sonden, und ein
+ * gescheiterter Versuch wird nicht bei jedem weiteren Klick wiederholt:
+ * gescheitert ist gescheitert, und der Rueckfall ist dann der Dauerzustand.
+ */
+let calDialogVersuch = null;
+
+/** Wartet auf `customElements.whenDefined`, aber nicht ewig. */
+function calWarteAufElement(name) {
+  return Promise.race([
+    customElements.whenDefined(name),
+    new Promise((_, ablehnen) =>
+      setTimeout(() => ablehnen(new Error(`${name} wurde nicht definiert`)), CAL_SONDE_ZEITGRENZE)
+    ),
+  ]);
+}
+
+/**
+ * Holt Home Assistants eigene Ladefunktion fuer den Termin-Dialog — einmal.
+ * Ergebnis ist die Funktion oder `null`; sie wirft nie.
+ */
+function calHoleDialogImport(hass, entityId) {
+  if (calDialogVersuch) return calDialogVersuch;
+  calDialogVersuch = (async () => {
+    try {
+      if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return null;
+      const helfer = await window.loadCardHelpers();
+      if (!helfer || typeof helfer.createCardElement !== "function") return null;
+
+      // Der EINZIGE Zweck: HA laedt beim Bauen der eingebauten Kalenderkarte
+      // das Buendel nach, in dem `ha-full-calendar` definiert wird. Die Karte
+      // selbst wird weggeworfen, sie haengt nirgends. Scheitert das Bauen,
+      // gehen wir trotzdem weiter — das Element kann laengst definiert sein.
+      try {
+        await helfer.createCardElement({ type: "calendar", entities: [entityId] });
+      } catch (fehler) {
+        /* Weiter: vielleicht ist `ha-full-calendar` schon da. */
+      }
+
+      if (typeof customElements === "undefined" || typeof customElements.whenDefined !== "function") {
+        return null;
+      }
+      await calWarteAufElement("ha-full-calendar");
+
+      const sonde = document.createElement("ha-full-calendar");
+      if (!sonde || typeof sonde._handleEventClick !== "function") return null;
+      sonde.hass = hass;
+
+      let abgegriffen = null;
+      sonde.addEventListener("show-dialog", (ereignis) => {
+        const einzel = ereignis && ereignis.detail;
+        if (einzel && einzel.dialogTag === CAL_DIALOG_TAG) abgegriffen = einzel.dialogImport;
+      });
+      // Eine leere `eventData` reicht: HA baut daraus die Dialogparameter,
+      // die wir ohnehin verwerfen — geholt wird allein `dialogImport`.
+      sonde._handleEventClick({ event: { extendedProps: { calendar: entityId, eventData: {} } } });
+
+      calDialogImport = typeof abgegriffen === "function" ? abgegriffen : null;
+      return calDialogImport;
+    } catch (fehler) {
+      console.warn(
+        "busch-calendar-card: Home Assistants Termin-Dialog liess sich nicht "
+        + "erreichen — der Klick oeffnet weiter den Kalender-Dialog. Grund: "
+        + (fehler && fehler.message ? fehler.message : fehler)
+      );
+      return null;
+    }
+  })();
+  return calDialogVersuch;
+}
+
+/**
+ * Die Rohform aus `calendars/…` in die flache Form, die HA intern benutzt
+ * (`src/data/calendar.ts`). `uid` und `recurrence_id` sind dabei das
+ * Entscheidende: ohne sie sind Aendern und Loeschen im Dialog kaputt. Sie
+ * werden deshalb DURCHGEREICHT, nicht auf `""` normalisiert — ein leerer
+ * String waere eine Kennung, die es nicht gibt.
+ *
+ * Ohne lesbaren Start gibt es keine Form, sondern `null`: derselbe Massstab,
+ * den auch die Tagesschleife anlegt.
+ */
+function calNormalisiereTermin(termin) {
+  if (!termin || typeof termin !== "object") return null;
+  const start = termin.start || {};
+  const ende = termin.end || {};
+  const dtstart = start.dateTime || start.date || "";
+  if (!dtstart) return null;
+  return {
+    summary: termin.summary || "",
+    dtstart,
+    dtend: ende.dateTime || ende.date || "",
+    description: termin.description || "",
+    location: termin.location || "",
+    uid: termin.uid || undefined,
+    recurrence_id: termin.recurrence_id || undefined,
+    rrule: termin.rrule || undefined,
+  };
+}
+
+/**
+ * Was der Dialog darf, steht in der ENTITAET, nicht in unserer Annahme.
+ * `calendar.arbeitszeiten` hat in der Anlage des Nutzers `7` — alles erlaubt.
+ * Eine unbekannte oder fehlende Maske heisst „nichts erlaubt": ein zu
+ * grosszuegiges Raten zeigte einen Speichern-Knopf, der beim Druck scheitert.
+ */
+function calBerechtigungen(zustand) {
+  const roh = zustand && zustand.attributes ? zustand.attributes.supported_features : 0;
+  const merkmale = Number(roh);
+  const maske = Number.isFinite(merkmale) ? merkmale : 0;
+  return {
+    canEdit: Boolean(maske & CAL_MERKMAL_AENDERN),
+    canDelete: Boolean(maske & CAL_MERKMAL_LOESCHEN),
+  };
+}
+
+/**
+ * Vom angeklickten `dataset` zurueck zum geladenen Termin.
+ *
+ * `data-idx` ist der schnelle Weg, `data-uid` und `data-entity` sind die
+ * GEGENPROBE: passt der Termin am Index nicht zur Zeile, ist die Liste
+ * zwischenzeitlich neu geladen worden, und der Index zeigt woanders hin. Dann
+ * wird gesucht statt gegriffen — sonst oeffnete der Klick den falschen Termin,
+ * und zwar lautlos.
+ */
+function calTerminAusZeile(termine, datensatz) {
+  const liste = Array.isArray(termine) ? termine : [];
+  if (!datensatz) return null;
+  const uid = datensatz.uid || "";
+  const entity = datensatz.entity || "";
+  const passt = (t) => Boolean(t) && (t.uid || "") === uid && (t._entity || "") === entity;
+
+  // NICHT `Number(datensatz.idx)` allein: `Number("")` ist 0, und ein leeres
+  // `data-idx` — das die Zeile bekommt, wenn kein Index gesetzt ist — zeigte
+  // damit auf den ERSTEN Termin. Bei einer Serie, deren Vorkommen alle
+  // dieselbe `uid` tragen, haette die Gegenprobe das nicht gefangen: sie passt
+  // ja. Gemessen an genau dieser Stelle.
+  const roh = datensatz.idx;
+  const i = roh === "" || roh === undefined || roh === null ? NaN : Number(roh);
+  if (Number.isInteger(i) && i >= 0 && i < liste.length && passt(liste[i])) return liste[i];
+
+  const treffer = liste.filter(passt);
+  if (treffer.length === 0) return null;
+  if (treffer.length === 1) return treffer[0];
+  // Mehrere Vorkommen derselben Kennung: eine Serie. Die Wiederholung
+  // entscheidet — und wenn auch die nicht trennt, das erste Vorkommen.
+  const rid = datensatz.rid || "";
+  return treffer.find((t) => (t.recurrence_id || "") === rid) || treffer[0];
+}
+
+/**
+ * Die Parameter, die `dialog-calendar-event-detail` erwartet.
+ * `updated` haengt die Karte selbst an — es ist das einzige Feld, das eine
+ * Bindung an die laufende Instanz braucht.
+ *
+ * Ohne `uid` gibt es KEINE Parameter: der Dialog liesse sich zwar oeffnen,
+ * aber Aendern und Loeschen liefen ins Leere. Dann ist der Entitaets-Dialog
+ * die ehrlichere Antwort.
+ */
+function calDialogParameter(entityId, termin, farbe, zustand) {
+  const eintrag = calNormalisiereTermin(termin);
+  if (!eintrag || !eintrag.uid) return null;
+  const rechte = calBerechtigungen(zustand);
+  return {
+    calendarId: entityId,
+    entry: eintrag,
+    color: farbe,
+    canEdit: rechte.canEdit,
+    canDelete: rechte.canDelete,
+  };
+}
+
 class BuschCalendarCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("busch-calendar-card-editor");
@@ -1713,7 +1943,9 @@ class BuschCalendarCard extends HTMLElement {
           // Flache Kopie, kein Feld am Original: ein mehrtaegiger Termin liegt
           // als DASSELBE Objekt in mehreren Tageslisten — wer daran schreibt,
           // trifft alle seine Tage.
-          alle.push({ ...termin, _entity: eintrag.entity });
+          // `_idx` ist der Platz in genau dieser Liste; die Terminzeile traegt
+          // ihn als `data-idx`, damit der Klick den Termin wiederfindet.
+          alle.push({ ...termin, _entity: eintrag.entity, _idx: alle.length });
         }
       } else {
         fehler.push(eintrag.entity);
@@ -1736,15 +1968,63 @@ class BuschCalendarCard extends HTMLElement {
   }
 
   /**
-   * Home Assistant hat KEINE oeffentliche Schnittstelle, um einen einzelnen
-   * Termin als Dialog zu oeffnen. Der Klick oeffnet deshalb den
-   * Info-Dialog der Kalender-Entitaet. Beschreibung und Ort des Termins
-   * stehen zusaetzlich im `title` der Zeile und erscheinen beim Ueberfahren.
-   * Das ist bewusst weniger, als ein Termin-Dialog waere — es tut aber nicht
-   * so, als koennte es mehr.
+   * Ein Klick auf eine Terminzeile oeffnet Home Assistants eigenen
+   * Termin-Dialog — den, in dem der Termin wirklich bearbeitet und geloescht
+   * werden kann. Wie die Karte an dessen Ladefunktion kommt, steht ausfuehrlich
+   * bei `calHoleDialogImport`.
+   *
+   * SCHEITERT IRGENDEIN SCHRITT, oeffnet der Klick den Info-Dialog der
+   * Kalender-Entitaet, genau wie bis v0.8.0. Der Rueckfall ist kein Notnagel,
+   * sondern die zugesicherte Untergrenze: ein Klick, der gar nichts tut, waere
+   * das Schlechteste von allem — der Nutzer sieht nicht, ob die Karte kaputt
+   * ist oder er danebengetippt hat.
+   *
+   * Diese Methode wirft nie und lehnt nie ab; die aufrufende Klickbehandlung
+   * wartet nicht auf sie.
    */
-  _oeffneTermin(uid, entity) {
+  async _oeffneTermin(datensatz) {
+    const entity = (datensatz && datensatz.entity) || "";
     if (!this._config.open_event_on_tap || !entity) return;
+    try {
+      const termin = calTerminAusZeile(this._alleTermine, datensatz);
+      const eintrag = this._config.entities.find((e) => e.entity === entity);
+      const parameter = calDialogParameter(
+        entity,
+        termin,
+        eintrag ? eintrag.color : calPalette[0],
+        this._hass && this._hass.states ? this._hass.states[entity] : null
+      );
+      if (parameter) {
+        const laden = await calHoleDialogImport(this._hass, entity);
+        if (laden) {
+          this.dispatchEvent(
+            new CustomEvent("show-dialog", {
+              detail: {
+                dialogTag: CAL_DIALOG_TAG,
+                dialogImport: laden,
+                // `updated` ruft HA nach jedem Speichern und Loeschen auf.
+                // Ohne diese Zeile zeigte die Liste hinterher den alten Stand,
+                // und die Aenderung saehe aus, als waere sie nicht angekommen.
+                dialogParams: { ...parameter, updated: () => this._lade() },
+              },
+              bubbles: true,
+              composed: true,
+            })
+          );
+          return;
+        }
+      }
+    } catch (fehler) {
+      console.warn(
+        "busch-calendar-card: Termin-Dialog nicht moeglich, es bleibt beim "
+        + "Kalender-Dialog. Grund: " + (fehler && fehler.message ? fehler.message : fehler)
+      );
+    }
+    this._oeffneEntitaet(entity);
+  }
+
+  /** Der Rueckfall: HAs Info-Dialog der Kalender-Entitaet. */
+  _oeffneEntitaet(entity) {
     this.dispatchEvent(
       new CustomEvent("hass-more-info", {
         detail: { entityId: entity },
@@ -1776,7 +2056,9 @@ class BuschCalendarCard extends HTMLElement {
         }
         const zeile = ereignis.target.closest(".cal-termin");
         if (zeile && zeile.dataset.uid) {
-          this._oeffneTermin(zeile.dataset.uid, zeile.dataset.entity);
+          // Ohne `await`: die Klickbehandlung ist synchron, und
+          // `_oeffneTermin` lehnt nie ab.
+          this._oeffneTermin(zeile.dataset);
         }
       });
     }
@@ -1882,7 +2164,7 @@ const CAL_LABELS = {
   navigation: "Pfeile zum Blättern",
   show_empty_days: "Leere Tage zeigen",
   show_total: "Summe in der Fußzeile",
-  open_event_on_tap: "Klick öffnet den Kalender",
+  open_event_on_tap: "Klick öffnet den Termin",
 };
 
 class BuschCalendarCardEditor extends HTMLElement {

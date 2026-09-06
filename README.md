@@ -304,7 +304,7 @@ nur in YAML.
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
 | `show_total` | ja/nein | `false` | Fußzeile mit Summe der Termindauern |
 | `title` | Text | leer | Überschrift über dem Monatsnamen |
-| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Kalender-Dialog |
+| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin zum Bearbeiten |
 
 `month_offset` ist bewusst eine Zahl und kein Auswahlfeld — so ist auch minus
 drei möglich. Das Blättern über die Pfeile ändert die Konfiguration **nicht**:
@@ -334,10 +334,28 @@ wiederkehrender Termin zählt so oft, wie er in der Liste steht — Home Assista
 gibt allen Instanzen einer Serie dieselbe Kennung, entdoppelt wird deshalb
 nicht. Fuß und Liste sollen dasselbe sagen.
 
+### Klick auf einen Termin
+
+Seit `0.8.1` öffnet ein Klick auf eine Terminzeile **Home Assistants eigenen
+Termin-Dialog** — denselben, der aus der eingebauten Kalenderansicht aufgeht.
+Dort lässt sich der Termin ändern und löschen, und bei einer Serie fragt der
+Dialog selbst, ob nur dieser Termin oder alle folgenden gemeint sind. Was
+erlaubt ist, kommt aus `supported_features` der Kalender-Entität: nur wer
+ändern darf, sieht einen Speichern-Knopf.
+
+Die Karte kommt an diesen Dialog auf einem Umweg — Home Assistant gibt seine
+Ladefunktion dafür nicht öffentlich heraus, und sie wird deshalb einmalig aus
+HAs eigenem Kalenderelement abgegriffen. **Klappt das nicht** — weil eine
+künftige HA-Fassung das Element umbenennt, oder weil der Termin gar keine
+Kennung hat —, öffnet der Klick wie bis `0.8.0` den Info-Dialog der
+**Kalender-Entität**. Ein Klick, der gar nichts tut, kommt dabei nicht heraus;
+in der Browser-Konsole steht dann eine Zeile mit dem Grund. Wer das Verhalten
+ganz abschalten will, setzt `open_event_on_tap: false`.
+
 ### Grenzen
 
-- **Nur lesen.** Termine anlegen oder ändern kann die Karte nicht; ein Klick
-  öffnet den Dialog von Home Assistant.
+- **Neue Termine legt die Karte nicht an.** Ändern und Löschen übernimmt HAs
+  Dialog; einen Knopf „Termin hinzufügen" hat die Karte nicht.
 - **Ein Kalender, der nicht antwortet, hält die anderen nicht auf.** Unter der
   Liste steht, welcher fehlt.
 - **Termine ohne Tag im gezeigten Monat werden nicht angezeigt**, aber gezählt

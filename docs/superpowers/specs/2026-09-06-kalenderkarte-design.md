@@ -126,7 +126,7 @@ existiert nur in YAML.
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
 | `show_total` | ja/nein | `false` | Fußzeile mit Summe der Termindauern |
 | `title` | Text | leer | Überschrift über dem Monatsnamen |
-| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Kalender-Dialog |
+| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin zum Bearbeiten (bis `0.8.0`: den Kalender-Dialog) |
 
 `month_offset` ist bewusst eine Zahl und kein Auswahlfeld, damit auch minus drei
 möglich ist.
@@ -262,11 +262,29 @@ Fehler dieses Repos direkt adressiert.
 - **Wetter.** Die jetzige Karte zeigt es, die neue nicht. Für einen vergangenen
   Monat liefert die Vorhersage nichts, bei `month_offset: -1` bliebe die Spalte
   dauerhaft leer. Nachrüstbar, falls gewünscht.
-- **Termine anlegen oder ändern.** Die Karte zeigt an.
-- **Einen Dialog für den einzelnen Termin.** Home Assistant bietet dafür keine
-  öffentliche Schnittstelle. Der Klick öffnet den Info-Dialog der
-  Kalender-Entität; Beschreibung und Ort des Termins stehen im `title` der
-  Zeile und erscheinen beim Überfahren. Das ist bewusst weniger als ein
-  Termin-Dialog, tut aber nicht so, als wäre es mehr.
+- **Termine anlegen.** Die Karte zeigt an; ändern und löschen übernimmt seit
+  `0.8.1` HAs eigener Dialog (siehe unten), einen Knopf „Termin hinzufügen"
+  gibt es nicht.
+- ~~**Einen Dialog für den einzelnen Termin.**~~ **Seit `0.8.1` enthalten.**
+  Die ursprüngliche Begründung — „Home Assistant bietet dafür keine
+  öffentliche Schnittstelle" — stimmte für die Schnittstelle, aber nicht für
+  die Lage: `showCalendarEventDetailDialog` feuert schlicht ein
+  `show-dialog`-Ereignis, und das kann jede Karte feuern. Nicht öffentlich ist
+  allein das darin mitgereichte `dialogImport`, eine Closure über einen
+  bundle-internen Import.
+
+  **Der Weg daran vorbei, am ausgelieferten Frontend belegt** (HA 2026.8.3,
+  `frontend_latest/` heruntergeladen und durchsucht): HA sein eigenes
+  `ha-full-calendar` bauen lassen, dessen `_handleEventClick` auf einer
+  **nicht eingehängten** Sonde aufrufen und `dialogImport` aus dem dabei
+  gefeuerten Ereignis abgreifen. Die Sonde hängt in keinem Dokument, ihr
+  Ereignis erreicht also niemanden. Geholt wird einmal und gemerkt.
+
+  **Der Preis wird bezahlt, nicht verschwiegen:** Abhängigkeit von einem
+  HA-Internum. Jeder Schritt ist einzeln abgefangen; scheitert einer, öffnet
+  der Klick den Info-Dialog der Kalender-Entität wie bis `0.8.0`. **Ein toter
+  Klick ist ausgeschlossen** — und das ist unter Node geprüft, während der
+  Sondenweg selbst es nicht sein kann: er braucht HAs echtes Frontend, und
+  eine Attrappe belegte nur die Attrappe.
 - **Wochen- oder Rasteransicht.** Es ist eine Liste. Für ein Raster gibt es die
   eingebaute Kalenderkarte.
