@@ -182,11 +182,19 @@ Eine Zeile je Tag des Monats, chronologisch. Kein Wochenraster.
 ### Die Summe
 
 `show_total` summiert die Dauern aller zeitgebundenen Termine des Monats und
-zeigt sie in Stunden mit einer Nachkommastelle. Die Teile sind durch einen
-**Mittelpunkt** getrennt („20 Tage · 168,5 h · 2 ganztägig"); ohne ihn steht
-dort „20 Tage168,5 h2 ganztägig" in einem Wort. **Ganztägige Termine gehen
-nicht in die Stundensumme ein**, sondern werden getrennt gezählt. Sie mit 24
-Stunden zu verrechnen würde die Summe verfälschen.
+zeigt sie in Stunden mit einer Nachkommastelle. Jeder Wert steht in einer
+**eigenen Spalte**, verteilt über `justify-content: space-between` — wie in der
+Skizze oben. Kein Trennzeichen dazwischen: Auf dem Bildschirm trennt sie der
+Raum. **Ganztägige Termine gehen nicht in die Stundensumme ein**, sondern
+werden getrennt gezählt. Sie mit 24 Stunden zu verrechnen würde die Summe
+verfälschen.
+
+**Wer den Fuß misst, liest die Spans einzeln** (`.cal-fuss span`).
+`textContent` des Kastens kennt den Raum zwischen ihnen nicht und liefert
+„20 Tage168,5 h2 ganztägig" am Stück. In `v0.7.1` wurde daraufhin kurz ein
+Mittelpunkt eingebaut und alles in einen Span gelegt — damit war
+`space-between` toter Code und die Zeile klebte links. Zurückgenommen: Die
+Messung passt sich der Darstellung an, nicht umgekehrt.
 
 Drei Regeln, die die Summe an das binden, was in der Liste darüber steht:
 

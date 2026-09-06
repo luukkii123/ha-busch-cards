@@ -1815,11 +1815,17 @@ class BuschCalendarCard extends HTMLElement {
       const s = calSummeStunden(this._alleTermine || [], start, ende);
       const teile = [`${s.tageMitTermin} Tage`, `${calFormatStunden(s.stunden, locale)} h`];
       if (s.ganztags) teile.push(`${s.ganztags} ganztägig`);
-      // Mit Mittelpunkt verbunden, wie in Spec und README versprochen. Ohne
-      // Trenner stand dort „6 Tage25,7 h1 ganztägig" in einem Wort: die
-      // Elemente sind Nachbarn im Flexkasten, und Nachbarn haben keinen Raum
-      // zwischen sich, den ein Vorleser oder ein Textauszug sehen wuerde.
-      fuss = `<div class="cal-fuss"><span>${calEscape(teile.join(" · "))}</span></div>`;
+      // Ein Span JE WERT, verteilt ueber `justify-content: space-between` im
+      // Stil. KEIN Trenner dazwischen: auf dem Bildschirm trennt sie der Raum,
+      // und drei Spalten sind genau das, was die Skizze in der Spec zeigt.
+      //
+      // Wer den Fuss misst, liest die Spans EINZELN (`.cal-fuss span`).
+      // `textContent` des Kastens klebt sie zu „6 Tage25,7 h1 ganztägig"
+      // zusammen — das ist ein Messproblem, kein Darstellungsproblem. Es wurde
+      // in v0.7.1 kurzzeitig andersherum geloest (ein Span mit Mittelpunkten),
+      // und damit war `space-between` toter Code und die Zeile klebte links.
+      // Die Messung passt sich der Darstellung an, nicht umgekehrt.
+      fuss = `<div class="cal-fuss">${teile.map((t) => `<span>${calEscape(t)}</span>`).join("")}</div>`;
     }
 
     const hinweisText = calHinweisText(this._fehler || [], this._nichtGezeigt || 0);

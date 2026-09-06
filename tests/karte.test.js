@@ -391,19 +391,49 @@ test("ein zweiter setConfig laedt nach, statt auf der Ladeanzeige zu haengen", a
  * ungeschnitten aufgerufen wird, ist so falsch wie eine, die es nicht kann.
  * ---------------------------------------------------------------------- */
 
-function calFusszeile(html) {
-  const treffer = html.match(/<div class="cal-fuss">([\s\S]*?)<\/div>/);
-  return treffer ? treffer[1] : "";
+/**
+ * Die Werte der Fusszeile EINZELN, nicht als ein Text.
+ *
+ * Der Kasten ist ein Flexkasten mit `justify-content: space-between`; getrennt
+ * werden die Werte durch den Raum zwischen den Spans, nicht durch ein Zeichen.
+ * `textContent` sieht diesen Raum nicht und liefert „6 Tage25,7 h1 ganztägig"
+ * am Stueck. Wer daraufhin ein Trennzeichen einbaut, aendert die DARSTELLUNG,
+ * damit die MESSUNG einfacher wird — genau der falsche Weg herum, einmal
+ * gegangen und wieder zurueckgenommen. Deshalb liest diese Pruefung die Spans.
+ */
+function calFussTeile(html) {
+  const kasten = html.match(/<div class="cal-fuss">([\s\S]*?)<\/div>/);
+  if (!kasten) return [];
+  return [...kasten[1].matchAll(/<span>([\s\S]*?)<\/span>/g)].map((t) => t[1]);
 }
 
-test("die Fusszeile trennt ihre Teile sichtbar", async () => {
+test("die Fusszeile stellt jeden Wert in eine eigene Spalte", async () => {
   const karte = calBauKarte(async () => [calTerminImMonat()], ["calendar.a"], {
     show_total: true,
   });
   await calRuhe();
-  const fuss = calFusszeile(karte._koerper.innerHTML);
-  assert.ok(fuss, "bei show_total muss es eine Fusszeile geben");
-  assert.match(fuss, /·/, "ohne Trenner steht dort „1 Tage1,0 h\" in einem Wort");
+  const teile = calFussTeile(karte._koerper.innerHTML);
+  assert.strictEqual(teile.length, 2, "ein Span je Wert — hier Tage und Stunden");
+  assert.match(teile[0], /^\d+ Tage$/, "die Tage stehen fuer sich");
+  assert.match(teile[1], /^[\d,]+ h$/, "die Stunden auch");
+  for (const teil of teile) {
+    assert.doesNotMatch(teil, /·/, "der Raum trennt, kein Zeichen im Text");
+  }
+});
+
+test("ein ganztaegiger Termin bekommt die dritte Spalte", async () => {
+  const jetzt = new Date();
+  const tag = (t) =>
+    `${jetzt.getFullYear()}-${String(jetzt.getMonth() + 1).padStart(2, "0")}-${String(t).padStart(2, "0")}`;
+  const karte = calBauKarte(
+    async () => [calTerminImMonat(), { uid: "g", summary: "Urlaub", start: { date: tag(10) }, end: { date: tag(13) } }],
+    ["calendar.a"],
+    { show_total: true }
+  );
+  await calRuhe();
+  const teile = calFussTeile(karte._koerper.innerHTML);
+  assert.strictEqual(teile.length, 3, "Tage, Stunden, ganztaegig");
+  assert.match(teile[2], /^1 ganztägig$/);
 });
 
 test("die Fusszeile der Karte schneidet auf den gezeigten Monat", async () => {
@@ -416,7 +446,10 @@ test("die Fusszeile der Karte schneidet auf den gezeigten Monat", async () => {
     { show_total: true }
   );
   await calRuhe();
-  const fuss = calFusszeile(karte._koerper.innerHTML);
-  assert.match(fuss, /112,0 h/, "vom Monatsersten bis zum 5. um 16 Uhr");
-  assert.match(fuss, /5 Tage/, "und fuenf Tage, nicht zwoelf");
+  const teile = calFussTeile(karte._koerper.innerHTML);
+  assert.deepStrictEqual(
+    teile,
+    ["5 Tage", "112,0 h"],
+    "vom Monatsersten bis zum 5. um 16 Uhr — fuenf Tage, nicht zwoelf"
+  );
 });
