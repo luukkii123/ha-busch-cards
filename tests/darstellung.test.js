@@ -43,16 +43,35 @@ const URLAUB = {
   uid: "c",
 };
 
+/**
+ * Die Summe zaehlt seit v0.6.1 nur, was im GEZEIGTEN Monat liegt. Alle
+ * Aufrufe geben deshalb die Monatsgrenzen mit — hier August 2026.
+ */
+const AUGUST = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+
 test("die Summe zaehlt Stunden und ganztaegige getrennt", () => {
-  const s = calSummeStunden([ACHT_STUNDEN, HALBE_STUNDE, URLAUB]);
+  const s = calSummeStunden([ACHT_STUNDEN, HALBE_STUNDE, URLAUB], AUGUST.start, AUGUST.ende);
   assert.strictEqual(s.stunden, 8.5);
   assert.strictEqual(s.ganztags, 1, "der Urlaub zaehlt als ein Termin, nicht als drei Tage");
   assert.strictEqual(s.tageMitTermin, 5, "3. + 4. + drei Urlaubstage");
 });
 
-test("dieselbe uid wird nur einmal gezaehlt", () => {
-  const s = calSummeStunden([ACHT_STUNDEN, ACHT_STUNDEN]);
-  assert.strictEqual(s.stunden, 8);
+/**
+ * Befund 1, Gegenstueck zur alten Pruefung „dieselbe uid wird nur einmal
+ * gezaehlt". Home Assistant gibt JEDER Instanz einer Serie dieselbe `uid` —
+ * ein woechentlicher Fruehdienst kommt fuenfmal mit derselben Kennung. Wer
+ * danach entdoppelt, wirft vier Dienste weg, und die Fusszeile widerspricht
+ * der Liste darueber.
+ */
+test("gleiche uid an verschiedenen Tagen sind zwei Termine, keiner", () => {
+  const zweiter = {
+    ...ACHT_STUNDEN,
+    start: { dateTime: "2026-08-10T08:00:00+02:00" },
+    end: { dateTime: "2026-08-10T16:00:00+02:00" },
+  };
+  const s = calSummeStunden([ACHT_STUNDEN, zweiter], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.stunden, 16, "beide Instanzen der Serie zaehlen");
+  assert.strictEqual(s.tageMitTermin, 2, "und beide Tage");
 });
 
 test("Stunden werden mit Komma und einer Nachkommastelle gezeigt", () => {
@@ -144,7 +163,7 @@ test("ein Termin mit unlesbarem Start zerstoert die Summe nicht", () => {
     summary: "Unlesbar",
     uid: "k",
   };
-  const s = calSummeStunden([ACHT_STUNDEN, kaputt]);
+  const s = calSummeStunden([ACHT_STUNDEN, kaputt], AUGUST.start, AUGUST.ende);
   assert.ok(!Number.isNaN(s.stunden), "eine NaN-Summe sieht falsch aus, nicht unvollstaendig");
   assert.strictEqual(s.stunden, 8, "die Stunden des gesunden Termins bleiben stehen");
 });
@@ -205,8 +224,8 @@ test("kaputtes Ende bleibt sichtbar, kaputter Start verschwindet ganz", () => {
   };
   const mitEnde = calListeHtml(calGruppiereNachTag([kaputtesEnde], start, ende), optionen);
   assert.ok(mitEnde.includes("Kaputtes Ende"), "behaelt seinen Tag und bleibt sichtbar");
-  assert.strictEqual(calSummeStunden([kaputtesEnde]).stunden, 0, "Dauer null, nicht NaN");
-  assert.strictEqual(calSummeStunden([kaputtesEnde]).tageMitTermin, 1);
+  assert.strictEqual(calSummeStunden([kaputtesEnde], AUGUST.start, AUGUST.ende).stunden, 0, "Dauer null, nicht NaN");
+  assert.strictEqual(calSummeStunden([kaputtesEnde], AUGUST.start, AUGUST.ende).tageMitTermin, 1);
 
   const kaputterStart = {
     start: { dateTime: "morgen frueh" },
@@ -216,5 +235,111 @@ test("kaputtes Ende bleibt sichtbar, kaputter Start verschwindet ganz", () => {
   };
   const mitStart = calListeHtml(calGruppiereNachTag([kaputterStart], start, ende), optionen);
   assert.strictEqual(mitStart, "", "ohne lesbaren Start gibt es keinen Tag — kein Eintrag");
-  assert.strictEqual(calSummeStunden([kaputterStart]).tageMitTermin, 0, "auch nicht in der Summe");
+  assert.strictEqual(calSummeStunden([kaputterStart], AUGUST.start, AUGUST.ende).tageMitTermin, 0, "auch nicht in der Summe");
+});
+
+/* --------------------------------------------------------------------------
+ * Nachbesserung v0.6.1 — Befunde 2, 3 und 4
+ *
+ * Alle drei erzeugen Zahlen, die dem widersprechen, was ueber ihnen in der
+ * Liste steht. Deshalb pruefen sie jeweils BEIDES: die Summe und das, was in
+ * der Liste sichtbar ist.
+ * ------------------------------------------------------------------------ */
+
+/** ISO-Zeichenkette aus lokaler Zeit — sonst haengt die Pruefung an der Zone. */
+function calIsoZeit(jahr, monatNull, tag, stunde, minute) {
+  return new Date(jahr, monatNull, tag, stunde, minute || 0, 0, 0).toISOString();
+}
+
+const LISTEN_OPTIONEN = {
+  zeigeLeereTage: false, locale: "de-DE", farben: {}, mehrereKalender: false,
+};
+
+test("ein Termin ueber den Monatswechsel zaehlt nur den gezeigten Monat", () => {
+  // 25.07. 00:00 bis 05.08. 16:00. Im August sichtbar sind der 1. bis 5.,
+  // also 4 volle Tage + 16 Stunden = 112 h an 5 Tagen. Ungeschnitten waeren
+  // es 272 h an 12 Tagen — die Zahl, die vor der Nachbesserung dastand.
+  const urlaub = {
+    uid: "u",
+    summary: "Urlaub",
+    start: { dateTime: calIsoZeit(2026, 6, 25, 0, 0) },
+    end: { dateTime: calIsoZeit(2026, 7, 5, 16, 0) },
+  };
+  const s = calSummeStunden([urlaub], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.stunden, 112, "nur der August-Anteil");
+  assert.strictEqual(s.tageMitTermin, 5, "1. bis 5. August");
+});
+
+test("ein voller Monat ergibt glatte Stunden, nicht eine Millisekunde weniger", () => {
+  const dauerlaeufer = {
+    uid: "d",
+    summary: "Dauerlaeufer",
+    start: { dateTime: calIsoZeit(2026, 6, 20, 0, 0) },
+    end: { dateTime: calIsoZeit(2026, 8, 10, 0, 0) },
+  };
+  const s = calSummeStunden([dauerlaeufer], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.stunden, 31 * 24, "der ganze August, keine Sekunde mehr oder weniger");
+  assert.strictEqual(s.tageMitTermin, 31);
+});
+
+test("ein ganztaegiger Termin mit gleichem Start- und Enddatum bleibt sichtbar", () => {
+  // `end.date` ist ausschliessend; ist es GLEICH `start.date`, landete die
+  // Rueckrechnung einen Tag VOR dem Start. Der Termin fiel aus der Liste,
+  // stand aber als „1 ganztaegig" in der Fusszeile.
+  const eintaegig = {
+    uid: "g",
+    summary: "Betriebsausflug",
+    start: { date: "2026-08-04" },
+    end: { date: "2026-08-04" },
+  };
+  const html = calListeHtml(
+    calGruppiereNachTag([eintaegig], AUGUST.start, AUGUST.ende),
+    LISTEN_OPTIONEN
+  );
+  assert.match(html, /Betriebsausflug/, "der Termin muss in der Liste stehen");
+  const s = calSummeStunden([eintaegig], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.ganztags, 1);
+  assert.strictEqual(s.tageMitTermin, 1, "genau der 4. August");
+});
+
+test("ein Rueckwaertstermin am selben Tag verkleinert die Summe nicht", () => {
+  const rueckwaerts = {
+    uid: "r1",
+    summary: "Verdreht",
+    start: { dateTime: calIsoZeit(2026, 7, 6, 12, 0) },
+    end: { dateTime: calIsoZeit(2026, 7, 6, 8, 0) },
+  };
+  const s = calSummeStunden([ACHT_STUNDEN, rueckwaerts], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.stunden, 8, "acht Stunden bleiben acht, nicht vier");
+  assert.strictEqual(s.tageMitTermin, 2, "der 3. und der 6.");
+});
+
+test("ein Rueckwaertstermin ueber mehrere Tage bleibt sichtbar und zaehlt null", () => {
+  const rueckwaerts = {
+    uid: "r2",
+    summary: "Weit verdreht",
+    start: { dateTime: calIsoZeit(2026, 7, 12, 10, 0) },
+    end: { dateTime: calIsoZeit(2026, 7, 10, 6, 0) },
+  };
+  const html = calListeHtml(
+    calGruppiereNachTag([rueckwaerts], AUGUST.start, AUGUST.ende),
+    LISTEN_OPTIONEN
+  );
+  assert.match(html, /Weit verdreht/, "er darf nicht aus der Liste fallen");
+  const s = calSummeStunden([rueckwaerts], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.stunden, 0, "keine minus 52 Stunden");
+  assert.strictEqual(s.tageMitTermin, 1, "nur sein Starttag");
+});
+
+test("ein Termin ganz ausserhalb des gezeigten Monats zaehlt gar nicht", () => {
+  const juli = {
+    uid: "j",
+    summary: "Juli",
+    start: { dateTime: calIsoZeit(2026, 6, 10, 8, 0) },
+    end: { dateTime: calIsoZeit(2026, 6, 10, 16, 0) },
+  };
+  const s = calSummeStunden([juli], AUGUST.start, AUGUST.ende);
+  assert.strictEqual(s.stunden, 0);
+  assert.strictEqual(s.tageMitTermin, 0);
+  assert.strictEqual(s.ganztags, 0);
 });

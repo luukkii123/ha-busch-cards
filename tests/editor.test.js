@@ -118,11 +118,11 @@ test("eine gesetzte Farbe ueberlebt eine Aenderung der Auswahl", () => {
   assert.deepStrictEqual(neu, [{ entity: "calendar.a", color: "#ff0000" }, "calendar.c"]);
 });
 
-test("auch eine gesetzte Beschriftung ueberlebt", () => {
-  const editor = editorMit([{ entity: "calendar.a", label: "Dienst" }]);
-  const neu = editor._verschmelzeEntities(["calendar.a"]);
-  assert.deepStrictEqual(neu, [{ entity: "calendar.a", label: "Dienst" }]);
-});
+// ENTFALLEN mit v0.7.1: „auch eine gesetzte Beschriftung ueberlebt".
+// Die Option `label` gab es nur in der Normalisierung, gezeichnet wurde sie
+// nie — kein Ort dafuer, die Karte hat keine Legende. Statt sie nachzubauen,
+// ist sie aus Code, Spec und README entfernt. Die Pruefung darueber deckt das,
+// worauf es beim Verschmelzen wirklich ankommt: eine gesetzte Farbe.
 
 test("ein entfernter Kalender verschwindet wirklich", () => {
   const editor = editorMit([{ entity: "calendar.a", color: "#ff0000" }]);

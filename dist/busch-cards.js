@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.7.0";
+const CARD_VERSION = "0.7.1";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1258,9 +1258,29 @@ function calEndDatum(termin) {
   // ein fehlendes: `new Date(...)` liefert dann ein Invalid Date, und jeder
   // Vergleich damit ist false — der Termin faellt still aus der Tagesschleife.
   const roh = calIstGanztags(termin) ? calDatumAusText(roher) : new Date(roher);
-  if (Number.isNaN(roh.getTime())) return calStartDatum(termin);
-  if (!calIstGanztags(termin)) return roh;
-  return new Date(roh.getFullYear(), roh.getMonth(), roh.getDate() - 1, 23, 59, 59, 999);
+  const von = calStartDatum(termin);
+  if (Number.isNaN(roh.getTime())) return von;
+  const bis = calIstGanztags(termin)
+    ? new Date(roh.getFullYear(), roh.getMonth(), roh.getDate() - 1, 23, 59, 59, 999)
+    : roh;
+  // Ein Ende VOR dem Start ist so unbrauchbar wie ein fehlendes und bekommt
+  // deshalb dieselbe Rueckfallregel. Zwei gemessene Faelle laufen hier
+  // zusammen:
+  //
+  //   Ein ganztaegiger Termin mit `end.date` GLEICH `start.date` — die
+  //   Rueckrechnung des ausschliessenden Endes landet einen Tag VOR dem
+  //   Start. Der Termin fiel aus der Liste, stand aber als „1 ganztaegig"
+  //   in der Fusszeile: eine Summe fuer etwas, das auf dem Schirm fehlt.
+  //
+  //   Ein rueckwaerts laufender Termin — die negative Dauer VERKLEINERTE die
+  //   Monatssumme (gemessen: minus vier Stunden am selben Tag, minus
+  //   zweiundfuenfzig ueber mehrere Tage), und ueber mehrere Tage verschwand
+  //   er zusaetzlich aus der Liste.
+  //
+  // Mit dem Rueckfall bleibt er sichtbar und hat die Dauer null. Sichtbar und
+  // erkennbar falsch ist besser als unsichtbar und heimlich verrechnet.
+  if (bis < von) return von;
+  return bis;
 }
 
 function calTagesSchluessel(datum) {
@@ -1328,54 +1348,71 @@ function calGruppiereNachTag(termine, start, ende) {
 const calPalette = ["#3f8fd4", "#e08a3c", "#5aa469", "#b5559b", "#c95c5c", "#7d7fd4"];
 
 /**
- * Summe ueber die ORIGINALLISTE, nicht ueber die gruppierten Tage: ein
- * dreitaegiger Urlaub steht dort dreimal und wuerde dreifach zaehlen.
+ * Summe ueber die ORIGINALLISTE aus dem Abruf, nicht ueber die gruppierten
+ * Tage: dort steht ein dreitaegiger Urlaub an drei Tagen und wuerde dreifach
+ * zaehlen. In der flachen Liste steht er genau einmal.
+ *
+ * KEINE Entdopplung ueber `uid`. Home Assistant gibt JEDER Instanz einer
+ * wiederkehrenden Serie DIESELBE uid — ein woechentlicher Fruehdienst kommt
+ * fuenfmal mit derselben Kennung. Wer sie entdoppelt, wirft vier Dienste weg:
+ * fuenf Zeilen in der Liste und „8 h / 1 Tag" darunter, ein Widerspruch auf
+ * demselben Bildschirm. Noetig war die Entdopplung ohnehin nie — das
+ * Mehrfachvorkommen, gegen das sie gedacht war, entsteht erst in
+ * `calGruppiereNachTag` und kann in dieser flachen Liste gar nicht auftreten.
+ *
+ * `start` und `ende` sind die Grenzen des GEZEIGTEN Monats. Gezaehlt wird nur,
+ * was dazwischen liegt — sonst schlaegt ein Urlaub vom 25.07. bis 05.08. im
+ * August-Fuss mit 272 Stunden und zwoelf Tagen zu Buche statt mit rund 112
+ * und fuenf. Ohne Grenzen wird nicht geschnitten; die Karte gibt sie immer mit.
  */
-function calSummeStunden(termine) {
-  const gesehen = new Set();
+function calSummeStunden(termine, start, ende) {
+  const grenzeVon = start ? start.getTime() : -Infinity;
+  // Der Monat wird als halboffenes Fenster gerechnet: `ende` ist
+  // 23:59:59.999 — der letzte DARSTELLBARE Moment, nicht das Ende des Tages.
+  // Fuer die Dauer liegt die obere Grenze deshalb eine Millisekunde spaeter,
+  // sonst fehlte einem durchlaufenden Termin genau diese Millisekunde und ein
+  // voller Monat ergaebe 743,9 statt 744 Stunden.
+  const grenzeBis = ende ? ende.getTime() + 1 : Infinity;
   const tage = new Set();
   let ms = 0;
   let ganztags = 0;
   for (const termin of termine || []) {
     if (!termin || !termin.start) continue;
-    const kennung = termin.uid || JSON.stringify(termin.start) + (termin.summary || "");
-    if (gesehen.has(kennung)) continue;
-    gesehen.add(kennung);
 
     const von = calStartDatum(termin);
     // Ohne lesbaren Start ist `bis - von` NaN, und ein einziger kaputter
     // Termin macht die Summe des ganzen Monats zu NaN. Eine unbrauchbare
     // Summe sieht falsch aus statt unvollstaendig — deshalb hier dasselbe
-    // Ueberspringen wie in `calGruppiereNachTag`.
-    //
-    // ACHTUNG, zwei verschiedene Faelle — wer nur diese Funktion liest, zieht
-    // sonst den falschen Schluss:
-    //
-    //   Kaputtes ENDE: die Rueckfallregel in `calEndDatum` greift, der Termin
-    //   behaelt seinen Tag, bekommt Dauer null und bleibt in der Liste
-    //   sichtbar. Er zaehlt hier mit — nur eben mit null Stunden.
-    //
-    //   Kaputter START: die Rueckfallregel greift nicht, weil es keinen Tag
-    //   gibt, an dem der Eintrag stehen koennte. `calGruppiereNachTag`
-    //   ueberspringt ihn bereits, diese Zeile tut dasselbe. Er erscheint also
-    //   WEDER in der Liste NOCH in der Summe. Ein Ersatztag waere ein
-    //   erfundenes Datum, und das ist in einer Kalenderkarte schlechter als
-    //   ein fehlender Eintrag. Sichtbar gemacht wird der Verlust an anderer
-    //   Stelle: die Kartenklasse nennt die Zahl der uebersprungenen Termine
-    //   in ihrer Hinweiszeile.
+    // Ueberspringen wie in `calGruppiereNachTag`. Es ist der einzige Fall, in
+    // dem ein Termin ganz herausfaellt: es gibt keinen Tag, an dem er stehen
+    // koennte, und ein Ersatzdatum waere erfunden. Sichtbar gemacht wird der
+    // Verlust in der Hinweiszeile, deren Zahl `calZaehleNichtGezeigt` an der
+    // Tagesschleife abliest. Ein kaputtes oder rueckwaerts laufendes ENDE
+    // faellt dagegen in `calEndDatum` auf den Start zurueck, bleibt sichtbar
+    // und zaehlt mit Dauer null.
     if (Number.isNaN(von.getTime())) continue;
     const bis = calEndDatum(termin);
-    let lauf = new Date(von.getFullYear(), von.getMonth(), von.getDate());
-    const letzter = new Date(bis.getFullYear(), bis.getMonth(), bis.getDate());
+
+    const vonMs = Math.max(von.getTime(), grenzeVon);
+    const bisMs = Math.min(bis.getTime(), grenzeBis);
+    // Kein Anteil im gezeigten Monat — der Termin gehoert in einen anderen Fuss.
+    if (bisMs < vonMs) continue;
+
+    // Fuer die TAGE zaehlt der letzte darstellbare Moment: Mitternacht gehoert
+    // schon zum Folgemonat und darf dort keinen Tag mehr aufmachen.
+    const letzter = new Date(Math.min(bis.getTime(), grenzeBis - 1));
+    const letzterTag = new Date(letzter.getFullYear(), letzter.getMonth(), letzter.getDate());
+    const erster = new Date(vonMs);
+    let lauf = new Date(erster.getFullYear(), erster.getMonth(), erster.getDate());
     let sicherung = 0;
-    while (lauf <= letzter && sicherung < 400) {
+    while (lauf <= letzterTag && sicherung < 400) {
       tage.add(calTagesSchluessel(lauf));
       lauf = new Date(lauf.getFullYear(), lauf.getMonth(), lauf.getDate() + 1);
       sicherung += 1;
     }
 
     if (calIstGanztags(termin)) ganztags += 1;
-    else ms += bis - von;
+    else ms += bisMs - vonMs;
   }
   return { stunden: ms / 3600000, ganztags, tageMitTermin: tage.size };
 }
@@ -1471,32 +1508,42 @@ function calNormalisiereKonfig(config) {
   const roh = Array.isArray(config && config.entities) ? config.entities : [];
   const entities = roh.map((eintrag, i) => {
     const objekt = typeof eintrag === "string" ? { entity: eintrag } : { ...eintrag };
+    // KEIN `label`: Bis v0.7.0 wurde es normalisiert und nirgends gezeichnet.
+    // Es gab keinen Ort dafuer — eine Legende hat die Karte nicht, und bei
+    // einem einzigen Kalender wird nicht einmal der Farbpunkt gezeichnet.
+    // Eine Option, die nur normalisiert wird, verspricht eine Wirkung, die
+    // es nicht gibt. Deshalb entfernt statt nachgebaut.
     return {
       entity: objekt.entity,
       color: objekt.color || calPalette[i % calPalette.length],
-      label: objekt.label || "",
     };
   }).filter((e) => Boolean(e.entity));
   return { ...CAL_STANDARD, ...config, entities };
 }
 
 /**
- * Zaehlt die Termine, die `calGruppiereNachTag` fallen laesst: ohne lesbaren
- * Start gibt es keinen Tag, an dem sie stehen koennten (Begruendung dort und
- * in `calSummeStunden`). Das Auslassen bleibt richtig — still bleiben darf es
- * nicht. Die Bedingungen hier sind woertlich dieselben wie dort, damit die
- * Zahl nicht neben der Wirklichkeit steht.
+ * Wie viele der gelieferten Termine NICHT in der Liste stehen: geliefert minus
+ * tatsaechlich platziert, abgelesen an der Tagesschleife selbst.
+ *
+ * Vorher bildete diese Funktion die Auslassbedingung von
+ * `calGruppiereNachTag` ein ZWEITES Mal nach und zaehlte nur den unlesbaren
+ * Start. Alles, was die Tagesschleife aus einem anderen Grund fallen laesst —
+ * ein Termin ganz ausserhalb des gezeigten Monats etwa —, erschien in keiner
+ * Hinweiszeile. Zwei Nachbildungen derselben Bedingung laufen frueher oder
+ * spaeter auseinander; eine Differenz kann das nicht.
+ *
+ * `tage` ist das Ergebnis von `calGruppiereNachTag`. Ein mehrtaegiger Termin
+ * liegt dort als DASSELBE Objekt in mehreren Tageslisten — das Set zaehlt ihn
+ * deshalb einmal. Das setzt voraus, dass die gelieferte Liste keine zwei
+ * Verweise auf dasselbe Objekt enthaelt; `_lade()` legt fuer jeden Termin eine
+ * eigene flache Kopie an.
  */
-function calZaehleOhneDatum(termine) {
-  let zahl = 0;
-  for (const termin of termine || []) {
-    if (!termin || !termin.start) {
-      zahl += 1;
-      continue;
-    }
-    if (Number.isNaN(calStartDatum(termin).getTime())) zahl += 1;
+function calZaehleNichtGezeigt(termine, tage) {
+  const platziert = new Set();
+  for (const tag of tage || []) {
+    for (const termin of tag.termine) platziert.add(termin);
   }
-  return zahl;
+  return Math.max(0, (termine || []).length - platziert.size);
 }
 
 /**
@@ -1506,14 +1553,17 @@ function calZaehleOhneDatum(termine) {
  * Ohne Fehler und ohne uebersprungene Termine ist das Ergebnis leer; die
  * Zeile entfaellt dann ganz.
  */
-function calHinweisText(fehler, ohneDatum) {
+function calHinweisText(fehler, nichtGezeigt) {
   const teile = [];
   if (fehler && fehler.length) teile.push(`Nicht erreichbar: ${fehler.join(", ")}`);
-  if (ohneDatum > 0) {
+  if (nichtGezeigt > 0) {
+    // Der Wortlaut nennt den GEMEINSAMEN Grund, nicht mehr nur einen von
+    // mehreren: die Zahl kommt aus der Differenz und deckt jeden Termin ab,
+    // fuer den die Tagesschleife keinen Platz im gezeigten Monat hatte.
     teile.push(
-      ohneDatum === 1
-        ? "1 Termin ohne lesbares Datum, nicht angezeigt."
-        : `${ohneDatum} Termine ohne lesbares Datum, nicht angezeigt.`
+      nichtGezeigt === 1
+        ? "1 Termin ohne Tag im gezeigten Monat, nicht angezeigt."
+        : `${nichtGezeigt} Termine ohne Tag im gezeigten Monat, nicht angezeigt.`
     );
   }
   return teile.join(" · ");
@@ -1577,7 +1627,7 @@ class BuschCalendarCard extends HTMLElement {
     this._versatzLaufend = this._config.month_offset;
     this._tage = null;
     this._fehler = [];
-    this._ohneDatum = 0;
+    this._nichtGezeigt = 0;
     this._render();
     // Schuetzt gegen die dauerhaft haengende Ladeanzeige: Ein zweiter Aufruf
     // aus dem Editor (Ueberschrift, Monatsversatz, Schalter) setzt `_tage`
@@ -1631,7 +1681,7 @@ class BuschCalendarCard extends HTMLElement {
       this._tage = [];
       this._alleTermine = [];
       this._fehler = [];
-      this._ohneDatum = 0;
+      this._nichtGezeigt = 0;
       this._render();
       return;
     }
@@ -1666,7 +1716,7 @@ class BuschCalendarCard extends HTMLElement {
     this._alleTermine = alle;
     this._tage = calGruppiereNachTag(alle, start, ende);
     this._fehler = fehler;
-    this._ohneDatum = calZaehleOhneDatum(alle);
+    this._nichtGezeigt = calZaehleNichtGezeigt(alle, this._tage);
     this._render();
   }
 
@@ -1700,7 +1750,7 @@ class BuschCalendarCard extends HTMLElement {
   _render() {
     if (!this._config) return;
     const locale = (this._hass && this._hass.locale && this._hass.locale.language) || "de-DE";
-    const { start } = calMonatsGrenzen(new Date(), this._versatzLaufend);
+    const { start, ende } = calMonatsGrenzen(new Date(), this._versatzLaufend);
 
     if (!this._karte) {
       this._karte = document.createElement("ha-card");
@@ -1760,13 +1810,19 @@ class BuschCalendarCard extends HTMLElement {
 
     let fuss = "";
     if (this._config.show_total && this._tage) {
-      const s = calSummeStunden(this._alleTermine || []);
+      // MIT den Monatsgrenzen: eine Summe, die schneiden kann, aber
+      // ungeschnitten aufgerufen wird, ist so falsch wie eine, die es nicht kann.
+      const s = calSummeStunden(this._alleTermine || [], start, ende);
       const teile = [`${s.tageMitTermin} Tage`, `${calFormatStunden(s.stunden, locale)} h`];
       if (s.ganztags) teile.push(`${s.ganztags} ganztägig`);
-      fuss = `<div class="cal-fuss">${teile.map((t) => `<span>${calEscape(t)}</span>`).join("")}</div>`;
+      // Mit Mittelpunkt verbunden, wie in Spec und README versprochen. Ohne
+      // Trenner stand dort „6 Tage25,7 h1 ganztägig" in einem Wort: die
+      // Elemente sind Nachbarn im Flexkasten, und Nachbarn haben keinen Raum
+      // zwischen sich, den ein Vorleser oder ein Textauszug sehen wuerde.
+      fuss = `<div class="cal-fuss"><span>${calEscape(teile.join(" · "))}</span></div>`;
     }
 
-    const hinweisText = calHinweisText(this._fehler || [], this._ohneDatum || 0);
+    const hinweisText = calHinweisText(this._fehler || [], this._nichtGezeigt || 0);
     const hinweis = hinweisText
       ? `<div class="cal-hinweis">${calEscape(hinweisText)}</div>`
       : "";
@@ -1905,7 +1961,6 @@ class BuschCalendarCardEditor extends HTMLElement {
         const liste = calNormalisiereKonfig(this._config).entities.map((e) => ({
           entity: e.entity,
           color: e.entity === id ? ereignis.target.value : e.color,
-          ...(e.label ? { label: e.label } : {}),
         }));
         this._config = { ...this._config, entities: liste };
         this.dispatchEvent(

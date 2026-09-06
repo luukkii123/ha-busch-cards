@@ -289,7 +289,7 @@ nur in YAML.
 
 | Option | Typ | Standard | Wirkung |
 | --- | --- | --- | --- |
-| `entities` | Liste | leer | Kalender-Entitäten. Ein Eintrag ist entweder `calendar.x` oder `{entity, color, label}` |
+| `entities` | Liste | leer | Kalender-Entitäten. Ein Eintrag ist entweder `calendar.x` oder `{entity, color}` |
 | `month_offset` | Ganzzahl | `0` | Startmonat. `-1` ist der Vormonat, `1` der Folgemonat |
 | `navigation` | ja/nein | `true` | Pfeile zum Blättern anzeigen |
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
@@ -316,14 +316,22 @@ ein Punkt, der immer dieselbe Farbe hat, trägt keine Information.
 getrennt gezählt („20 Tage · 168,5 h · 1 ganztägig"). Sie mit 24 Stunden zu
 verrechnen würde die Summe verfälschen.
 
+Die Summe zählt **nur den gezeigten Monat**: Ein Urlaub vom 25.07. bis 05.08.
+steht im August mit seinen fünf August-Tagen im Fuß, nicht mit zwölf. Und ein
+wiederkehrender Termin zählt so oft, wie er in der Liste steht — Home Assistant
+gibt allen Instanzen einer Serie dieselbe Kennung, entdoppelt wird deshalb
+nicht. Fuß und Liste sollen dasselbe sagen.
+
 ### Grenzen
 
 - **Nur lesen.** Termine anlegen oder ändern kann die Karte nicht; ein Klick
   öffnet den Dialog von Home Assistant.
 - **Ein Kalender, der nicht antwortet, hält die anderen nicht auf.** Unter der
   Liste steht, welcher fehlt.
-- **Termine ohne lesbares Startdatum werden nicht angezeigt**, aber gezählt und
-  in derselben Hinweiszeile genannt — stillschweigend verschwinden sie nicht.
+- **Termine ohne Tag im gezeigten Monat werden nicht angezeigt**, aber gezählt
+  und in derselben Hinweiszeile genannt — stillschweigend verschwinden sie
+  nicht. Die Zahl ist die Differenz aus geliefert und tatsächlich platziert,
+  gilt also für jeden Grund, nicht nur für ein unlesbares Datum.
 
 ## Die Timeline-Karte ist umgezogen
 

@@ -93,9 +93,25 @@ Also `calFormatUhrzeit`, `calMonatsGrenzen`, `calPalette`, `CAL_CARD_SCHEMA`,
 `CAL_LABELS`. `CARD_VERSION` wird geteilt und nur hochgezählt, nicht neu
 deklariert.
 
-**Nachweis, dass die Regel eingehalten ist:** nach der Änderung listet ein
-Durchlauf alle Top-Level-Deklarationen der Datei; kein Name darf doppelt
-vorkommen.
+**Nachweis, dass die Regel eingehalten ist:** nach der Änderung prüft ein
+Durchlauf die Datei mit dem **Parser von Node selbst**, und zwar als
+**ES-Modul** — so lädt Home Assistant sie auch. In Modul-Semantik ist eine
+doppelte Deklaration auf oberster Ebene ein `SyntaxError`, Funktionen
+eingeschlossen; in Skript-Semantik wäre sie erlaubt und die zweite gewönne
+still.
+
+Das ersetzt das frühere Textmuster, das nur Deklarationen in **Spalte 0**
+gesehen hat. Gemessen: `  function clamp(a,b,c){return 999}` mit zwei
+führenden Leerzeichen ans Dateiende gehängt, danach liefert `clamp(5,0,1)` in
+der Sandbox `999` — das Muster blieb still, `node --check` auf die `.js`-Datei
+ebenfalls, die Modulprüfung meldet
+`SyntaxError: Identifier 'clamp' has already been declared`. Ein Parser liest
+Blöcke, keine Spalten; eingerückte Deklarationen **innerhalb** einer Funktion
+oder Klasse lösen deshalb keinen Fehlalarm aus. Die Namensliste am Zeilenanfang
+bleibt als grobes Netz für lesbare Fehlermeldungen erhalten.
+
+Rest-Lücke, bewusst offen: zwei gleichnamige `var` auf oberster Ebene sind auch
+im Modul erlaubt. Die Datei benutzt kein `var` auf oberster Ebene.
 
 ## 5. Optionen
 
@@ -104,7 +120,7 @@ existiert nur in YAML.
 
 | Option | Typ | Standard | Wirkung |
 | --- | --- | --- | --- |
-| `entities` | Liste | leer | Kalender-Entitäten. Eintrag ist entweder `calendar.x` oder `{entity, color, label}` |
+| `entities` | Liste | leer | Kalender-Entitäten. Eintrag ist entweder `calendar.x` oder `{entity, color}` |
 | `month_offset` | Ganzzahl | `0` | Startmonat. `-1` ist der Vormonat, `1` der Folgemonat |
 | `navigation` | ja/nein | `true` | Pfeile zum Blättern anzeigen |
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
@@ -129,6 +145,12 @@ Kalender gäbe es nicht: die Palette greift, solange nichts gesetzt ist.
 
 Bei **einem** Kalender wird der Farbpunkt nicht gezeichnet. Ein Punkt, der immer
 dieselbe Farbe hat, trägt keine Information.
+
+**Keine Beschriftung je Kalender.** Bis `v0.7.0` nahm die Konfiguration ein
+`label` entgegen, normalisierte es — und zeichnete es nirgends. Es gibt keinen
+Ort dafür: Die Karte hat keine Legende, und bei einem einzigen Kalender fehlt
+sogar der Farbpunkt, an dem eine Beschriftung hängen könnte. Die Option ist
+deshalb in `v0.7.1` entfernt und nicht nachgebaut worden.
 
 ## 6. Darstellung
 
@@ -160,9 +182,23 @@ Eine Zeile je Tag des Monats, chronologisch. Kein Wochenraster.
 ### Die Summe
 
 `show_total` summiert die Dauern aller zeitgebundenen Termine des Monats und
-zeigt sie in Stunden mit einer Nachkommastelle. **Ganztägige Termine gehen nicht
-in die Stundensumme ein**, sondern werden getrennt gezählt („20 Tage, 168,5 h,
-2 ganztägig"). Sie mit 24 Stunden zu verrechnen würde die Summe verfälschen.
+zeigt sie in Stunden mit einer Nachkommastelle. Die Teile sind durch einen
+**Mittelpunkt** getrennt („20 Tage · 168,5 h · 2 ganztägig"); ohne ihn steht
+dort „20 Tage168,5 h2 ganztägig" in einem Wort. **Ganztägige Termine gehen
+nicht in die Stundensumme ein**, sondern werden getrennt gezählt. Sie mit 24
+Stunden zu verrechnen würde die Summe verfälschen.
+
+Drei Regeln, die die Summe an das binden, was in der Liste darüber steht:
+
+- **Auf den Monat geschnitten.** Ein Termin vom 25.07. bis 05.08. zählt im
+  August-Fuß mit seinem August-Anteil (rund 112 h an 5 Tagen), nicht mit seiner
+  ganzen Länge (272 h an 12 Tagen).
+- **Keine Entdopplung über `uid`.** Home Assistant gibt jeder Instanz einer
+  wiederkehrenden Serie dieselbe `uid`. Wer entdoppelt, wirft alle Folgetermine
+  weg: fünf Zeilen in der Liste, „8 h / 1 Tag" darunter.
+- **Kein negativer Beitrag.** Endet ein Termin vor seinem Start, fällt das Ende
+  auf den Start zurück — dieselbe Regel wie bei einem fehlenden oder unlesbaren
+  Ende. Er bleibt mit Dauer null sichtbar, statt die Summe zu verkleinern.
 
 ## 7. Fehler
 
@@ -180,7 +216,8 @@ in die Stundensumme ein**, sondern werden getrennt gezählt („20 Tage, 168,5 h
 
 1. `node --check dist/busch-cards.js` — fängt Syntaxfehler ab, bevor irgendein
    Container startet.
-2. Top-Level-Namen auflisten, auf Dubletten prüfen (Abschnitt 4).
+2. Datei als ES-Modul durch den Parser von Node schicken; eine doppelte
+   Deklaration auf oberster Ebene ist dort ein Fehler (Abschnitt 4).
 3. Karte im Browser gegen die laufende Installation, Kalender
    `calendar.arbeitszeiten`, `month_offset: -1`. **Nachweis ist ein Bild, auf dem
    der vollständige Vormonat steht, erster bis letzter Tag.**

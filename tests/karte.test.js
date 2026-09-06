@@ -7,14 +7,14 @@ const { ladeKarte } = require("./laden.js");
 const {
   calNormalisiereKonfig,
   calPalette,
-  calZaehleOhneDatum,
+  calZaehleNichtGezeigt,
   calHinweisText,
   calMonatsGrenzen,
   calGruppiereNachTag,
 } = ladeKarte([
   "calNormalisiereKonfig",
   "calPalette",
-  "calZaehleOhneDatum",
+  "calZaehleNichtGezeigt",
   "calHinweisText",
   "calMonatsGrenzen",
   "calGruppiereNachTag",
@@ -78,13 +78,21 @@ test("eine fehlende entities-Angabe ergibt eine leere Liste, keinen Absturz", ()
 /* ------------------------------------------------------------------------
  * Uebersprungene Termine in der Hinweiszeile
  *
- * `calGruppiereNachTag` laesst Termine ohne lesbares Startdatum spurlos
- * fallen — richtig, weil es keinen Tag gaebe, an dem sie stehen koennten.
- * Damit dabei nichts stillschweigend verschwindet, nennt die Karte ihre
- * Zahl. Beide Bausteine dafuer stehen als eigene Funktionen ausserhalb der
- * Klasse, weil `_render()` ein Dokument braucht und unter Node nicht
- * pruefbar waere; so ist die Aussage selbst pruefbar.
+ * Die Zahl kommt seit v0.6.1 aus der TAGESSCHLEIFE selbst: geliefert minus
+ * tatsaechlich platziert. Vorher bildete eine zweite Funktion die
+ * Auslassbedingung von `calGruppiereNachTag` nach und zaehlte nur den
+ * unlesbaren Start — alles, was aus einem anderen Grund aus der Liste fiel,
+ * verschwand stillschweigend. Zwei Nachbildungen derselben Bedingung laufen
+ * frueher oder spaeter auseinander; eine Differenz kann das nicht.
  * ---------------------------------------------------------------------- */
+
+const SEPTEMBER = calMonatsGrenzen(new Date(2026, 8, 15), 0);
+
+/** Zaehlt so, wie die Karte es tut: erst gruppieren, dann die Differenz. */
+function nichtGezeigt(termine, grenzen) {
+  const g = grenzen || SEPTEMBER;
+  return calZaehleNichtGezeigt(termine, calGruppiereNachTag(termine, g.start, g.ende));
+}
 
 test("ein Termin ohne lesbares Startdatum wird gezaehlt", () => {
   const termine = [
@@ -94,7 +102,7 @@ test("ein Termin ohne lesbares Startdatum wird gezaehlt", () => {
     { end: { dateTime: "2026-09-04T11:00:00" } },
     null,
   ];
-  assert.strictEqual(calZaehleOhneDatum(termine), 4);
+  assert.strictEqual(nichtGezeigt(termine), 4);
 });
 
 test("gueltige Starts zaehlen nicht mit, ganztaegige eingeschlossen", () => {
@@ -102,25 +110,35 @@ test("gueltige Starts zaehlen nicht mit, ganztaegige eingeschlossen", () => {
     { start: { date: "2026-09-04" }, end: { date: "2026-09-05" } },
     { start: { dateTime: "2026-09-04T10:00:00" } },
   ];
-  assert.strictEqual(calZaehleOhneDatum(termine), 0);
-  assert.strictEqual(calZaehleOhneDatum([]), 0);
-  assert.strictEqual(calZaehleOhneDatum(undefined), 0);
+  assert.strictEqual(nichtGezeigt(termine), 0);
+  assert.strictEqual(nichtGezeigt([]), 0);
+  assert.strictEqual(calZaehleNichtGezeigt(undefined, []), 0);
+});
+
+test("auch was aus einem anderen Grund als dem Startdatum faellt, wird gezaehlt", () => {
+  // Ein Termin, der ganz im Vormonat liegt: lesbares Datum, aber kein Tag im
+  // gezeigten Monat. Die alte, nachgebildete Bedingung zaehlte ihn nicht —
+  // er verschwand ohne ein Wort.
+  const termine = [
+    { uid: "a", start: { dateTime: "2026-09-04T10:00:00" }, end: { dateTime: "2026-09-04T11:00:00" } },
+    { uid: "vormonat", start: { dateTime: "2026-08-04T10:00:00" }, end: { dateTime: "2026-08-04T11:00:00" } },
+  ];
+  assert.strictEqual(nichtGezeigt(termine), 1);
 });
 
 test("die Zahl deckt sich mit dem, was wirklich aus der Liste faellt", () => {
-  const { start, ende } = calMonatsGrenzen(new Date(2026, 8, 15), 0);
   const termine = [
     { uid: "a", start: { dateTime: "2026-09-04T10:00:00" }, end: { dateTime: "2026-09-04T11:00:00" } },
     { uid: "b", start: { date: "2026-09-06" }, end: { date: "2026-09-07" } },
     { uid: "c", start: { dateTime: "kaputt" }, end: { dateTime: "2026-09-08T11:00:00" } },
     { uid: "d", start: { date: "auch kaputt" } },
   ];
-  const tage = calGruppiereNachTag(termine, start, ende);
+  const tage = calGruppiereNachTag(termine, SEPTEMBER.start, SEPTEMBER.ende);
   const gezeigt = new Set();
   for (const tag of tage) for (const t of tag.termine) gezeigt.add(t.uid);
   assert.strictEqual(gezeigt.size, 2, "nur a und b stehen im Monat");
   assert.strictEqual(
-    gezeigt.size + calZaehleOhneDatum(termine),
+    gezeigt.size + calZaehleNichtGezeigt(termine, tage),
     termine.length,
     "gezaehlt wird genau das, was nicht dargestellt wird"
   );
@@ -135,7 +153,7 @@ test("die Hinweiszeile nennt die Zahl der uebersprungenen Termine", () => {
 
 test("bei genau einem uebersprungenen Termin steht die Einzahl", () => {
   const text = calHinweisText([], 1);
-  assert.match(text, /1 Termin ohne/);
+  assert.match(text, /1 Termin ohne Tag im gezeigten Monat/);
   assert.doesNotMatch(text, /1 Termine/);
 });
 
@@ -203,10 +221,10 @@ function calRuhe() {
   return new Promise((fertig) => setImmediate(fertig));
 }
 
-function calBauKarte(callApi, entities) {
+function calBauKarte(callApi, entities, zusatz) {
   const { BuschCalendarCard } = ladeKarte(["BuschCalendarCard"], calAttrappe());
   const karte = new BuschCalendarCard();
-  karte.setConfig({ entities: entities || ["calendar.a"] });
+  karte.setConfig({ entities: entities || ["calendar.a"], ...(zusatz || {}) });
   karte.hass = {
     locale: { language: "de-DE" },
     states: { "calendar.a": { last_changed: "1" }, "calendar.b": { last_changed: "1" } },
@@ -224,7 +242,7 @@ test("die Hinweiszeile der laufenden Karte nennt die uebersprungenen Termine", a
   await calRuhe();
   const html = karte._koerper.innerHTML;
   assert.match(html, /cal-hinweis/, "die Zeile muss ueberhaupt da sein");
-  assert.match(html, /2 Termine ohne lesbares Datum, nicht angezeigt/);
+  assert.match(html, /2 Termine ohne Tag im gezeigten Monat, nicht angezeigt/);
   assert.match(html, /Zahnarzt/, "der lesbare Termin steht weiterhin in der Liste");
 });
 
@@ -245,7 +263,7 @@ test("nicht erreichbarer Kalender und uebersprungene Termine in einer Zeile", as
   await calRuhe();
   const html = karte._koerper.innerHTML;
   assert.match(html, /Nicht erreichbar: calendar\.b/);
-  assert.match(html, /1 Termin ohne lesbares Datum/);
+  assert.match(html, /1 Termin ohne Tag im gezeigten Monat/);
   assert.match(html, /Zahnarzt/, "der erreichbare Kalender wird nicht mitgerissen");
 });
 
@@ -362,4 +380,43 @@ test("ein zweiter setConfig laedt nach, statt auf der Ladeanzeige zu haengen", a
   assert.match(karte._koerper.innerHTML, /Zahnarzt/, "die Liste steht wieder da");
   assert.match(karte._koerper.innerHTML, /Neue Ueberschrift/, "die neue Einstellung greift");
   assert.strictEqual(aufrufe, vorher + 1, "genau eine Nachladung, keine Schleife");
+});
+
+/* ------------------------------------------------------------------------
+ * Nachbesserung v0.6.1 — die Fusszeile der laufenden Karte
+ *
+ * Beides ist nur an der zusammengesetzten Karte pruefbar: dass die Teile
+ * ueberhaupt getrennt werden, und dass `_render()` der Summe die Grenzen des
+ * gezeigten Monats mitgibt. Eine Summenfunktion, die schneiden KANN, aber
+ * ungeschnitten aufgerufen wird, ist so falsch wie eine, die es nicht kann.
+ * ---------------------------------------------------------------------- */
+
+function calFusszeile(html) {
+  const treffer = html.match(/<div class="cal-fuss">([\s\S]*?)<\/div>/);
+  return treffer ? treffer[1] : "";
+}
+
+test("die Fusszeile trennt ihre Teile sichtbar", async () => {
+  const karte = calBauKarte(async () => [calTerminImMonat()], ["calendar.a"], {
+    show_total: true,
+  });
+  await calRuhe();
+  const fuss = calFusszeile(karte._koerper.innerHTML);
+  assert.ok(fuss, "bei show_total muss es eine Fusszeile geben");
+  assert.match(fuss, /·/, "ohne Trenner steht dort „1 Tage1,0 h\" in einem Wort");
+});
+
+test("die Fusszeile der Karte schneidet auf den gezeigten Monat", async () => {
+  const jetzt = new Date();
+  const von = new Date(jetzt.getFullYear(), jetzt.getMonth() - 1, 25, 0, 0, 0);
+  const bis = new Date(jetzt.getFullYear(), jetzt.getMonth(), 5, 16, 0, 0);
+  const karte = calBauKarte(
+    async () => [{ uid: "u", summary: "Urlaub", start: { dateTime: von.toISOString() }, end: { dateTime: bis.toISOString() } }],
+    ["calendar.a"],
+    { show_total: true }
+  );
+  await calRuhe();
+  const fuss = calFusszeile(karte._koerper.innerHTML);
+  assert.match(fuss, /112,0 h/, "vom Monatsersten bis zum 5. um 16 Uhr");
+  assert.match(fuss, /5 Tage/, "und fuenf Tage, nicht zwoelf");
 });
