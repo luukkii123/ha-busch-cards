@@ -1239,10 +1239,23 @@ function calStartDatum(termin) {
  * Bei ganztaegigen Terminen ist `end.date` AUSSCHLIESSEND: ein eintaegiger
  * Termin am 4. hat das Ende am 5. Hier wird auf den letzten betroffenen Tag
  * zurueckgerechnet.
+ *
+ * Fehlt `end` ganz oder traegt es weder `date` noch `dateTime`, faellt der
+ * Termin auf seinen eigenen Start zurueck und bekommt damit die Dauer null.
+ * Der Rueckfall ist bewusst so gewaehlt und nicht als Auslassen: einen still
+ * geschluckten Termin vermisst im Betrieb niemand, eine fehlende Zeitspanne
+ * sieht man dagegen sofort. Und ein einzelner kaputter Eintrag darf die
+ * uebrige Monatsliste nicht mitreissen — `termin.end.dateTime` warf hier
+ * vorher einen TypeError.
  */
 function calEndDatum(termin) {
-  if (!calIstGanztags(termin)) return new Date(termin.end.dateTime);
-  const roh = calDatumAusText(termin.end.date);
+  const ende = termin && termin.end;
+  const roher = calIstGanztags(termin)
+    ? ende && ende.date
+    : ende && ende.dateTime;
+  if (!roher) return calStartDatum(termin);
+  if (!calIstGanztags(termin)) return new Date(roher);
+  const roh = calDatumAusText(roher);
   return new Date(roh.getFullYear(), roh.getMonth(), roh.getDate() - 1, 23, 59, 59, 999);
 }
 

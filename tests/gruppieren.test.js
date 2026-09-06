@@ -121,3 +121,28 @@ test("Termine ausserhalb des Monats werden verworfen", () => {
   const summe = tage.reduce((n, t) => n + t.termine.length, 0);
   assert.strictEqual(summe, 0);
 });
+
+test("ein Termin ohne end stuerzt nicht ab und reisst die anderen nicht mit", () => {
+  const ohneEnde = { start: { dateTime: "2026-08-06T09:00:00+02:00" },
+                     summary: "Ende fehlt", uid: "ohne-ende" };
+  const { start, ende } = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const tage = calGruppiereNachTag([ohneEnde, ZEITTERMIN], start, ende);
+  assert.strictEqual(tage[5].termine.length, 1, "6. August, der kaputte Termin bleibt sichtbar");
+  assert.strictEqual(tage[5].termine[0].uid, "ohne-ende");
+  assert.strictEqual(tage[2].termine.length, 1, "der gesunde Termin am 3. ueberlebt");
+  assert.strictEqual(calEndDatum(ohneEnde).getTime(), calStartDatum(ohneEnde).getTime(),
+                     "Rueckfall auf den Start, Dauer null");
+});
+
+test("ein end ohne date und ohne dateTime faellt auf den Start zurueck", () => {
+  const leeresEnde = { start: { date: "2026-08-07" }, end: {},
+                       summary: "Ende leer", uid: "leeres-ende" };
+  const { start, ende } = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const tage = calGruppiereNachTag([leeresEnde], start, ende);
+  assert.strictEqual(tage[6].termine.length, 1, "7. August, der Termin bleibt sichtbar");
+  assert.strictEqual(tage[6].termine[0].uid, "leeres-ende");
+  const summe = tage.reduce((n, t) => n + t.termine.length, 0);
+  assert.strictEqual(summe, 1, "genau einmal, Dauer null");
+  assert.strictEqual(calEndDatum(leeresEnde).getDate(), 7,
+                     "kein Rueckrechnen des ausschliessenden Endes auf den 6.");
+});
