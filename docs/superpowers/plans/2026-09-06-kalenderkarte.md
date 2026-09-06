@@ -33,7 +33,7 @@ Abhängigkeit. Tests mit dem eingebauten `node --test` und `node:vm`.
   Klassen `BuschCalendarCard` und `BuschCalendarCardEditor`.
 - **Sprache im Code:** Bezeichner und Kommentare deutsch, passend zum Bestand.
 - **Zeitzone:** alles in lokaler Zeit rechnen, nie in UTC.
-- **`CARD_VERSION`** wird am Ende auf `"0.5.0"` gesetzt, nicht früher.
+- **`CARD_VERSION`** wird am Ende auf `"0.6.0"` gesetzt, nicht früher.
 - Nach **jeder** Änderung an `dist/busch-cards.js`:
   `node --check dist/busch-cards.js`.
 
@@ -1473,7 +1473,7 @@ window.customCards.push({
 In `dist/busch-cards.js`, Zeile 18:
 
 ```js
-const CARD_VERSION = "0.5.0";
+const CARD_VERSION = "0.6.0";
 ```
 
 - [ ] **Schritt 4: Prüfen**
@@ -1511,7 +1511,7 @@ show_total: true
 
 ```bash
 git add dist/busch-cards.js README.md
-git commit -m "Kalenderkarte: Editor, Anmeldung und Version 0.5.0
+git commit -m "Kalenderkarte: Editor, Anmeldung und Version 0.6.0
 
 Alle Optionen sind im grafischen Editor einstellbar. Farben je Kalender
 erscheinen erst ab dem zweiten Kalender.
@@ -1717,14 +1717,14 @@ Erwartet: Tests grün, sauberer Arbeitsbaum.
 grep -n 'CARD_VERSION = ' dist/busch-cards.js
 ```
 
-Erwartet: `0.5.0`. Steht dort `0.4.0`, wurde Aufgabe 6 Schritt 2 übersprungen.
+Erwartet: `0.6.0`. Steht dort `0.5.0`, wurde Aufgabe 6 Schritt 2 übersprungen.
 
 - [ ] **Schritt 3: Hochschieben und taggen**
 
 ```bash
 git push origin main
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 **HACS liest den Tag, nicht `main`.** Ohne Tag ändert sich für den Nutzer
@@ -1733,7 +1733,7 @@ alte Fassung.
 
 - [ ] **Schritt 4: In Home Assistant aktualisieren**
 
-HACS öffnen, `Busch Cards` auf `v0.5.0` aktualisieren, Browser hart neu laden.
+HACS öffnen, `Busch Cards` auf `v0.6.0` aktualisieren, Browser hart neu laden.
 Dann die Karte einsetzen:
 
 ```yaml
@@ -1757,7 +1757,7 @@ daneben gesetzt, nicht an ihre Stelle.
 
 - [ ] **Schritt 6: `hacs/CLAUDE.md` fortschreiben**
 
-Versionstabelle oben auf `ha-busch-cards` `v0.5.0` setzen, unter „HIER
+Versionstabelle oben auf `ha-busch-cards` `v0.6.0` setzen, unter „HIER
 WEITERMACHEN" den Stand festhalten, und `docs/render/render-kalender.py` im
 Abschnitt „Karten im Browser prüfen" nennen. Diese Datei liegt **außerhalb**
 des Repos und wird nicht mitcommittet.
