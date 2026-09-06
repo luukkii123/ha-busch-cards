@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 .superpowers/
+
+# Ergebnisse der Render-Läufe — erzeugt, nicht gepflegt.
+docs/render/mapcard-ergebnis/

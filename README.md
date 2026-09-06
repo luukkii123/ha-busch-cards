@@ -4,8 +4,13 @@
 [![Release](https://img.shields.io/github/v/release/luukkii123/ha-busch-cards)](https://github.com/luukkii123/ha-busch-cards/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-**Ein Zeitplan-Editor als Lovelace-Karte: Zeitplan-Helfer (`schedule.*`) direkt
-im Dashboard bearbeiten.**
+**Zwei Lovelace-Karten ohne eigene Integration: ein Zeitplan-Editor für
+`schedule.*`-Helfer, und die eingebaute Landkarte mit frei wählbaren Kacheln.**
+
+| Karte | Wofür |
+| --- | --- |
+| `busch-schedule-card` | Zeitplan-Helfer direkt im Dashboard bearbeiten |
+| `busch-map-card` | die eingebaute `map`-Karte, nur mit anderen Kacheln |
 
 ![Die Zeitplan-Karte im hellen Theme](docs/preview.png)
 
@@ -128,6 +133,95 @@ busch-schedule-track-color: "#37474f"  # Hintergrund der Tagesspur
   unverändert durchgereicht, aber nicht angezeigt und nicht bearbeitet.
 
 ---
+
+## Die Landkarten-Karte
+
+`busch-map-card` ist die **eingebaute Map-Karte mit anderen Kacheln** — sonst
+nichts. Aus einer bestehenden Karte wird sie, indem man **nur `type:` tauscht**:
+
+```diff
+- type: map
++ type: custom:busch-map-card
+  entities: [person.beispiel]
+  theme_mode: auto
+  hours_to_show: 2
+```
+
+### Warum sie nichts nachbaut
+
+Sie erzeugt über `loadCardHelpers()` Home Assistants **eigene** `map`-Karte,
+hängt sie in ihren Shadow-DOM und tauscht danach nur die Kachelebene an deren
+`ha-map.leafletMap` aus. Alles Übrige — `entities` als Zeichenketten wie
+Objekte, Zonenkreise, `hours_to_show`-Spuren, Genauigkeitsringe,
+Personenbilder, `label_mode`, `attribute`, `unit`, `focus`, `name`, `color`,
+`default_zoom`, `auto_fit`, `fit_zones`, `aspect_ratio`, `title`, `cluster`,
+`scale_ruler` — funktioniert nicht *ähnlich*, sondern **identisch, weil es
+dieselbe Karte ist**. Auch ein `custom:auto-entities` davor merkt keinen
+Unterschied.
+
+Nachbauen wäre der teurere Weg gewesen: vierzehn Optionen plus sechs Felder je
+Entität, und bei jedem Home-Assistant-Update droht neue Abweichung.
+
+**Der Preis, offen benannt:** Die Karte greift auf ein internes Element von
+Home Assistant zu (`ha-map.leafletMap`). Ändert sich das, **fällt sie auf HAs
+normale Karte mit deren eigenen Kacheln zurück** — nie auf ein leeres Feld.
+Eine Zeile in der Browser-Konsole nennt dann den Grund. Der Rückfall ist
+geprüft, nicht behauptet.
+
+### Kartenvorlagen
+
+| `map_style` | Karte | hell/dunkel |
+| --- | --- | --- |
+| `ha` | Home-Assistant-Standard, Kacheln unangetastet | — |
+| `osm` | OpenStreetMap | nur hell |
+| `carto` *(Standard)* | CARTO Positron / Dark Matter | beides |
+| `voyager` | CARTO Voyager | beides |
+| `satellite` | Esri World Imagery | nur hell |
+| `topo` | OpenTopoMap | nur hell |
+| `custom` | eigene URL | beides |
+
+```yaml
+type: custom:busch-map-card
+entities: [person.beispiel]
+map_style: carto           # Vorlage, Standard: carto
+tile_url: ""               # nur bei map_style: custom
+tile_url_dark: ""          # optional; fehlt sie, gilt die helle auch dunkel
+tile_attribution: ""       # Pflicht bei eigener URL
+```
+
+Alles über *Karte hinzufügen* einrichtbar: oben die Kachelfelder, darunter
+Home Assistants **eigener** Map-Editor.
+
+**Hell und dunkel folgen `theme_mode`** (`auto`/`light`/`dark`) wie bei der
+eingebauten Karte. Sobald echte dunkle Kacheln im Spiel sind, **schaltet die
+Karte HAs Dunkelfilter ab** — die eingebaute Karte invertiert sonst die
+Kacheln (`invert(0.9) hue-rotate(170deg) brightness(1.5) contrast(1.2)
+saturate(0.3)`), und beides zusammen ergibt Matsch. Bei `map_style: ha` bleibt
+der Filter, wo er ist.
+
+**Die Quellenangabe ist keine Kosmetik.** OpenStreetMap, CARTO, Esri und
+OpenTopoMap verlangen sie in ihren Nutzungsbedingungen; für die mitgelieferten
+Vorlagen setzt die Karte sie selbst. **Wer eine eigene URL einträgt, trägt auch
+die eigene Angabe ein** — und prüft die Nutzungsbedingungen des Anbieters. Der
+Kachelserver von OpenStreetMap ist für den Hausgebrauch gedacht, nicht für
+Dauerlast.
+
+### Grenzen
+
+- **Nutzt Home Assistant Vektorkacheln, ersetzt die Karte nichts.** Sie tauscht
+  nur Rasterebenen; findet sie keine, bleibt die Grundkarte, wie sie ist, und
+  eine Zeile in der Konsole sagt es. Vektorkacheln bringen ohnehin eigene
+  dunkle Kartografie mit. Ein eigenes Leaflet nur für diesen Fall
+  mitzuliefern wäre 200 kB für einen seltenen Sonderfall.
+- **Kein Zwischenspeicher, kein Schlüssel.** Wer einen Anbieter mit Token
+  braucht, trägt ihn in die eigene URL ein.
+- **Kein eigenes Zeichnen.** Marker, Zonen und Spuren gehören der eingebauten
+  Karte.
+
+> Diese Karte lag bis zum 06.09.2026 als `localtrack-map-card` in
+> [ha-localtrack-cards](https://github.com/luukkii123/ha-localtrack-cards).
+> Sie brauchte Local Track nie und gehört deshalb hierher — zu den Karten ohne
+> eigene Integration.
 
 ## Die Timeline-Karte ist umgezogen
 
