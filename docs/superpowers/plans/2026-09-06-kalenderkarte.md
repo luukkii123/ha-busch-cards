@@ -288,7 +288,7 @@ test("der Monatsname nennt Monat und Jahr", () => {
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test 'tests/*.test.js'monat.test.js
+node --test tests/monat.test.js
 ```
 
 Erwartet: FEHLER, `calMonatsGrenzen is not defined`.
@@ -503,7 +503,7 @@ test("Termine ausserhalb des Monats werden verworfen", () => {
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test 'tests/*.test.js'gruppieren.test.js
+node --test tests/gruppieren.test.js
 ```
 
 Erwartet: FEHLER, `calIstGanztags is not defined`.
@@ -786,7 +786,7 @@ test("bei einem einzigen Kalender wird kein Farbpunkt gezeichnet", () => {
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test 'tests/*.test.js'darstellung.test.js
+node --test tests/darstellung.test.js
 ```
 
 Erwartet: FEHLER, `calSummeStunden is not defined`.
@@ -1008,7 +1008,7 @@ test("eine fehlende entities-Angabe ergibt eine leere Liste, keinen Absturz", ()
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test 'tests/*.test.js'karte.test.js
+node --test tests/karte.test.js
 ```
 
 Erwartet: FEHLER, `calNormalisiereKonfig is not defined`.
