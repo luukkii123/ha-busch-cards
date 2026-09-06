@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.6.0";
+const CARD_VERSION = "0.7.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1973,6 +1973,7 @@ const MAP_STYLES = {
   },
   carto: {
     name: "CARTO Positron / Dark Matter",
+    keyParam: "key",
     light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     subdomains: "abcd",
@@ -1981,6 +1982,7 @@ const MAP_STYLES = {
   },
   voyager: {
     name: "CARTO Voyager",
+    keyParam: "key",
     light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
     dark: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png",
     subdomains: "abcd",
@@ -2008,9 +2010,19 @@ const MAP_STYLES = {
 
 const MAP_CARD_DEFAULTS = { map_style: "carto" };
 
+/** Wo der Schluessel liegt, wenn er nicht in der Karte steht.
+ *
+ *  Ein Kachelschluessel gehoert EINMAL ins System, nicht in jede Karte. Ein
+ *  `input_text`-Helfer ist dafuer der richtige Ort: er wird einmal angelegt,
+ *  gilt fuer alle Dashboards und alle Geraete, und er landet nie in diesem
+ *  oeffentlichen Repo. Wer mehrere Anbieter mischt, zeigt je Karte mit
+ *  `tile_api_key_entity` auf einen anderen Helfer. */
+const MAP_KEY_ENTITY = "input_text.carto_api_key";
+
 /** Eigene Optionen der Karte — alles Uebrige gehoert der eingebauten Karte. */
 const MAP_OWN_KEYS = [
   "map_style", "tile_url", "tile_url_dark", "tile_attribution", "tile_max_zoom",
+  "tile_api_key", "tile_api_key_entity",
 ];
 
 const MAP_CARD_SCHEMA = [
@@ -2026,6 +2038,11 @@ const MAP_CARD_SCHEMA = [
   { name: "tile_url", selector: { text: {} } },
   { name: "tile_url_dark", selector: { text: {} } },
   { name: "tile_attribution", selector: { text: {} } },
+  { name: "tile_api_key", selector: { text: {} } },
+  {
+    name: "tile_api_key_entity",
+    selector: { entity: { filter: { domain: ["input_text"] } } },
+  },
 ];
 
 const MAP_LABELS = {
@@ -2033,6 +2050,8 @@ const MAP_LABELS = {
   tile_url: "Eigene Kachel-URL (hell)",
   tile_url_dark: "Eigene Kachel-URL (dunkel, optional)",
   tile_attribution: "Eigene Quellenangabe",
+  tile_api_key: "Schlüssel direkt eintragen (überschreibt den Helfer)",
+  tile_api_key_entity: `Schlüssel-Helfer (Standard: ${MAP_KEY_ENTITY})`,
 };
 
 /** Sucht ein Element durch verschachtelte Shadow-DOMs, mit Tiefenbegrenzung.
@@ -2089,10 +2108,17 @@ class BuschMapCard extends HTMLElement {
   }
 
   set hass(hass) {
-    const vorher = this._dunkelJetzt();
+    const dunkelVorher = this._dunkelJetzt();
+    const schluesselVorher = this._schluessel();
     this._hass = hass;
     if (this._inner) this._inner.hass = hass;
-    if (this._layer && this._dunkelJetzt() !== vorher) this._applyTiles();
+    // Auch der Schluessel kann sich aendern — er steht in einem Helfer, den
+    // der Nutzer jederzeit bearbeitet. Ohne diese Pruefung bliebe das
+    // Wasserzeichen bis zum naechsten Neuladen stehen.
+    if (this._layer
+        && (this._dunkelJetzt() !== dunkelVorher || this._schluessel() !== schluesselVorher)) {
+      this._applyTiles();
+    }
   }
 
   getCardSize() {
@@ -2121,6 +2147,18 @@ class BuschMapCard extends HTMLElement {
       attribution: this._config.tile_attribution || "",
       maxZoom: Number(this._config.tile_max_zoom) || 19,
     };
+  }
+
+  /** Der Schluessel, in dieser Reihenfolge: direkt in der Karte, sonst aus
+   *  dem Helfer. So genuegt EIN Eintrag im System fuer alle Karten, und wer
+   *  eine einzelne Karte anders bestuecken will, kann es trotzdem. */
+  _schluessel() {
+    const direkt = (this._config?.tile_api_key || "").trim();
+    if (direkt) return direkt;
+    const id = (this._config?.tile_api_key_entity || MAP_KEY_ENTITY).trim();
+    const zustand = this._hass?.states?.[id]?.state;
+    if (!zustand || zustand === "unknown" || zustand === "unavailable") return "";
+    return String(zustand).trim();
   }
 
   _dunkelJetzt() {
@@ -2194,8 +2232,30 @@ class BuschMapCard extends HTMLElement {
       this._layer = null;
       return true;   // Standardvorlage: bewusst nichts anfassen
     }
-    const url = (dunkel && stil.dark) ? stil.dark : stil.light;
+    let url = (dunkel && stil.dark) ? stil.dark : stil.light;
     if (!url) return false;   // Eigene URL noch leer — HAs Kacheln stehen lassen
+
+    // CARTO verlangt einen Schluessel. Ohne ihn liefert es zwar HTTP 200 und
+    // eine gueltige PNG-Kachel — aber mit "API KEY REQUIRED" quer eingebrannt.
+    // Am 06.09.2026 auf Byte-Ebene nachgemessen: derselbe Kachelpfad ergab
+    // ohne Schluessel 20411 B, mit `?key=` 22692 B. Der Parameter heisst `key`;
+    // `api_key` wird stillschweigend ignoriert.
+    //
+    // Der Schluessel steht in der KARTENKONFIGURATION, nie im Quelltext: dieses
+    // Repo ist oeffentlich.
+    const schluessel = this._schluessel();
+    if (stil.keyParam && schluessel) {
+      url += (url.includes("?") ? "&" : "?")
+        + encodeURIComponent(stil.keyParam) + "=" + encodeURIComponent(schluessel);
+    } else if (stil.keyParam && !this._keyGemeldet) {
+      this._keyGemeldet = true;
+      console.info(
+        "busch-map-card: " + stil.name + " braucht einen Schluessel, sonst steht "
+        + "\"API KEY REQUIRED\" in den Kacheln. Kostenlos unter "
+        + "https://carto.com/basemaps/apikey. Einmal in den Helfer "
+        + MAP_KEY_ENTITY + " eintragen, dann gilt er fuer alle Karten."
+      );
+    }
 
     // Vorhandene Rasterebene suchen. `setUrl` ist der schonende Weg: er
     // vermeidet, eine Ebene aus UNSERER Leaflet-Kopie in HAs Karte zu haengen.
@@ -2315,7 +2375,18 @@ class BuschMapCardEditor extends HTMLElement {
   async _baueInnenEditor() {
     try {
       const helpers = await window.loadCardHelpers();
-      const karte = await helpers.createCardElement({ type: "map", entities: [] });
+      // Mit der ECHTEN Konfiguration erzeugen, nicht mit `entities: []`: HAs
+      // Map-Karte lehnt eine Konfiguration ohne Entitaeten ab, und der ganze
+      // Editor fiel deshalb auf den Hinweistext zurueck. Am 06.09.2026 im
+      // Screenshot des Nutzers gesehen.
+      let karte = null;
+      for (const versuch of [this._innerConfig(), { type: "map", entities: ["zone.home"] }]) {
+        try {
+          karte = await helpers.createCardElement(versuch);
+          break;
+        } catch (e) { /* naechster Versuch */ }
+      }
+      if (!karte) throw new Error("map-Karte liess sich nicht erzeugen");
       const editor = await karte.constructor.getConfigElement();
       editor.hass = this._hass;
       editor.setConfig(this._innerConfig());

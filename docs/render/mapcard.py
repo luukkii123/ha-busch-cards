@@ -86,7 +86,21 @@ PAGE = """<!doctype html>
   window.__innerConfigs = [];
   class FakeMapCard extends HTMLElement {
     constructor(){ super(); this.attachShadow({mode:'open'}); }
-    setConfig(c){ this._config=c; window.__innerConfigs.push(JSON.parse(JSON.stringify(c))); }
+    setConfig(c){
+      /* Wie HAs echte map-Karte: ohne Entitaeten wird abgelehnt. Genau daran
+         scheiterte das Einbetten des eingebauten Editors. */
+      if (!c || !Array.isArray(c.entities) || c.entities.length === 0) {
+        throw new Error('Entities must be specified');
+      }
+      this._config=c; window.__innerConfigs.push(JSON.parse(JSON.stringify(c)));
+    }
+    static getConfigElement(){
+      const e = document.createElement('div');
+      e.id = 'echter-map-editor';
+      e.setConfig = () => {}; 
+      Object.defineProperty(e, 'hass', { set(){}, configurable: true });
+      return e;
+    }
     set hass(h){ this._hass = h; }
     getCardSize(){ return 7; }
     connectedCallback(){
@@ -116,7 +130,7 @@ PAGE = """<!doctype html>
   window.loadCardHelpers = async () => ({
     createCardElement: async (config) => {
       const el = document.createElement('fake-map-card');
-      el.setConfig(config);
+      el.setConfig(config);          /* wirft bei leeren Entitaeten */
       return el;
     },
   });
@@ -126,6 +140,8 @@ PAGE = """<!doctype html>
     states: {
       'person.lukas': { entity_id:'person.lukas', state:'home',
         attributes:{ friendly_name:'Lukas', latitude:48.2, longitude:16.35 } },
+      'input_text.carto_api_key': { entity_id:'input_text.carto_api_key',
+        state:'HELFERSCHLUESSEL', attributes:{ friendly_name:'CARTO-Schlüssel' } },
       'zone.home': { entity_id:'zone.home', state:'1',
         attributes:{ friendly_name:'Home', latitude:48.2, longitude:16.35, radius:200 } },
     },
@@ -254,11 +270,63 @@ with sync_playwright() as pw:
         };
     }""")
 
-    editor = page.evaluate("""() => {
+    # Schluessel: mit und ohne.
+    schluessel = page.evaluate("""async () => {
+        window.__modus = 'raster';
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'carto',
+          tile_api_key:'TESTSCHLUESSEL'});
+        window.__card = c;
+        await new Promise(r => setTimeout(r, 900));
+        const map = c.shadowRoot.querySelector('fake-map-card')
+                     .shadowRoot.querySelector('ha-map').leafletMap;
+        let url=null; map.eachLayer(l => { if (typeof l.setUrl==='function' && !url) url = l._url; });
+        return { url };
+    }""")
+    ohneSchluessel = page.evaluate("""async () => {
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'carto'});
+        await new Promise(r => setTimeout(r, 900));
+        const map = c.shadowRoot.querySelector('fake-map-card')
+                     .shadowRoot.querySelector('ha-map').leafletMap;
+        let url=null; map.eachLayer(l => { if (typeof l.setUrl==='function' && !url) url = l._url; });
+        return { url };
+    }""")
+
+    # Schluessel aus dem Helfer, ohne Eintrag in der Karte.
+    ausHelfer = page.evaluate("""async () => {
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'carto'});
+        window.__card = c;
+        await new Promise(r => setTimeout(r, 900));
+        const map = c.shadowRoot.querySelector('fake-map-card')
+                     .shadowRoot.querySelector('ha-map').leafletMap;
+        let url=null; map.eachLayer(l => { if (typeof l.setUrl==='function' && !url) url = l._url; });
+        return { url };
+    }""")
+
+    # Aenderung des Helfers muss nachgezogen werden, ohne Neuladen.
+    nachAenderung = page.evaluate("""async () => {
+        const s = {...window.__hass.states};
+        s['input_text.carto_api_key'] = {...s['input_text.carto_api_key'], state:'NEUERSCHLUESSEL'};
+        window.__hass = {...window.__hass, states:s};
+        window.__card.hass = window.__hass;
+        await new Promise(r => setTimeout(r, 500));
+        const map = window.__card.shadowRoot.querySelector('fake-map-card')
+                     .shadowRoot.querySelector('ha-map').leafletMap;
+        let url=null; map.eachLayer(l => { if (typeof l.setUrl==='function' && !url) url = l._url; });
+        return { url };
+    }""")
+
+    editor = page.evaluate("""async () => {
         const el = window.__card.constructor.getConfigElement();
         document.body.appendChild(el);
         el.setConfig({type:'custom:busch-map-card', entities:['person.lukas']});
         el.hass = window.__hass;
+        /* Der eingebaute Editor wird asynchron nachgeladen und eingehaengt. */
+        for (let i = 0; i < 40 && !el.querySelector('#echter-map-editor'); i++) {
+          await new Promise(r => setTimeout(r, 50));
+        }
         const form = el.querySelector('ha-form');
         let geliefert = null;
         el.addEventListener('config-changed', e => { geliefert = e.detail.config; });
@@ -269,6 +337,8 @@ with sync_playwright() as pw:
           vorlagen: ((window.__mapSchema||[])[0]?.selector?.select?.options||[]).map(o => o.value),
           beschriftung: window.__mapLabel ? window.__mapLabel({name:'map_style'}) : null,
           nachAenderung: geliefert,
+          eingebauterEditorDa: !!el.querySelector('#echter-map-editor'),
+          hinweisText: (el.textContent || ''),
         };
     }""")
     browser.close()
@@ -280,8 +350,9 @@ CARTO_DUNKEL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
 
 checks["echtes Leaflet geladen"] = leafletDa is True
 checks["Leaflet 1.9.4"] = leafletVersion == "1.9.4"
-checks["hell: CARTO-Positron-Kacheln gesetzt"] = hell["url"] == CARTO_HELL
-checks["dunkel: CARTO-Dark-Kacheln gesetzt"] = dunkel["url"] == CARTO_DUNKEL
+# `startswith`, nicht `==`: seit dem Helfer haengt hinten `?key=...` dran.
+checks["hell: CARTO-Positron-Kacheln gesetzt"] = (hell["url"] or "").startswith(CARTO_HELL)
+checks["dunkel: CARTO-Dark-Kacheln gesetzt"] = (dunkel["url"] or "").startswith(CARTO_DUNKEL)
 checks["Umschalten legt keine zweite Ebene an"] = (
     hell["kachelEbenen"] == 1 and dunkel["kachelEbenen"] == 1
 )
@@ -297,11 +368,15 @@ checks["Fremdoptionen werden durchgereicht"] = (
     innen.get("hours_to_show") == 2 and innen.get("entities") == ["person.lukas"]
 )
 checks["getCardSize kommt von der inneren Karte"] = hell["kartenGroesse"] == 7
-checks["eigene URL wird verwendet"] = eigen["url"] == "https://beispiel.test/{z}/{x}/{y}.png"
+checks["eigene URL wird verwendet"] = (
+    eigen["url"] or "").startswith("https://beispiel.test/{z}/{x}/{y}.png")
 checks["eigene Quellenangabe wird verwendet"] = eigen["att"] == "Meine Quelle"
 checks["Vorlage 'ha' laesst die Kacheln unberuehrt"] = (
     unberuehrt["url"] == "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 )
+# osm hat kein keyParam — der Helfer darf dort NICHT angehaengt werden.
+checks["Vorlage ohne keyParam bekommt keinen Schluessel"] = "key=" not in (
+    unberuehrt["url"] or "")
 checks["Vorlage 'ha' schaltet den Dunkelfilter nicht ab"] = unberuehrt["mapFilter"] in ("", None)
 checks["Vektorfall: nichts ersetzt"] = ohneRaster["kachel"] == 0
 checks["Vektorfall: kein erzwungener Filter"] = ohneRaster["mapFilter"] in ("", None)
@@ -311,8 +386,9 @@ checks["Rueckfall: ha-map bleibt stehen"] = rueckfall["haMapVorhanden"] is True
 checks["Rueckfall: kein erzwungener Filter"] = rueckfall["mapFilter"] in ("", None)
 checks["Rueckfall: keine Ebene uebernommen"] = not rueckfall["layer"]
 checks["Editor-Element"] = editor["tag"] == "busch-map-card-editor"
-checks["Editor: vier eigene Felder"] = editor["felder"] == [
-    "map_style", "tile_url", "tile_url_dark", "tile_attribution"
+checks["Editor: sechs eigene Felder"] = editor["felder"] == [
+    "map_style", "tile_url", "tile_url_dark", "tile_attribution",
+    "tile_api_key", "tile_api_key_entity"
 ]
 checks["Editor: sieben Vorlagen plus eigene URL"] = editor["vorlagen"] == [
     "ha", "osm", "carto", "voyager", "satellite", "topo", "custom"
@@ -327,6 +403,26 @@ checks["Editor behaelt die Fremdoptionen"] = (
 # geprueften URLs zeigt absichtlich auf einen erfundenen Host. Ihre Zahl steht
 # im Bericht, damit die Ausnahme sichtbar bleibt statt still zu wirken.
 echte_fehler = [c for c in console if "Failed to load resource" not in c[1]]
+checks["Schluessel wird als ?key= angehaengt"] = (
+    schluessel["url"] or "").endswith("?key=TESTSCHLUESSEL")
+_u = schluessel["url"] or ""
+checks["Schluessel steht hinter der Kachel-URL, nicht davor"] = (
+    "cartocdn.com" in _u and "?key=" in _u and _u.index("?key=") > _u.index("cartocdn.com")
+)
+# `ohneSchluessel` traegt keinen Karteneintrag, ABER der Helfer existiert —
+# also muss dessen Wert greifen. Das ist der Kern des Wunsches: einmal
+# eintragen, ueberall wirksam.
+checks["Helfer greift ohne Karteneintrag"] = (
+    ohneSchluessel["url"] or "").endswith("?key=HELFERSCHLUESSEL")
+checks["Helfer greift auch bei frischer Karte"] = (
+    ausHelfer["url"] or "").endswith("?key=HELFERSCHLUESSEL")
+checks["Karteneintrag schlaegt den Helfer"] = (
+    schluessel["url"] or "").endswith("?key=TESTSCHLUESSEL")
+checks["Aenderung des Helfers wird nachgezogen"] = (
+    nachAenderung["url"] or "").endswith("?key=NEUERSCHLUESSEL")
+checks["eingebauter Map-Editor wird eingebettet"] = editor["eingebauterEditorDa"] is True
+checks["kein Rueckfalltext im Editor"] = "liess sich nicht laden" not in editor["hinweisText"]
+
 checks["keine Konsolenfehler ausser Kachelabrufen"] = echte_fehler == []
 checks["keine Seitenfehler"] = errors == []
 
@@ -334,6 +430,8 @@ report = {
     "leaflet": leafletVersion,
     "hell": hell, "dunkel": dunkel, "innerConfig": innen, "eigen": eigen,
     "unberuehrt": unberuehrt, "ohneRaster": ohneRaster, "rueckfall": rueckfall,
+    "schluessel": schluessel, "ohneSchluessel": ohneSchluessel,
+    "ausHelfer": ausHelfer, "nachAenderung": nachAenderung,
     "editor": editor,
     "console_errors": echte_fehler,
     "kachel_abrufe_fehlgeschlagen": len(console) - len(echte_fehler),

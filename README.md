@@ -185,11 +185,50 @@ geprüft, nicht behauptet.
 ```yaml
 type: custom:busch-map-card
 entities: [person.beispiel]
-map_style: carto           # Vorlage, Standard: carto
-tile_url: ""               # nur bei map_style: custom
-tile_url_dark: ""          # optional; fehlt sie, gilt die helle auch dunkel
-tile_attribution: ""       # Pflicht bei eigener URL
+map_style: carto             # Vorlage, Standard: carto
+tile_api_key: ""             # überschreibt den Helfer, meist leer lassen
+tile_api_key_entity: ""      # Standard: input_text.carto_api_key
+tile_url: ""                 # nur bei map_style: custom
+tile_url_dark: ""            # optional; fehlt sie, gilt die helle auch dunkel
+tile_attribution: ""         # Pflicht bei eigener URL
 ```
+
+### CARTO braucht einen Schlüssel — einmal, nicht je Karte
+
+**Ohne Schlüssel steht „API KEY REQUIRED" quer in den Kacheln.** Und zwar
+still: CARTO antwortet mit `HTTP 200` und einer gültigen PNG-Datei, der
+Schriftzug ist ins *Bild* eingebrannt. Wer nur den Statuscode prüft, hält
+alles für in Ordnung.
+
+Am 06.09.2026 auf Byte-Ebene nachgemessen, derselbe Kachelpfad:
+
+| Anfrage | Antwort |
+| --- | --- |
+| ohne Schlüssel | 20 411 B |
+| `?api_key=…` | 20 411 B — **identisch**, der Parameter wird ignoriert |
+| `?key=…` | **22 692 B** — wirkt |
+
+**Der Parameter heißt `key`.** Einen kostenlosen Schlüssel gibt es unter
+[carto.com/basemaps/apikey](https://carto.com/basemaps/apikey).
+
+**Er wird einmal im System hinterlegt, nicht in jeder Karte.** Lege einen
+Helfer an — *Einstellungen → Geräte & Dienste → Helfer → Text*, Name
+**CARTO API Key** (das ergibt `input_text.carto_api_key`), Modus
+**Passwort**. Von dort lesen ihn **alle** Karten, auf allen Dashboards und
+allen Geräten. Nur wer mehrere Anbieter mischt, zeigt je Karte mit
+`tile_api_key_entity` auf einen anderen Helfer oder trägt mit
+`tile_api_key` direkt einen ein — der Karteneintrag schlägt den Helfer.
+
+Ändert sich der Helfer, zieht die Karte **ohne Neuladen** nach.
+
+**Warum nicht im Kartenquelltext?** Dieses Repo ist öffentlich. Ein Schlüssel
+darin stünde dauerhaft auf GitHub und in jedem Release-Asset.
+
+**Er ist trotzdem nicht geheim.** Kachelschlüssel reisen in jeder einzelnen
+Kachelanfrage mit und sind für jeden sichtbar, der das Dashboard öffnen kann —
+das lässt sich bei Karten im Browser nicht vermeiden. Deshalb schränkt man sie
+beim Anbieter auf die eigene Domain ein. `osm`, `satellite` und `topo`
+brauchen keinen Schlüssel; sie bekommen auch keinen angehängt.
 
 Alles über *Karte hinzufügen* einrichtbar: oben die Kachelfelder, darunter
 Home Assistants **eigener** Map-Editor.
