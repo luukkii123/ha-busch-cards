@@ -249,11 +249,20 @@ Dauerlast.
 
 ### Grenzen
 
-- **Nutzt Home Assistant Vektorkacheln, ersetzt die Karte nichts.** Sie tauscht
-  nur Rasterebenen; findet sie keine, bleibt die Grundkarte, wie sie ist, und
-  eine Zeile in der Konsole sagt es. Vektorkacheln bringen ohnehin eigene
-  dunkle Kartografie mit. Ein eigenes Leaflet nur für diesen Fall
-  mitzuliefern wäre 200 kB für einen seltenen Sonderfall.
+- **Vektor-Grundkarten werden seit `0.8.0` ebenfalls ersetzt.** Home Assistant
+  zeichnet seine Grundkarte je nach Version als Vektorkarte (MapLibre); deren
+  URL lässt sich nicht tauschen. Die Karte legt dann eine **eigene
+  Rasterebene** an — in einer eigenen Ebene mit `z-index: 250`, also über der
+  Grundkarte, aber **unter** Routen und Markern. Die Vektorebene darunter wird
+  entfernt, sofern sie sich zu erkennen gibt; sonst deckt die undurchsichtige
+  Rasterebene sie ab.
+
+  Dafür steckt **Leaflet 1.9.4** in der Datei — aus dem Kartenobjekt heraus ist
+  keine `TileLayer`-Klasse erreichbar. Es wird **erst bei Bedarf ausgewertet**
+  und **gar nicht**, wenn schon ein Leaflet auf der Seite liegt (etwa aus
+  `ha-localtrack-cards`). Wer nur Zeitplan oder Kalender nutzt, zahlt nichts
+  dafür — außer den Bytes beim Herunterladen: die Datei wächst dadurch von
+  rund 92 kB auf rund 242 kB.
 - **Kein Zwischenspeicher, kein Schlüssel.** Wer einen Anbieter mit Token
   braucht, trägt ihn in die eigene URL ein.
 - **Kein eigenes Zeichnen.** Marker, Zonen und Spuren gehören der eingebauten

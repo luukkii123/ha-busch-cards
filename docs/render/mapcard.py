@@ -109,6 +109,22 @@ PAGE = """<!doctype html>
       this.shadowRoot.innerHTML = '<ha-map style="display:block;width:520px;height:300px"></ha-map>';
       const haMap = this.shadowRoot.querySelector('ha-map');
       if (window.__modus === 'ohneLeaflet') return;
+      if (window.__modus === 'stubKarte') {
+        /* Kein echtes Leaflet: nur die Methoden, die die Karte anfasst.
+           `addTo` eines echten TileLayer ruft `map.addLayer(this)` — mehr
+           braucht es nicht, um den Einbau zu belegen. */
+        const panes = {};
+        haMap.leafletMap = {
+          _hinzugefuegt: [],
+          eachLayer(f) { /* keine Ebenen */ },
+          getPane(n) { return panes[n]; },
+          createPane(n) { panes[n] = { style: {} }; return panes[n]; },
+          addLayer(l) { this._hinzugefuegt.push(l); return this; },
+          removeLayer() { return this; },
+        };
+        window.__stubMap = haMap.leafletMap;
+        return;
+      }
       const div = document.createElement('div');
       div.style.cssText = 'width:520px;height:300px';
       haMap.appendChild(div);
@@ -254,7 +270,46 @@ with sync_playwright() as pw:
         const map = inner.shadowRoot.querySelector('ha-map').leafletMap;
         let kachel = 0; map.eachLayer(l => { if (typeof l.setUrl === 'function') kachel += 1; });
         return { kachel, mapFilter: inner.style.getPropertyValue('--map-filter'),
-                 layer: c._layer, innerVorhanden: !!inner };
+                 layer: !!c._layer, innerVorhanden: !!inner };
+    }""")
+
+    # Vektorfall: keine Rasterebene -> eigene Ebene anlegen (neu seit v0.8.0).
+    vektor = page.evaluate("""async () => {
+        window.__modus = 'ohneRaster';
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'osm'});
+        await new Promise(r => setTimeout(r, 1200));
+        const inner = c.shadowRoot.querySelector('fake-map-card');
+        const map = inner.shadowRoot.querySelector('ha-map').leafletMap;
+        let url = null, pane = null, kachel = 0, marker = 0;
+        map.eachLayer(l => {
+          if (typeof l.setUrl === 'function') { kachel += 1; url = l._url; pane = l.options.pane; }
+          if (l.getLatLng) marker += 1;
+        });
+        const p = map.getPane('busch-map-tiles');
+        return { url, pane, kachel, marker, paneZ: p ? p.style.zIndex : null,
+                 mapFilter: inner.style.getPropertyValue('--map-filter') };
+    }""")
+
+    # Eingebettetes Leaflet: window.L entfernen, dann muss die Karte ihr
+    # eigenes laden. Das ist der Grund fuer die 147 kB im Buendel.
+    eingebettet = page.evaluate("""async () => {
+        const vorher = window.L && window.L.version;
+        delete window.L;
+        window.__modus = 'stubKarte';
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'osm'});
+        await new Promise(r => setTimeout(r, 1500));
+        const m = window.__stubMap;
+        const l = m && m._hinzugefuegt[0];
+        return {
+          vorher,
+          nachher: window.L && window.L.version,
+          ebeneAngelegt: !!l,
+          url: l ? l._url : null,
+          istTileLayer: !!(l && typeof l.getTileUrl === 'function'),
+          pane: l ? l.options.pane : null,
+        };
     }""")
 
     rueckfall = page.evaluate("""async () => {
@@ -266,7 +321,7 @@ with sync_playwright() as pw:
           innerVorhanden: !!inner,
           haMapVorhanden: !!(inner && inner.shadowRoot.querySelector('ha-map')),
           mapFilter: inner ? inner.style.getPropertyValue('--map-filter') : null,
-          layer: c._layer,
+          layer: !!c._layer,
         };
     }""")
 
@@ -378,9 +433,19 @@ checks["Vorlage 'ha' laesst die Kacheln unberuehrt"] = (
 checks["Vorlage ohne keyParam bekommt keinen Schluessel"] = "key=" not in (
     unberuehrt["url"] or "")
 checks["Vorlage 'ha' schaltet den Dunkelfilter nicht ab"] = unberuehrt["mapFilter"] in ("", None)
-checks["Vektorfall: nichts ersetzt"] = ohneRaster["kachel"] == 0
-checks["Vektorfall: kein erzwungener Filter"] = ohneRaster["mapFilter"] in ("", None)
-checks["Vektorfall: innere Karte bleibt stehen"] = ohneRaster["innerVorhanden"] is True
+checks["Vektorfall: eigene Rasterebene angelegt"] = vektor["kachel"] == 1
+checks["Vektorfall: richtige URL"] = (vektor["url"] or "") == (
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+checks["Vektorfall: eigene Ebene, nicht tilePane"] = vektor["pane"] == "busch-map-tiles"
+checks["Vektorfall: Ebene unter Markern und Routen"] = vektor["paneZ"] == "250"
+checks["Vektorfall: Marker bleibt erhalten"] = vektor["marker"] == 1
+checks["Vektorfall: Dunkelfilter abgeschaltet"] = vektor["mapFilter"] == "none"
+checks["eingebettetes Leaflet springt ein"] = (
+    eingebettet["vorher"] == "1.9.4" and eingebettet["nachher"] == "1.9.4")
+checks["eingebettet: Ebene angelegt"] = eingebettet["ebeneAngelegt"] is True
+checks["eingebettet: echte TileLayer-Klasse"] = eingebettet["istTileLayer"] is True
+checks["eingebettet: richtige URL"] = (eingebettet["url"] or "") == (
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
 checks["Rueckfall: innere Karte bleibt stehen"] = rueckfall["innerVorhanden"] is True
 checks["Rueckfall: ha-map bleibt stehen"] = rueckfall["haMapVorhanden"] is True
 checks["Rueckfall: kein erzwungener Filter"] = rueckfall["mapFilter"] in ("", None)
@@ -429,7 +494,8 @@ checks["keine Seitenfehler"] = errors == []
 report = {
     "leaflet": leafletVersion,
     "hell": hell, "dunkel": dunkel, "innerConfig": innen, "eigen": eigen,
-    "unberuehrt": unberuehrt, "ohneRaster": ohneRaster, "rueckfall": rueckfall,
+    "unberuehrt": unberuehrt, "ohneRaster": ohneRaster, "vektor": vektor,
+    "eingebettet": eingebettet, "rueckfall": rueckfall,
     "schluessel": schluessel, "ohneSchluessel": ohneSchluessel,
     "ausHelfer": ausHelfer, "nachAenderung": nachAenderung,
     "editor": editor,

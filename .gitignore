@@ -5,3 +5,4 @@ Thumbs.db
 
 # Ergebnisse der Render-Läufe — erzeugt, nicht gepflegt.
 docs/render/mapcard-ergebnis/
+docs/render/mapcard-live/
