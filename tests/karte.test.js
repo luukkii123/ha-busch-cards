@@ -421,6 +421,26 @@ test("die Fusszeile stellt jeden Wert in eine eigene Spalte", async () => {
   }
 });
 
+/**
+ * Die Layoutentscheidung selbst, als Text festgehalten. Sie ist am Bild
+ * getroffen worden — mit `space-between` sassen bei ZWEI Werten "3 Tage" und
+ * "25,7 h" in den gegenueberliegenden Ecken, 436 px Leerraum dazwischen, und
+ * die Zeile sprang, je nachdem ob der Monat einen ganztaegigen Termin hatte.
+ * Diese Pruefung ersetzt das Bild nicht, sie haelt nur fest, dass die
+ * Entscheidung nicht versehentlich zurueckgedreht wird.
+ */
+test("die Fusszeile steht linksbuendig mit festem Abstand", () => {
+  const { CAL_STIL } = ladeKarte(["CAL_STIL"]);
+  const regel = CAL_STIL.match(/\.cal-fuss \{[^}]*\}/);
+  assert.ok(regel, "es muss eine Regel fuer .cal-fuss geben");
+  assert.match(regel[0], /gap:\s*24px/, "fester Abstand statt verteilter Leerraum");
+  assert.doesNotMatch(
+    regel[0],
+    /space-between/,
+    "verteilt reisst die Werte bei nur zwei Angaben in die Ecken"
+  );
+});
+
 test("ein ganztaegiger Termin bekommt die dritte Spalte", async () => {
   const jetzt = new Date();
   const tag = (t) =>

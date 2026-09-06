@@ -1597,7 +1597,14 @@ const CAL_STIL = `
     white-space:nowrap; }
   .cal-titel { color:var(--primary-text-color); overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap; }
-  .cal-fuss { display:flex; justify-content:space-between; padding:10px 16px;
+  /* Linksbuendig mit festem Abstand, NICHT ueber die Breite verteilt.
+     Gemessen: Mit \`space-between\` sassen bei zwei Werten "3 Tage" und
+     "25,7 h" in den gegenueberliegenden Ecken, 436 px Leerraum dazwischen —
+     und das ist der Regelfall, weil "1 ganztaegig" nur erscheint, wenn es im
+     Monat einen ganztaegigen Termin gab. Die Zeile sprang also, je nachdem ob
+     Urlaub drin war. Mit \`gap\` steht sie ruhig und liest sich als eine
+     Angabe, ohne dass ein Trennzeichen noetig waere. */
+  .cal-fuss { display:flex; justify-content:flex-start; gap:24px; padding:10px 16px;
     border-top:1px solid var(--divider-color); color:var(--secondary-text-color); }
   .cal-hinweis { padding:12px 16px; color:var(--error-color, #db4437); }
   .cal-leermeldung { padding:16px; color:var(--secondary-text-color); }
@@ -1815,9 +1822,8 @@ class BuschCalendarCard extends HTMLElement {
       const s = calSummeStunden(this._alleTermine || [], start, ende);
       const teile = [`${s.tageMitTermin} Tage`, `${calFormatStunden(s.stunden, locale)} h`];
       if (s.ganztags) teile.push(`${s.ganztags} ganztägig`);
-      // Ein Span JE WERT, verteilt ueber `justify-content: space-between` im
-      // Stil. KEIN Trenner dazwischen: auf dem Bildschirm trennt sie der Raum,
-      // und drei Spalten sind genau das, was die Skizze in der Spec zeigt.
+      // Ein Span JE WERT, linksbuendig mit festem `gap` im Stil. KEIN Trenner
+      // dazwischen: auf dem Bildschirm trennt sie der Raum.
       //
       // Wer den Fuss misst, liest die Spans EINZELN (`.cal-fuss span`).
       // `textContent` des Kastens klebt sie zu „6 Tage25,7 h1 ganztägig"

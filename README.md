@@ -313,8 +313,11 @@ ein Punkt, der immer dieselbe Farbe hat, trägt keine Information.
 
 `show_total` summiert die Dauern aller zeitgebundenen Termine des Monats.
 **Ganztägige Termine gehen nicht in die Stundensumme ein**, sondern werden
-getrennt gezählt („20 Tage · 168,5 h · 1 ganztägig"). Sie mit 24 Stunden zu
-verrechnen würde die Summe verfälschen.
+getrennt gezählt und stehen linksbündig nebeneinander in der Fußzeile:
+`20 Tage` `168,5 h` `1 ganztägig`. Sie mit 24 Stunden zu verrechnen würde die
+Summe verfälschen. Die dritte Angabe erscheint nur, wenn es im Monat einen
+ganztägigen Termin gab; die ersten beiden stehen deshalb an fester Stelle,
+damit die Zeile nicht springt.
 
 Die Summe zählt **nur den gezeigten Monat**: Ein Urlaub vom 25.07. bis 05.08.
 steht im August mit seinen fünf August-Tagen im Fuß, nicht mit zwölf. Und ein

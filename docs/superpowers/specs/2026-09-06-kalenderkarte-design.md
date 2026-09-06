@@ -165,7 +165,7 @@ Eine Zeile je Tag des Monats, chronologisch. Kein Wochenraster.
 │  Mi  03.                             │   ← leerer Tag
 │  Do  04.   ganztägig       Urlaub    │
 ├──────────────────────────────────────┤
-│  20 Tage   168,5 h   1 ganztägig    │   ← nur bei show_total
+│  20 Tage  168,5 h  1 ganztägig       │   ← nur bei show_total
 └──────────────────────────────────────┘
 ```
 
@@ -182,19 +182,27 @@ Eine Zeile je Tag des Monats, chronologisch. Kein Wochenraster.
 ### Die Summe
 
 `show_total` summiert die Dauern aller zeitgebundenen Termine des Monats und
-zeigt sie in Stunden mit einer Nachkommastelle. Jeder Wert steht in einer
-**eigenen Spalte**, verteilt über `justify-content: space-between` — wie in der
-Skizze oben. Kein Trennzeichen dazwischen: Auf dem Bildschirm trennt sie der
-Raum. **Ganztägige Termine gehen nicht in die Stundensumme ein**, sondern
-werden getrennt gezählt. Sie mit 24 Stunden zu verrechnen würde die Summe
-verfälschen.
+zeigt sie in Stunden mit einer Nachkommastelle. Jeder Wert steht in einem
+eigenen Element, **linksbündig nebeneinander mit 24 px Abstand**
+(`justify-content: flex-start; gap: 24px`). Kein Trennzeichen dazwischen: Auf
+dem Bildschirm trennt sie der Abstand. **Ganztägige Termine gehen nicht in die
+Stundensumme ein**, sondern werden getrennt gezählt. Sie mit 24 Stunden zu
+verrechnen würde die Summe verfälschen.
+
+**Warum linksbündig und nicht über die Breite verteilt:** „1 ganztägig"
+erscheint nur, wenn der Monat einen ganztägigen Termin hatte — ein reiner
+Dienstplan-Monat zeigt dauerhaft **zwei** Werte. Mit `space-between` saßen die
+beiden dann in den gegenüberliegenden Ecken, 436 px Leerraum dazwischen
+(gemessen im Chromium, Fußzeile 560 px breit), und die Zeile sprang, je nachdem
+ob Urlaub im Monat lag. Mit festem Abstand stehen die ersten beiden Werte immer
+an derselben Stelle.
 
 **Wer den Fuß misst, liest die Spans einzeln** (`.cal-fuss span`).
 `textContent` des Kastens kennt den Raum zwischen ihnen nicht und liefert
 „20 Tage168,5 h2 ganztägig" am Stück. In `v0.7.1` wurde daraufhin kurz ein
-Mittelpunkt eingebaut und alles in einen Span gelegt — damit war
-`space-between` toter Code und die Zeile klebte links. Zurückgenommen: Die
-Messung passt sich der Darstellung an, nicht umgekehrt.
+Mittelpunkt eingebaut und alles in einen Span gelegt — das änderte die
+Darstellung, damit die Messung einfacher wird. Zurückgenommen: Die Messung
+passt sich der Darstellung an, nicht umgekehrt.
 
 Drei Regeln, die die Summe an das binden, was in der Liste darüber steht:
 
