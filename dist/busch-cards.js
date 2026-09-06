@@ -1325,6 +1325,113 @@ function calGruppiereNachTag(termine, start, ende) {
   return tage;
 }
 
+const calPalette = ["#3f8fd4", "#e08a3c", "#5aa469", "#b5559b", "#c95c5c", "#7d7fd4"];
+
+/**
+ * Summe ueber die ORIGINALLISTE, nicht ueber die gruppierten Tage: ein
+ * dreitaegiger Urlaub steht dort dreimal und wuerde dreifach zaehlen.
+ */
+function calSummeStunden(termine) {
+  const gesehen = new Set();
+  const tage = new Set();
+  let ms = 0;
+  let ganztags = 0;
+  for (const termin of termine || []) {
+    if (!termin || !termin.start) continue;
+    const kennung = termin.uid || JSON.stringify(termin.start) + (termin.summary || "");
+    if (gesehen.has(kennung)) continue;
+    gesehen.add(kennung);
+
+    const von = calStartDatum(termin);
+    const bis = calEndDatum(termin);
+    let lauf = new Date(von.getFullYear(), von.getMonth(), von.getDate());
+    const letzter = new Date(bis.getFullYear(), bis.getMonth(), bis.getDate());
+    let sicherung = 0;
+    while (lauf <= letzter && sicherung < 400) {
+      tage.add(calTagesSchluessel(lauf));
+      lauf = new Date(lauf.getFullYear(), lauf.getMonth(), lauf.getDate() + 1);
+      sicherung += 1;
+    }
+
+    if (calIstGanztags(termin)) ganztags += 1;
+    else ms += bis - von;
+  }
+  return { stunden: ms / 3600000, ganztags, tageMitTermin: tage.size };
+}
+
+function calEscape(text) {
+  return String(text == null ? "" : text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function calFormatUhrzeit(datum, locale) {
+  return datum.toLocaleTimeString(locale || "de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function calFormatStunden(zahl, locale) {
+  return zahl.toLocaleString(locale || "de-DE", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
+function calWochentagKurz(datum, locale) {
+  return datum.toLocaleDateString(locale || "de-DE", { weekday: "short" });
+}
+
+function calTerminHtml(termin, optionen) {
+  const farbe = optionen.farben[termin._entity] || calPalette[0];
+  const punkt = optionen.mehrereKalender
+    ? `<span class="cal-punkt" style="background:${calEscape(farbe)}"></span>`
+    : "";
+  const zeit = calIstGanztags(termin)
+    ? "ganztägig"
+    : `${calFormatUhrzeit(calStartDatum(termin), optionen.locale)} – ` +
+      `${calFormatUhrzeit(calEndDatum(termin), optionen.locale)}`;
+  // Beschreibung und Ort landen im `title`, weil es keinen Termin-Dialog gibt.
+  const hinweis = [termin.description, termin.location].filter(Boolean).join(" · ");
+  return (
+    `<div class="cal-termin" data-uid="${calEscape(termin.uid || "")}" ` +
+    `data-entity="${calEscape(termin._entity || "")}" ` +
+    `title="${calEscape(hinweis)}">` +
+    `${punkt}<span class="cal-zeit">${calEscape(zeit)}</span>` +
+    `<span class="cal-titel">${calEscape(termin.summary || "(ohne Titel)")}</span>` +
+    `</div>`
+  );
+}
+
+function calListeHtml(tage, optionen) {
+  const heuteSchluessel = calTagesSchluessel(new Date());
+  const zeilen = [];
+  for (const tag of tage) {
+    if (!optionen.zeigeLeereTage && tag.termine.length === 0) continue;
+    const klassen = ["cal-tag"];
+    if (tag.istWochenende) klassen.push("cal-wochenende");
+    if (tag.schluessel === heuteSchluessel) klassen.push("cal-heute");
+    if (tag.termine.length === 0) klassen.push("cal-leer");
+    const inhalt = tag.termine.length
+      ? tag.termine.map((t) => calTerminHtml(t, optionen)).join("")
+      : `<div class="cal-termin cal-nichts"></div>`;
+    zeilen.push(
+      `<div class="${klassen.join(" ")}">` +
+        `<div class="cal-datum">` +
+        `<span class="cal-wt">${calEscape(calWochentagKurz(tag.datum, optionen.locale))}</span>` +
+        `<span class="cal-nr">${tag.tagNummer}.</span>` +
+        `</div>` +
+        `<div class="cal-inhalt">${inhalt}</div>` +
+        `</div>`
+    );
+  }
+  return zeilen.join("");
+}
+
 customElements.define("busch-schedule-card", BuschScheduleCard);
 customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
