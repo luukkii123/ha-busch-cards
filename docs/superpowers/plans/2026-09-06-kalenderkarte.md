@@ -160,7 +160,7 @@ test("die Datei laesst sich in der Sandbox ausfuehren", () => {
 
 ```bash
 cd "/mnt/user/Data/Claude Projekte/hacs/busch-cards"
-node --test tests/
+node --test 'tests/*.test.js'
 ```
 
 Erwartet: beide Tests bestehen. Wenn `ladeKarte` scheitert, fehlt ein Stub im
@@ -178,7 +178,7 @@ function clamp(a) { return a; }
 Dann:
 
 ```bash
-node --test tests/
+node --test 'tests/*.test.js'
 ```
 
 Erwartet: `kein Top-Level-Name ist doppelt vergeben` **schlägt fehl** und nennt
@@ -189,7 +189,7 @@ Erwartet: `kein Top-Level-Name ist doppelt vergeben` **schlägt fehl** und nennt
 ```bash
 cd "/mnt/user/Data/Claude Projekte/hacs/busch-cards"
 git checkout -- dist/busch-cards.js
-node --test tests/
+node --test 'tests/*.test.js'
 ```
 
 Erwartet: wieder grün.
@@ -288,7 +288,7 @@ test("der Monatsname nennt Monat und Jahr", () => {
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test tests/monat.test.js
+node --test 'tests/*.test.js'monat.test.js
 ```
 
 Erwartet: FEHLER, `calMonatsGrenzen is not defined`.
@@ -332,7 +332,7 @@ function calMonatsName(datum, locale) {
 - [ ] **Schritt 4: Tests laufen lassen, müssen grün sein**
 
 ```bash
-node --check dist/busch-cards.js && node --test tests/
+node --check dist/busch-cards.js && node --test 'tests/*.test.js'
 ```
 
 Erwartet: alle Tests bestehen, auch der Namensraum-Wächter.
@@ -503,7 +503,7 @@ test("Termine ausserhalb des Monats werden verworfen", () => {
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test tests/gruppieren.test.js
+node --test 'tests/*.test.js'gruppieren.test.js
 ```
 
 Erwartet: FEHLER, `calIstGanztags is not defined`.
@@ -604,7 +604,7 @@ function calGruppiereNachTag(termine, start, ende) {
 - [ ] **Schritt 4: Tests laufen lassen, müssen grün sein**
 
 ```bash
-node --check dist/busch-cards.js && node --test tests/
+node --check dist/busch-cards.js && node --test 'tests/*.test.js'
 ```
 
 Erwartet: alle Tests bestehen.
@@ -786,7 +786,7 @@ test("bei einem einzigen Kalender wird kein Farbpunkt gezeichnet", () => {
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test tests/darstellung.test.js
+node --test 'tests/*.test.js'darstellung.test.js
 ```
 
 Erwartet: FEHLER, `calSummeStunden is not defined`.
@@ -907,7 +907,7 @@ function calListeHtml(tage, optionen) {
 - [ ] **Schritt 4: Tests laufen lassen, müssen grün sein**
 
 ```bash
-node --check dist/busch-cards.js && node --test tests/
+node --check dist/busch-cards.js && node --test 'tests/*.test.js'
 ```
 
 Erwartet: alle Tests bestehen.
@@ -1008,7 +1008,7 @@ test("eine fehlende entities-Angabe ergibt eine leere Liste, keinen Absturz", ()
 - [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 ```bash
-node --test tests/karte.test.js
+node --test 'tests/*.test.js'karte.test.js
 ```
 
 Erwartet: FEHLER, `calNormalisiereKonfig is not defined`.
@@ -1273,7 +1273,7 @@ class BuschCalendarCard extends HTMLElement {
 - [ ] **Schritt 4: Tests laufen lassen, müssen grün sein**
 
 ```bash
-node --check dist/busch-cards.js && node --test tests/
+node --check dist/busch-cards.js && node --test 'tests/*.test.js'
 ```
 
 Erwartet: alle Tests bestehen, auch der Namensraum-Wächter.
@@ -1479,7 +1479,7 @@ const CARD_VERSION = "0.5.0";
 - [ ] **Schritt 4: Prüfen**
 
 ```bash
-node --check dist/busch-cards.js && node --test tests/
+node --check dist/busch-cards.js && node --test 'tests/*.test.js'
 ```
 
 Erwartet: alle Tests grün, Namensraum-Wächter grün. Zusätzlich muss die
@@ -1706,7 +1706,7 @@ Erst wenn Aufgabe 7 die Sollwerte getroffen hat.
 
 ```bash
 cd "/mnt/user/Data/Claude Projekte/hacs/busch-cards"
-node --check dist/busch-cards.js && node --test tests/ && git status --short
+node --check dist/busch-cards.js && node --test 'tests/*.test.js' && git status --short
 ```
 
 Erwartet: Tests grün, sauberer Arbeitsbaum.
