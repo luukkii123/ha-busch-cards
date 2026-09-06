@@ -1346,8 +1346,23 @@ function calSummeStunden(termine) {
     // Ohne lesbaren Start ist `bis - von` NaN, und ein einziger kaputter
     // Termin macht die Summe des ganzen Monats zu NaN. Eine unbrauchbare
     // Summe sieht falsch aus statt unvollstaendig — deshalb hier dasselbe
-    // Ueberspringen wie in `calGruppiereNachTag`. In der Liste bleibt der
-    // Termin trotzdem sichtbar.
+    // Ueberspringen wie in `calGruppiereNachTag`.
+    //
+    // ACHTUNG, zwei verschiedene Faelle — wer nur diese Funktion liest, zieht
+    // sonst den falschen Schluss:
+    //
+    //   Kaputtes ENDE: die Rueckfallregel in `calEndDatum` greift, der Termin
+    //   behaelt seinen Tag, bekommt Dauer null und bleibt in der Liste
+    //   sichtbar. Er zaehlt hier mit — nur eben mit null Stunden.
+    //
+    //   Kaputter START: die Rueckfallregel greift nicht, weil es keinen Tag
+    //   gibt, an dem der Eintrag stehen koennte. `calGruppiereNachTag`
+    //   ueberspringt ihn bereits, diese Zeile tut dasselbe. Er erscheint also
+    //   WEDER in der Liste NOCH in der Summe. Ein Ersatztag waere ein
+    //   erfundenes Datum, und das ist in einer Kalenderkarte schlechter als
+    //   ein fehlender Eintrag. Sichtbar gemacht wird der Verlust an anderer
+    //   Stelle: die Kartenklasse nennt die Zahl der uebersprungenen Termine
+    //   in ihrer Hinweiszeile.
     if (Number.isNaN(von.getTime())) continue;
     const bis = calEndDatum(termin);
     let lauf = new Date(von.getFullYear(), von.getMonth(), von.getDate());

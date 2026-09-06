@@ -179,3 +179,42 @@ test("fehlende farben in den Optionen werfen nicht", () => {
   }, "ein von Hand gebautes Optionsobjekt darf die Liste nicht sprengen");
   assert.ok(html.includes("cal-punkt"), "ohne Zuordnung greift die erste Palettenfarbe");
 });
+
+/* --------------------------------------------------------------------------
+ * Fix-Runde 2 — REGRESSIONSSICHERUNG, nicht fehlergetrieben.
+ *
+ * Diese Pruefung war vom ersten Lauf an gruen: sie haelt das Verhalten fest,
+ * das der praezisierte Kommentar in `calSummeStunden` beschreibt. Ihr Zweck
+ * ist der Tag, an dem jemand `calGruppiereNachTag` einen Ersatztag gibt —
+ * dann faellt sie um und zwingt die Entscheidung ans Licht, statt sie
+ * stillschweigend geschehen zu lassen. Zeitunabhaengig, wird also nicht
+ * nichtssagend.
+ * ------------------------------------------------------------------------ */
+
+test("kaputtes Ende bleibt sichtbar, kaputter Start verschwindet ganz", () => {
+  const { start, ende } = calMonatsGrenzen(new Date(2026, 7, 15), 0);
+  const optionen = {
+    zeigeLeereTage: false, locale: "de-DE", farben: {}, mehrereKalender: false,
+  };
+
+  const kaputtesEnde = {
+    start: { dateTime: "2026-08-05T08:00:00+02:00" },
+    end: { dateTime: "morgen frueh" },
+    summary: "Kaputtes Ende",
+    uid: "e",
+  };
+  const mitEnde = calListeHtml(calGruppiereNachTag([kaputtesEnde], start, ende), optionen);
+  assert.ok(mitEnde.includes("Kaputtes Ende"), "behaelt seinen Tag und bleibt sichtbar");
+  assert.strictEqual(calSummeStunden([kaputtesEnde]).stunden, 0, "Dauer null, nicht NaN");
+  assert.strictEqual(calSummeStunden([kaputtesEnde]).tageMitTermin, 1);
+
+  const kaputterStart = {
+    start: { dateTime: "morgen frueh" },
+    end: { dateTime: "2026-08-06T10:00:00+02:00" },
+    summary: "Kaputter Start",
+    uid: "s",
+  };
+  const mitStart = calListeHtml(calGruppiereNachTag([kaputterStart], start, ende), optionen);
+  assert.strictEqual(mitStart, "", "ohne lesbaren Start gibt es keinen Tag — kein Eintrag");
+  assert.strictEqual(calSummeStunden([kaputterStart]).tageMitTermin, 0, "auch nicht in der Summe");
+});
