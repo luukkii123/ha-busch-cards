@@ -737,7 +737,7 @@ test("ohne leere Tage stehen nur Tage mit Terminen in der Liste", () => {
   const html = calListeHtml(tage, {
     zeigeLeereTage: false, locale: "de-DE", farben: {}, mehrereKalender: false,
   });
-  const zeilen = (html.match(/class="cal-tag"/g) || []).length;
+  const zeilen = (html.match(/class="cal-tag[ "]/g) || []).length;
   assert.strictEqual(zeilen, 1, "nur der 3. August");
 });
 
@@ -747,7 +747,7 @@ test("mit leeren Tagen steht jeder Tag des Monats in der Liste", () => {
   const html = calListeHtml(tage, {
     zeigeLeereTage: true, locale: "de-DE", farben: {}, mehrereKalender: false,
   });
-  const zeilen = (html.match(/class="cal-tag"/g) || []).length;
+  const zeilen = (html.match(/class="cal-tag[ "]/g) || []).length;
   assert.strictEqual(zeilen, 31);
 });
 
@@ -1306,9 +1306,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Verbraucht: `calNormalisiereKonfig`, `calPalette`.
 - Erzeugt: `CAL_CARD_SCHEMA`, `CAL_LABELS`, Klasse `BuschCalendarCardEditor`.
 
-- [ ] **Schritt 1: Editor und Anmeldung schreiben**
+- [ ] **Schritt 1: Schema, Labels und Editorklasse schreiben**
 
-Hinter `BuschCalendarCard` einfügen:
+**Einfügeort:** direkt hinter die Klasse `BuschCalendarCard`, also weiterhin
+**vor** der Zeile `customElements.define("busch-schedule-card", ...)`. Die
+Anmeldung der neuen Karte kommt in Schritt 2 an eine andere Stelle.
 
 ```js
 const CAL_CARD_SCHEMA = [
@@ -1445,6 +1447,15 @@ class BuschCalendarCardEditor extends HTMLElement {
   }
 }
 
+```
+
+- [ ] **Schritt 2: Die Karte anmelden**
+
+**Einfügeort:** ans **Ende der Datei**, hinter den bestehenden
+`window.customCards.push({ type: "busch-schedule-card", ... })`-Aufruf. Dort
+wird `window.customCards` angelegt; davor existiert das Array noch nicht.
+
+```js
 customElements.define("busch-calendar-card", BuschCalendarCard);
 customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
 
@@ -1457,11 +1468,7 @@ window.customCards.push({
 });
 ```
 
-**Wichtig:** Dieser Block gehört **hinter** den bestehenden
-`window.customCards.push({ type: "busch-schedule-card", ... })`-Aufruf, denn
-`window.customCards` wird dort angelegt.
-
-- [ ] **Schritt 2: Version hochziehen**
+- [ ] **Schritt 3: Version hochziehen**
 
 In `dist/busch-cards.js`, Zeile 18:
 
@@ -1469,15 +1476,23 @@ In `dist/busch-cards.js`, Zeile 18:
 const CARD_VERSION = "0.5.0";
 ```
 
-- [ ] **Schritt 3: Prüfen**
+- [ ] **Schritt 4: Prüfen**
 
 ```bash
 node --check dist/busch-cards.js && node --test tests/
 ```
 
-Erwartet: alle Tests grün, Namensraum-Wächter grün.
+Erwartet: alle Tests grün, Namensraum-Wächter grün. Zusätzlich muss die
+Anmeldung angekommen sein:
 
-- [ ] **Schritt 4: README ergänzen**
+```bash
+grep -c 'busch-calendar-card' dist/busch-cards.js
+```
+
+Erwartet: mindestens 4 Treffer (zwei `define`, der `customCards`-Eintrag, das
+`getConfigElement`).
+
+- [ ] **Schritt 5: README ergänzen**
 
 Füge in `README.md` einen Abschnitt zur neuen Karte ein: Kartentyp
 `custom:busch-calendar-card`, die Optionstabelle aus Abschnitt 5 der Spec, und
@@ -1492,7 +1507,7 @@ month_offset: -1
 show_total: true
 ```
 
-- [ ] **Schritt 5: Commit**
+- [ ] **Schritt 6: Commit**
 
 ```bash
 git add dist/busch-cards.js README.md
@@ -1581,6 +1596,10 @@ const b = document.createElement("busch-calendar-card");
 b.setConfig({ entities: ["calendar.arbeitszeiten"], month_offset: 0,
               show_empty_days: false, show_total: true });
 b.hass = hass;
+
+// Ohne dieses Einhaengen rendert die Karte ins Nichts und der Auslesecode
+// findet keine einzige Zeile.
+document.getElementById("wrap").append(a, b);
 ```
 
 - [ ] **Schritt 2: Die Messung nach `report.json` schreiben**
@@ -1635,7 +1654,8 @@ Die Stundensumme aus den drei zeitgebundenen Terminen:
                        Summe = 25,7 h  (auf eine Stelle gerundet)
 ```
 
-Im Fuß muss `25,7 h` stehen, dazu `5 Tage` und `1 ganztägig`.
+Im Fuß muss `25,7 h` stehen, dazu `6 Tage` und `1 ganztägig`. Sechs Tage:
+der 3., 4. und 5. sowie die drei Urlaubstage vom 10. bis 12.
 
 - [ ] **Schritt 4: Die Bilder wirklich ansehen**
 
