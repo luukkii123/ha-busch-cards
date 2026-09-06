@@ -186,13 +186,13 @@ function calAttrappe() {
 }
 
 /** Ein Termin am 5. des laufenden Monats — der Monat, den die Karte holt. */
-function calTerminImMonat() {
+function calTerminImMonat(titel) {
   const jetzt = new Date();
   const von = new Date(jetzt.getFullYear(), jetzt.getMonth(), 5, 10, 0, 0);
   const bis = new Date(jetzt.getFullYear(), jetzt.getMonth(), 5, 11, 0, 0);
   return {
     uid: "gut",
-    summary: "Zahnarzt",
+    summary: titel || "Zahnarzt",
     start: { dateTime: von.toISOString() },
     end: { dateTime: bis.toISOString() },
   };
@@ -299,3 +299,67 @@ function calIsoTag(datum) {
   const t = String(datum.getDate()).padStart(2, "0");
   return `${datum.getFullYear()}-${m}-${t}`;
 }
+
+/* ------------------------------------------------------------------------
+ * Fix-Runde 1: Wettlauf beim Blaettern und zweiter setConfig
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Ein `callApi`, dessen Antworten von Hand und in beliebiger Reihenfolge
+ * freigegeben werden. Anders laesst sich ein Wettlauf nicht nachstellen —
+ * mit `async () => …` loest immer die zuerst gestartete Anfrage zuerst auf,
+ * und genau der Fall ist der harmlose.
+ */
+function calSteuerbaresApi() {
+  const warteschlange = [];
+  return {
+    warteschlange,
+    callApi: () => new Promise((fertig) => warteschlange.push(fertig)),
+  };
+}
+
+test("die zuletzt gestartete Ladung gewinnt, auch wenn eine alte spaeter antwortet", async () => {
+  const { callApi, warteschlange } = calSteuerbaresApi();
+  const karte = calBauKarte(callApi);
+  // Vor und gleich wieder zurueck: Ladung 1 und Ladung 3 holen DENSELBEN
+  // Monat mit DERSELBEN Kalenderanzahl. Eine inhaltliche Marke waere hier
+  // doppelt und koennte die beiden nicht auseinanderhalten.
+  karte._blaettern(1);
+  karte._blaettern(-1);
+  assert.strictEqual(warteschlange.length, 3, "drei Ladungen sind angestossen");
+
+  warteschlange[2]([calTerminImMonat("NEU")]); // die zuletzt gestartete
+  await calRuhe();
+  assert.match(karte._koerper.innerHTML, /NEU/, "die frische Antwort steht da");
+
+  warteschlange[1]([]); // ueberholt
+  warteschlange[0]([calTerminImMonat("ALT")]); // ueberholt, antwortet aber spaeter
+  await calRuhe();
+  await calRuhe();
+
+  assert.match(karte._koerper.innerHTML, /NEU/, "die veraltete Antwort darf nicht gewinnen");
+  assert.doesNotMatch(karte._koerper.innerHTML, /ALT/);
+});
+
+test("ein zweiter setConfig laedt nach, statt auf der Ladeanzeige zu haengen", async () => {
+  let aufrufe = 0;
+  const karte = calBauKarte(async () => {
+    aufrufe += 1;
+    return [calTerminImMonat()];
+  });
+  await calRuhe();
+  assert.match(karte._koerper.innerHTML, /Zahnarzt/);
+  const vorher = aufrufe;
+
+  // Genau das, was ein Benutzer im Editor tut: eine Einstellung aendern,
+  // ohne die Entitaetsliste anzufassen. `_ladeWennVeraendert()` loest hier
+  // NICHT nach, sein Stempel haengt nur an den Entitaeten.
+  karte.setConfig({ entities: ["calendar.a"], title: "Neue Ueberschrift" });
+  await calRuhe();
+  await calRuhe();
+
+  assert.doesNotMatch(karte._koerper.innerHTML, /Wird geladen/, "keine haengende Ladeanzeige");
+  assert.match(karte._koerper.innerHTML, /Zahnarzt/, "die Liste steht wieder da");
+  assert.match(karte._koerper.innerHTML, /Neue Ueberschrift/, "die neue Einstellung greift");
+  assert.strictEqual(aufrufe, vorher + 1, "genau eine Nachladung, keine Schleife");
+});

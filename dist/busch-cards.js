@@ -1578,8 +1578,15 @@ class BuschCalendarCard extends HTMLElement {
     this._tage = null;
     this._fehler = [];
     this._ohneDatum = 0;
-    this._geladenFuer = null;
     this._render();
+    // Schuetzt gegen die dauerhaft haengende Ladeanzeige: Ein zweiter Aufruf
+    // aus dem Editor (Ueberschrift, Monatsversatz, Schalter) setzt `_tage`
+    // wieder auf null, und `_ladeWennVeraendert()` loest NICHT nach — sein
+    // Stempel haengt allein an der Entitaetsliste und deren Aenderungszeit,
+    // und die ist unveraendert. Ohne diese Zeile bliebe die Karte auf
+    // „Wird geladen …" stehen. Kreisen kann es nicht: `_lade()` ruft
+    // `setConfig` nirgends auf.
+    if (this._hass) this._lade();
   }
 
   set hass(hass) {
@@ -1610,8 +1617,15 @@ class BuschCalendarCard extends HTMLElement {
   async _lade() {
     if (!this._hass || !this._config) return;
     const { start, ende } = calMonatsGrenzen(new Date(), this._versatzLaufend);
-    const marke = `${start.getTime()}-${this._config.entities.length}`;
-    this._geladenFuer = marke;
+    // Ein monoton steigender Zaehler, KEINE Marke aus Monat und Kalenderanzahl.
+    // Wer vor und gleich wieder zurueck blaettert, holt zweimal dasselbe
+    // Fenster: eine inhaltliche Marke waere dann doppelt, und eine verspaetete
+    // alte Antwort haette die frische kommentarlos ueberschrieben. Mit dem
+    // Zaehler gewinnt immer die zuletzt gestartete Anfrage, egal welchen Monat
+    // sie holt. Er wird NIE zurueckgesetzt, auch nicht in `setConfig` — sonst
+    // traefe eine noch laufende alte Ladung wieder ihre eigene Nummer.
+    this._ladeZaehler = (this._ladeZaehler || 0) + 1;
+    const meineLadung = this._ladeZaehler;
 
     if (this._config.entities.length === 0) {
       this._tage = [];
@@ -1630,7 +1644,8 @@ class BuschCalendarCard extends HTMLElement {
       )
     );
     const ergebnisse = await Promise.allSettled(anfragen);
-    if (this._geladenFuer !== marke) return; // zwischenzeitlich weitergeblättert
+    // Eine neuere Ladung ist gestartet — diese Antwort ist ueberholt.
+    if (this._ladeZaehler !== meineLadung) return;
 
     const alle = [];
     const fehler = [];
