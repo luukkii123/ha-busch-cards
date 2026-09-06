@@ -4,13 +4,15 @@
 [![Release](https://img.shields.io/github/v/release/luukkii123/ha-busch-cards)](https://github.com/luukkii123/ha-busch-cards/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-**Zwei Lovelace-Karten ohne eigene Integration: ein Zeitplan-Editor für
-`schedule.*`-Helfer, und die eingebaute Landkarte mit frei wählbaren Kacheln.**
+**Drei Lovelace-Karten ohne eigene Integration: ein Zeitplan-Editor für
+`schedule.*`-Helfer, die eingebaute Landkarte mit frei wählbaren Kacheln, und
+eine Terminliste je Kalendermonat.**
 
 | Karte | Wofür |
 | --- | --- |
 | `busch-schedule-card` | Zeitplan-Helfer direkt im Dashboard bearbeiten |
 | `busch-map-card` | die eingebaute `map`-Karte, nur mit anderen Kacheln |
+| `busch-calendar-card` | Termine eines Monats als Tagesliste |
 
 ![Die Zeitplan-Karte im hellen Theme](docs/preview.png)
 
@@ -222,6 +224,67 @@ Dauerlast.
 > [ha-localtrack-cards](https://github.com/luukkii123/ha-localtrack-cards).
 > Sie brauchte Local Track nie und gehört deshalb hierher — zu den Karten ohne
 > eigene Integration.
+
+---
+
+## Die Kalender-Karte
+
+`busch-calendar-card` zeigt die Termine eines **Kalendermonats als Tagesliste** —
+eine Zeile je Tag, chronologisch, kein Wochenraster. Gedacht für Dienst- und
+Arbeitszeiten, wo die Frage „wann und wie lange" lautet und nicht „wo im
+Raster".
+
+```yaml
+type: custom:busch-calendar-card
+title: Arbeitszeit
+entities:
+  - calendar.arbeitszeiten
+month_offset: -1
+show_total: true
+```
+
+### Optionen
+
+**Alle Optionen sind im grafischen Karteneditor einstellbar.** Keine existiert
+nur in YAML.
+
+| Option | Typ | Standard | Wirkung |
+| --- | --- | --- | --- |
+| `entities` | Liste | leer | Kalender-Entitäten. Ein Eintrag ist entweder `calendar.x` oder `{entity, color, label}` |
+| `month_offset` | Ganzzahl | `0` | Startmonat. `-1` ist der Vormonat, `1` der Folgemonat |
+| `navigation` | ja/nein | `true` | Pfeile zum Blättern anzeigen |
+| `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
+| `show_total` | ja/nein | `false` | Fußzeile mit Summe der Termindauern |
+| `title` | Text | leer | Überschrift über dem Monatsnamen |
+| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Kalender-Dialog |
+
+`month_offset` ist bewusst eine Zahl und kein Auswahlfeld — so ist auch minus
+drei möglich. Das Blättern über die Pfeile ändert die Konfiguration **nicht**:
+sonst veränderte ein Blick in den Vormonat das Dashboard für alle.
+
+### Farben
+
+Jeder Kalender bekommt automatisch eine Farbe aus einer festen Palette, in der
+Reihenfolge der Auswahl. Wer eine ändern will, findet **ab dem zweiten
+Kalender** unter dem Formular je Kalender einen Farbwähler; in YAML ist es
+`{entity, color}`. Bei einem einzigen Kalender wird kein Farbpunkt gezeichnet —
+ein Punkt, der immer dieselbe Farbe hat, trägt keine Information.
+
+### Die Summe
+
+`show_total` summiert die Dauern aller zeitgebundenen Termine des Monats.
+**Ganztägige Termine gehen nicht in die Stundensumme ein**, sondern werden
+getrennt gezählt („20 Tage · 168,5 h · 1 ganztägig"). Sie mit 24 Stunden zu
+verrechnen würde die Summe verfälschen.
+
+### Grenzen
+
+- **Nur lesen.** Termine anlegen oder ändern kann die Karte nicht; ein Klick
+  öffnet den Dialog von Home Assistant.
+- **Ein Kalender, der nicht antwortet, hält die anderen nicht auf.** Unter der
+  Liste steht, welcher fehlt.
+- **Termine ohne lesbares Startdatum werden nicht angezeigt**, aber gezählt und
+  in derselben Hinweiszeile genannt — stillschweigend verschwinden sie nicht.
 
 ## Die Timeline-Karte ist umgezogen
 

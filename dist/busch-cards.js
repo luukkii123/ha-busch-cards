@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.5.0";
+const CARD_VERSION = "0.6.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1775,6 +1775,151 @@ class BuschCalendarCard extends HTMLElement {
   }
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Editor der Kalenderkarte.
+ *
+ * Jede Option aus Abschnitt 5 der Spec steht im Schema — keine existiert nur
+ * in YAML. Die Farben je Kalender stehen bewusst NICHT im `ha-form`-Schema:
+ * sie haengen an den Eintraegen von `entities`, und der Entitaetsselektor
+ * kennt nur flache Zeichenketten. Sie bekommen deshalb ein eigenes Feld
+ * darunter, das erst ab dem zweiten Kalender erscheint (ein Punkt, der immer
+ * dieselbe Farbe hat, traegt keine Information).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const CAL_CARD_SCHEMA = [
+  { name: "title", selector: { text: {} } },
+  {
+    name: "entities",
+    selector: { entity: { domain: "calendar", multiple: true } },
+  },
+  {
+    name: "month_offset",
+    selector: { number: { min: -24, max: 24, step: 1, mode: "box" } },
+  },
+  {
+    type: "grid",
+    schema: [
+      { name: "navigation", selector: { boolean: {} } },
+      { name: "show_empty_days", selector: { boolean: {} } },
+      { name: "show_total", selector: { boolean: {} } },
+      { name: "open_event_on_tap", selector: { boolean: {} } },
+    ],
+  },
+];
+
+const CAL_LABELS = {
+  title: "Überschrift",
+  entities: "Kalender",
+  month_offset: "Monatsversatz (-1 = Vormonat)",
+  navigation: "Pfeile zum Blättern",
+  show_empty_days: "Leere Tage zeigen",
+  show_total: "Summe in der Fußzeile",
+  open_event_on_tap: "Klick öffnet den Kalender",
+};
+
+class BuschCalendarCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = { ...CAL_STANDARD, ...config };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  /** Der Entitaetsselektor liefert Zeichenketten. Eigene Farben, die schon
+   *  gesetzt waren, muessen dabei erhalten bleiben. */
+  _verschmelzeEntities(neueListe) {
+    const alt = new Map();
+    for (const e of this._config.entities || []) {
+      if (typeof e === "object" && e.entity) alt.set(e.entity, e);
+    }
+    return (neueListe || []).map((id) => (alt.has(id) ? alt.get(id) : id));
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.schema = CAL_CARD_SCHEMA;
+      this._form.computeLabel = (schema) => CAL_LABELS[schema.name] || schema.name;
+      this._form.addEventListener("value-changed", (ereignis) => {
+        ereignis.stopPropagation();
+        const werte = { ...ereignis.detail.value };
+        werte.entities = this._verschmelzeEntities(werte.entities);
+        this._config = { ...this._config, ...werte };
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: this._config },
+            bubbles: true,
+            composed: true,
+          })
+        );
+        this._renderFarben();
+      });
+      this.appendChild(this._form);
+
+      this._farbFeld = document.createElement("div");
+      this._farbFeld.style.padding = "8px 0 0";
+      this.appendChild(this._farbFeld);
+    }
+
+    this._form.hass = this._hass;
+    // ha-form erwartet flache Zeichenketten im Entitaetsselektor.
+    this._form.data = {
+      ...this._config,
+      entities: (this._config.entities || []).map((e) =>
+        typeof e === "string" ? e : e.entity
+      ),
+    };
+    this._renderFarben();
+  }
+
+  _renderFarben() {
+    const normal = calNormalisiereKonfig(this._config);
+    if (normal.entities.length < 2) {
+      this._farbFeld.innerHTML = "";
+      return;
+    }
+    this._farbFeld.innerHTML =
+      `<div style="font-weight:600;margin:8px 0 4px">Farben</div>` +
+      normal.entities
+        .map((e) => {
+          const name =
+            (this._hass.states[e.entity] &&
+              this._hass.states[e.entity].attributes.friendly_name) ||
+            e.entity;
+          return (
+            `<label style="display:flex;align-items:center;gap:10px;padding:4px 0">` +
+            `<input type="color" data-entity="${calEscape(e.entity)}" value="${calEscape(e.color)}">` +
+            `<span>${calEscape(name)}</span></label>`
+          );
+        })
+        .join("");
+
+    for (const feld of this._farbFeld.querySelectorAll("input[type=color]")) {
+      feld.addEventListener("change", (ereignis) => {
+        const id = ereignis.target.dataset.entity;
+        const liste = calNormalisiereKonfig(this._config).entities.map((e) => ({
+          entity: e.entity,
+          color: e.entity === id ? ereignis.target.value : e.color,
+          ...(e.label ? { label: e.label } : {}),
+        }));
+        this._config = { ...this._config, entities: liste };
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: this._config },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+    }
+  }
+}
+
 customElements.define("busch-schedule-card", BuschScheduleCard);
 customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
@@ -2213,6 +2358,17 @@ window.customCards.push({
   type: "busch-map-card",
   name: "Busch Landkarte",
   description: "Die eingebaute Map-Karte mit frei wählbaren Kacheln — nur `type:` tauschen.",
+  preview: true,
+  documentationURL: "https://github.com/luukkii123/ha-busch-cards",
+});
+
+customElements.define("busch-calendar-card", BuschCalendarCard);
+customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
+
+window.customCards.push({
+  type: "busch-calendar-card",
+  name: "Busch Kalender",
+  description: "Termine als Monatsliste, mit Monatsversatz und Blättern.",
   preview: true,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
