@@ -1215,6 +1215,93 @@ function calMonatsName(datum, locale) {
   });
 }
 
+function calIstGanztags(termin) {
+  return Boolean(termin && termin.start && termin.start.date && !termin.start.dateTime);
+}
+
+/**
+ * Ein reines Datum wird von Hand zerlegt. `new Date("2026-08-04")` liest die
+ * Zeichenkette als UTC-Mitternacht — westlich von Greenwich ergaebe das den
+ * 3. August. Der Konstruktor mit Zahlen nimmt lokale Zeit.
+ */
+function calDatumAusText(text) {
+  const teile = String(text).split("-").map(Number);
+  return new Date(teile[0], teile[1] - 1, teile[2], 0, 0, 0, 0);
+}
+
+function calStartDatum(termin) {
+  return calIstGanztags(termin)
+    ? calDatumAusText(termin.start.date)
+    : new Date(termin.start.dateTime);
+}
+
+/**
+ * Bei ganztaegigen Terminen ist `end.date` AUSSCHLIESSEND: ein eintaegiger
+ * Termin am 4. hat das Ende am 5. Hier wird auf den letzten betroffenen Tag
+ * zurueckgerechnet.
+ */
+function calEndDatum(termin) {
+  if (!calIstGanztags(termin)) return new Date(termin.end.dateTime);
+  const roh = calDatumAusText(termin.end.date);
+  return new Date(roh.getFullYear(), roh.getMonth(), roh.getDate() - 1, 23, 59, 59, 999);
+}
+
+function calTagesSchluessel(datum) {
+  const m = String(datum.getMonth() + 1).padStart(2, "0");
+  const t = String(datum.getDate()).padStart(2, "0");
+  return `${datum.getFullYear()}-${m}-${t}`;
+}
+
+/**
+ * Ein Eintrag je Tag des Monats, auch fuer Tage ohne Termin.
+ * Die Tage werden ueber ihre Nummer erzeugt, nicht durch Hochzaehlen eines
+ * Date-Objekts: das bliebe an der Sommerzeitgrenze haengen.
+ */
+function calGruppiereNachTag(termine, start, ende) {
+  const tage = [];
+  const nachSchluessel = new Map();
+  for (let n = 1; n <= ende.getDate(); n += 1) {
+    const datum = new Date(start.getFullYear(), start.getMonth(), n);
+    const eintrag = {
+      schluessel: calTagesSchluessel(datum),
+      datum,
+      tagNummer: n,
+      wochentag: datum.getDay(),
+      istWochenende: datum.getDay() === 0 || datum.getDay() === 6,
+      termine: [],
+    };
+    tage.push(eintrag);
+    nachSchluessel.set(eintrag.schluessel, eintrag);
+  }
+
+  for (const termin of termine || []) {
+    if (!termin || !termin.start) continue;
+    const von = calStartDatum(termin);
+    const bis = calEndDatum(termin);
+    // Jeden betroffenen Tag anfassen, damit mehrtaegige Termine ueberall stehen.
+    let lauf = new Date(von.getFullYear(), von.getMonth(), von.getDate());
+    const letzter = new Date(bis.getFullYear(), bis.getMonth(), bis.getDate());
+    let sicherung = 0;
+    while (lauf <= letzter && sicherung < 400) {
+      const treffer = nachSchluessel.get(calTagesSchluessel(lauf));
+      if (treffer) treffer.termine.push(termin);
+      lauf = new Date(lauf.getFullYear(), lauf.getMonth(), lauf.getDate() + 1);
+      sicherung += 1;
+    }
+  }
+
+  for (const tag of tage) {
+    tag.termine.sort((a, b) => {
+      const ga = calIstGanztags(a);
+      const gb = calIstGanztags(b);
+      if (ga !== gb) return ga ? -1 : 1;
+      return calStartDatum(a) - calStartDatum(b);
+    });
+  }
+
+  return tage;
+}
+
 customElements.define("busch-schedule-card", BuschScheduleCard);
 customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
