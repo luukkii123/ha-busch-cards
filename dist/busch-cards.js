@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.8.1";
+const CARD_VERSION = "0.8.2";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1510,6 +1510,7 @@ const CAL_STANDARD = {
   show_total: false,
   title: "",
   open_event_on_tap: true,
+  edit_on_tap: true,
 };
 
 function calNormalisiereKonfig(config) {
@@ -1657,6 +1658,23 @@ const CAL_STIL = `
  * ────────────────────────────────────────────────────────────────────────── */
 
 const CAL_DIALOG_TAG = "dialog-calendar-event-detail";
+/**
+ * HAs EDITOR — der mit den Eingabefeldern, nicht der mit den Knoepfen.
+ * Vertrag am ausgelieferten Buendel: `{ calendarId?, selectedDate?, entry?,
+ * canDelete?, updated }`. Pflicht ist genau EIN Feld: `updated`. Es wird nach
+ * jedem Erfolg unbedingt abgewartet (`await this._params.updated()`); fehlt
+ * es, wirft der Dialog nach dem Speichern.
+ *
+ * `canEdit` gibt es hier NICHT: der Editor prueft die Aenderungsberechtigung
+ * nirgends. Das muss die Karte selbst tun — siehe `calStufeWaehlen`.
+ */
+const CAL_EDITOR_DIALOG_TAG = "dialog-calendar-event-editor";
+
+/** Die drei Stufen, von oben nach unten. Jede faellt auf die naechste. */
+const CAL_STUFE_EDITOR = "editor";
+const CAL_STUFE_ANSICHT = "ansicht";
+const CAL_STUFE_ENTITAET = "entitaet";
+const CAL_STUFEN = [CAL_STUFE_EDITOR, CAL_STUFE_ANSICHT, CAL_STUFE_ENTITAET];
 
 /** Bitmaske von `supported_features` der Kalender-Entitaet:
  *  1 = anlegen (braucht die Karte nicht), 2 = loeschen, 4 = aendern. */
@@ -1666,8 +1684,8 @@ const CAL_MERKMAL_AENDERN = 4;
 /** Wie lange auf die Definition von `ha-full-calendar` gewartet wird. */
 const CAL_SONDE_ZEITGRENZE = 5000;
 
-/** Die abgegriffene Ladefunktion, sobald sie einmal da ist. */
-let calDialogImport = null;
+/** Beide abgegriffenen Ladefunktionen, sobald sie einmal da sind. */
+let calDialogImporte = { ansicht: null, editor: null };
 /**
  * Der EINE Versuch, sie zu holen — als Zusage gemerkt, nicht als Ergebnis.
  * Damit laufen zwei schnelle Klicks nicht in zwei Sonden, und ein
@@ -1687,16 +1705,28 @@ function calWarteAufElement(name) {
 }
 
 /**
- * Holt Home Assistants eigene Ladefunktion fuer den Termin-Dialog — einmal.
- * Ergebnis ist die Funktion oder `null`; sie wirft nie.
+ * Holt Home Assistants eigene Ladefunktionen fuer BEIDE Termin-Dialoge —
+ * einmal. Ergebnis ist stets ein Objekt `{ ansicht, editor }`, dessen Felder
+ * die Funktion oder `null` sind; sie wirft nie.
+ *
+ * Warum eine einzige Sonde fuer beide: Ansichts- und Editor-Ladefunktion
+ * liegen im SELBEN Teilstueck des Frontends. Nacheinander
+ * `_handleEventClick(...)` und `_createEvent()` auf derselben Instanz
+ * aufzurufen holt beide; unterschieden wird am `dialogTag`.
+ *
+ * Und warum ueberhaupt: Ein einmal geoeffneter Ansichtsdialog registriert den
+ * Editor NICHT mit — sein Ladeauftrag zieht das Editor-Modul nicht nach. Ohne
+ * abgegriffene Ladefunktion bringt ein Ereignis mit dem Editor-Namen gar
+ * nichts.
  */
-function calHoleDialogImport(hass, entityId) {
+function calHoleDialogImporte(hass, entityId) {
   if (calDialogVersuch) return calDialogVersuch;
   calDialogVersuch = (async () => {
+    const leer = { ansicht: null, editor: null };
     try {
-      if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return null;
+      if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return leer;
       const helfer = await window.loadCardHelpers();
-      if (!helfer || typeof helfer.createCardElement !== "function") return null;
+      if (!helfer || typeof helfer.createCardElement !== "function") return leer;
 
       // Der EINZIGE Zweck: HA laedt beim Bauen der eingebauten Kalenderkarte
       // das Buendel nach, in dem `ha-full-calendar` definiert wird. Die Karte
@@ -1709,32 +1739,57 @@ function calHoleDialogImport(hass, entityId) {
       }
 
       if (typeof customElements === "undefined" || typeof customElements.whenDefined !== "function") {
-        return null;
+        return leer;
       }
       await calWarteAufElement("ha-full-calendar");
 
       const sonde = document.createElement("ha-full-calendar");
-      if (!sonde || typeof sonde._handleEventClick !== "function") return null;
+      if (!sonde || typeof sonde._handleEventClick !== "function") return leer;
       sonde.hass = hass;
 
-      let abgegriffen = null;
+      const abgegriffen = { ansicht: null, editor: null };
       sonde.addEventListener("show-dialog", (ereignis) => {
         const einzel = ereignis && ereignis.detail;
-        if (einzel && einzel.dialogTag === CAL_DIALOG_TAG) abgegriffen = einzel.dialogImport;
+        if (!einzel || typeof einzel.dialogImport !== "function") return;
+        if (einzel.dialogTag === CAL_DIALOG_TAG) abgegriffen.ansicht = einzel.dialogImport;
+        if (einzel.dialogTag === CAL_EDITOR_DIALOG_TAG) abgegriffen.editor = einzel.dialogImport;
       });
-      // Eine leere `eventData` reicht: HA baut daraus die Dialogparameter,
-      // die wir ohnehin verwerfen — geholt wird allein `dialogImport`.
-      sonde._handleEventClick({ event: { extendedProps: { calendar: entityId, eventData: {} } } });
 
-      calDialogImport = typeof abgegriffen === "function" ? abgegriffen : null;
-      return calDialogImport;
+      // Beide Aufrufe EINZELN abgefangen: wirft der eine, soll der andere
+      // trotzdem noch liefern. Vorher haette ein Fehlschlag beide gekostet.
+      try {
+        // Eine leere `eventData` reicht: HA baut daraus die Dialogparameter,
+        // die wir ohnehin verwerfen — geholt wird allein `dialogImport`.
+        sonde._handleEventClick({ event: { extendedProps: { calendar: entityId, eventData: {} } } });
+      } catch (fehler) {
+        /* Ansicht bleibt aus; vielleicht kommt wenigstens der Editor. */
+      }
+
+      try {
+        // DIE FALLE, und sie ist scharf: `_createEvent` liest bei
+        // `_activeView === "dayGridMonth"` — dem Standardwert — die Eigenschaft
+        // `this.calendar.view`. Auf einer NICHT EINGEHAENGTEN Sonde gibt es
+        // `this.calendar` nicht; die Sonde wuerde also werfen, BEVOR sie feuert,
+        // und wir bekaemen nichts. `"listWeek"` trifft keinen der drei Zweige.
+        //
+        // Hergeleitet aus dem ausgelieferten Buendel, NICHT gemessen — unter
+        // Node gibt es HAs Frontend nicht. Die Zeile kostet nichts und ist die
+        // einzige Absicherung gegen einen Fehlschlag, den niemand sieht.
+        sonde._activeView = "listWeek";
+        if (typeof sonde._createEvent === "function") sonde._createEvent();
+      } catch (fehler) {
+        /* Editor bleibt aus; die Ansicht steht dann als Stufe 2 bereit. */
+      }
+
+      calDialogImporte = abgegriffen;
+      return calDialogImporte;
     } catch (fehler) {
       console.warn(
-        "busch-calendar-card: Home Assistants Termin-Dialog liess sich nicht "
+        "busch-calendar-card: Home Assistants Termin-Dialoge liessen sich nicht "
         + "erreichen — der Klick oeffnet weiter den Kalender-Dialog. Grund: "
         + (fehler && fehler.message ? fehler.message : fehler)
       );
-      return null;
+      return { ansicht: null, editor: null };
     }
   })();
   return calDialogVersuch;
@@ -1838,6 +1893,88 @@ function calDialogParameter(entityId, termin, farbe, zustand) {
     canEdit: rechte.canEdit,
     canDelete: rechte.canDelete,
   };
+}
+
+/**
+ * Die Parameter fuer `dialog-calendar-event-editor`.
+ *
+ * Absichtlich OHNE `canEdit`: der Editor kennt das Feld nicht. Es dort
+ * hineinzuschreiben waere ein Versprechen, das niemand einloest. Und
+ * absichtlich OHNE die Serien- und Rechtepruefung — die steht an genau EINER
+ * Stelle, in `calStufeWaehlen`. Dieselbe Bedingung zweimal nachzubilden lief
+ * in diesem Repo schon einmal auseinander.
+ *
+ * `updated` haengt die Karte an; es ist das einzige Pflichtfeld des Vertrags
+ * und das einzige, das eine Bindung an die laufende Instanz braucht.
+ */
+function calEditorParameter(entityId, termin, zustand) {
+  const eintrag = calNormalisiereTermin(termin);
+  if (!eintrag || !eintrag.uid) return null;
+  return {
+    calendarId: entityId,
+    entry: eintrag,
+    canDelete: calBerechtigungen(zustand).canDelete,
+  };
+}
+
+/**
+ * DER SERIENSCHUTZ.
+ *
+ * Fehlt bei einem wiederkehrenden Termin die Instanzkennung `recurrence_id`,
+ * aendert der Editor STILLSCHWEIGEND die ganze Serie: er sendet dann einen
+ * leeren String, und der bedeutet „alle Vorkommen". Der Nutzer bekommt keine
+ * Rueckfrage, weil die Rueckfrage genau an dieser Kennung haengt.
+ *
+ * Ob Home Assistant fuer gewoehnliche Instanzen einer Serie ueberhaupt eine
+ * eigene Kennung liefert, ist UNBELEGT — offener Punkt seit der letzten Runde.
+ * Solange das so ist, wird der Editor fuer diesen Fall nicht geoeffnet,
+ * sondern der Ansichtsdialog: der hat einen Bearbeiten-Knopf und stellt die
+ * Rueckfrage korrekt.
+ *
+ * Ein stillschweigend geaenderter Serientermin ist ein Datenverlust, den
+ * niemand bemerkt, bis es zu spaet ist. Deshalb faellt die Entscheidung hier
+ * zugunsten der langsameren, aber ehrlichen Stufe.
+ */
+function calAendertGanzeSerie(eintrag) {
+  if (!eintrag) return false;
+  return Boolean(eintrag.rrule) && !eintrag.recurrence_id;
+}
+
+/**
+ * Welche Stufe ein Klick oeffnet — die ganze Entscheidung an einer Stelle,
+ * ohne DOM und damit pruefbar.
+ *
+ * `lage` = `{ editOnTap, hatEditorImport, hatAnsichtImport, rechte, eintrag }`.
+ *
+ * Der Editor prueft die Aenderungsberechtigung NICHT selbst; ist Bit 4 der
+ * Merkmale nicht gesetzt, zeigte er Eingabefelder fuer einen Kalender, der die
+ * Aenderung hinterher ablehnt. Deshalb prueft die Karte.
+ */
+function calStufeWaehlen(lage) {
+  const l = lage || {};
+  const eintrag = l.eintrag || null;
+  const rechte = l.rechte || {};
+  // Beide Dialoge brauchen `uid`: ohne sie liefen Speichern und Loeschen ins
+  // Leere. Dann ist der Entitaets-Dialog die ehrlichere Antwort.
+  if (!eintrag || !eintrag.uid) return CAL_STUFE_ENTITAET;
+  const editorMoeglich =
+    l.editOnTap !== false &&
+    Boolean(l.hatEditorImport) &&
+    Boolean(rechte.canEdit) &&
+    !calAendertGanzeSerie(eintrag);
+  if (editorMoeglich) return CAL_STUFE_EDITOR;
+  if (l.hatAnsichtImport) return CAL_STUFE_ANSICHT;
+  return CAL_STUFE_ENTITAET;
+}
+
+/**
+ * Die Stufe und alles, was darunter liegt — die Reihenfolge, in der die Karte
+ * es versucht, wenn eine Stufe zur Laufzeit wirft. Endet IMMER am
+ * Entitaets-Dialog: ein toter Klick darf nie herauskommen.
+ */
+function calStufenFolge(stufe) {
+  const i = CAL_STUFEN.indexOf(stufe);
+  return i < 0 ? [CAL_STUFE_ENTITAET] : CAL_STUFEN.slice(i);
 }
 
 class BuschCalendarCard extends HTMLElement {
@@ -1969,15 +2106,21 @@ class BuschCalendarCard extends HTMLElement {
 
   /**
    * Ein Klick auf eine Terminzeile oeffnet Home Assistants eigenen
-   * Termin-Dialog — den, in dem der Termin wirklich bearbeitet und geloescht
-   * werden kann. Wie die Karte an dessen Ladefunktion kommt, steht ausfuehrlich
-   * bei `calHoleDialogImport`.
+   * Termin-EDITOR — den mit den Eingabefeldern. Wie die Karte an dessen
+   * Ladefunktion kommt, steht ausfuehrlich bei `calHoleDialogImporte`.
    *
-   * SCHEITERT IRGENDEIN SCHRITT, oeffnet der Klick den Info-Dialog der
-   * Kalender-Entitaet, genau wie bis v0.8.0. Der Rueckfall ist kein Notnagel,
-   * sondern die zugesicherte Untergrenze: ein Klick, der gar nichts tut, waere
-   * das Schlechteste von allem — der Nutzer sieht nicht, ob die Karte kaputt
-   * ist oder er danebengetippt hat.
+   * DREI STUFEN, jede faellt auf die naechste:
+   *
+   *   1. Editor (`dialog-calendar-event-editor`) — direkt in die Felder.
+   *   2. Ansicht (`dialog-calendar-event-detail`) — der Stand von v0.8.1,
+   *      mit Knoepfen zum Bearbeiten und Loeschen darin.
+   *   3. Entitaet (`hass-more-info`) — der Stand bis v0.8.0.
+   *
+   * WELCHE Stufe entschieden wird, steht in `calStufeWaehlen`. Hier steht nur,
+   * was danach passiert — und dass jede Stufe EINZELN abgefangen ist: wirft
+   * das Oeffnen, wird die naechste versucht. Ein Klick, der gar nichts tut,
+   * waere das Schlechteste von allem; der Nutzer saehe nicht, ob die Karte
+   * kaputt ist oder er danebengetippt hat.
    *
    * Diese Methode wirft nie und lehnt nie ab; die aufrufende Klickbehandlung
    * wartet nicht auf sie.
@@ -1985,42 +2128,86 @@ class BuschCalendarCard extends HTMLElement {
   async _oeffneTermin(datensatz) {
     const entity = (datensatz && datensatz.entity) || "";
     if (!this._config.open_event_on_tap || !entity) return;
+
+    let stufen = [CAL_STUFE_ENTITAET];
+    let parameter = null;
+    let editorParameter = null;
+    let importe = { ansicht: null, editor: null };
     try {
       const termin = calTerminAusZeile(this._alleTermine, datensatz);
       const eintrag = this._config.entities.find((e) => e.entity === entity);
-      const parameter = calDialogParameter(
+      const zustand = this._hass && this._hass.states ? this._hass.states[entity] : null;
+      parameter = calDialogParameter(
         entity,
         termin,
         eintrag ? eintrag.color : calPalette[0],
-        this._hass && this._hass.states ? this._hass.states[entity] : null
+        zustand
       );
+      // Die Rohform, NICHT `parameter.entry`: das ist bereits normalisiert,
+      // und `calEditorParameter` normalisiert selbst. Zweimal normalisieren
+      // ergaebe `null`, weil die flache Form kein `start`-Objekt mehr hat.
+      editorParameter = calEditorParameter(entity, termin, zustand);
       if (parameter) {
-        const laden = await calHoleDialogImport(this._hass, entity);
-        if (laden) {
-          this.dispatchEvent(
-            new CustomEvent("show-dialog", {
-              detail: {
-                dialogTag: CAL_DIALOG_TAG,
-                dialogImport: laden,
-                // `updated` ruft HA nach jedem Speichern und Loeschen auf.
-                // Ohne diese Zeile zeigte die Liste hinterher den alten Stand,
-                // und die Aenderung saehe aus, als waere sie nicht angekommen.
-                dialogParams: { ...parameter, updated: () => this._lade() },
-              },
-              bubbles: true,
-              composed: true,
-            })
-          );
-          return;
-        }
+        importe = await calHoleDialogImporte(this._hass, entity);
+        stufen = calStufenFolge(
+          calStufeWaehlen({
+            editOnTap: this._config.edit_on_tap !== false,
+            hatEditorImport: Boolean(importe.editor),
+            hatAnsichtImport: Boolean(importe.ansicht),
+            rechte: { canEdit: parameter.canEdit, canDelete: parameter.canDelete },
+            eintrag: parameter.entry,
+          })
+        );
       }
     } catch (fehler) {
       console.warn(
-        "busch-calendar-card: Termin-Dialog nicht moeglich, es bleibt beim "
+        "busch-calendar-card: Stufe liess sich nicht bestimmen, es bleibt beim "
         + "Kalender-Dialog. Grund: " + (fehler && fehler.message ? fehler.message : fehler)
       );
     }
-    this._oeffneEntitaet(entity);
+
+    for (const stufe of stufen) {
+      try {
+        if (stufe === CAL_STUFE_EDITOR && editorParameter && importe.editor) {
+          this._zeigeDialog(CAL_EDITOR_DIALOG_TAG, importe.editor, {
+            ...editorParameter,
+            // `updated` ist das EINZIGE Pflichtfeld des Vertrags: HA wartet es
+            // nach jedem Erfolg unbedingt ab. Fehlt es, wirft der Dialog nach
+            // dem Speichern.
+            updated: () => this._lade(),
+          });
+          return;
+        }
+        if (stufe === CAL_STUFE_ANSICHT && parameter && importe.ansicht) {
+          this._zeigeDialog(CAL_DIALOG_TAG, importe.ansicht, {
+            ...parameter,
+            updated: () => this._lade(),
+          });
+          return;
+        }
+        if (stufe === CAL_STUFE_ENTITAET) {
+          this._oeffneEntitaet(entity);
+          return;
+        }
+      } catch (fehler) {
+        console.warn(
+          `busch-calendar-card: Stufe „${stufe}" liess sich nicht oeffnen, `
+          + "es geht eine Stufe tiefer. Grund: "
+          + (fehler && fehler.message ? fehler.message : fehler)
+        );
+      }
+    }
+  }
+
+  /** Ein `show-dialog` an HAs Dialogverwaltung. */
+  _zeigeDialog(tag, laden, parameter) {
+    this.dispatchEvent(
+      new CustomEvent("show-dialog", {
+        detail: { dialogTag: tag, dialogImport: laden, dialogParams: parameter },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   /** Der Rueckfall: HAs Info-Dialog der Kalender-Entitaet. */
@@ -2153,6 +2340,7 @@ const CAL_CARD_SCHEMA = [
       { name: "show_empty_days", selector: { boolean: {} } },
       { name: "show_total", selector: { boolean: {} } },
       { name: "open_event_on_tap", selector: { boolean: {} } },
+      { name: "edit_on_tap", selector: { boolean: {} } },
     ],
   },
 ];
@@ -2165,6 +2353,7 @@ const CAL_LABELS = {
   show_empty_days: "Leere Tage zeigen",
   show_total: "Summe in der Fußzeile",
   open_event_on_tap: "Klick öffnet den Termin",
+  edit_on_tap: "Klick öffnet den Termin zum Bearbeiten",
 };
 
 class BuschCalendarCardEditor extends HTMLElement {

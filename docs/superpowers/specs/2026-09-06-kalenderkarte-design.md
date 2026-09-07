@@ -126,7 +126,8 @@ existiert nur in YAML.
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
 | `show_total` | ja/nein | `false` | Fußzeile mit Summe der Termindauern |
 | `title` | Text | leer | Überschrift über dem Monatsnamen |
-| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin zum Bearbeiten (bis `0.8.0`: den Kalender-Dialog) |
+| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin (bis `0.8.0`: den Kalender-Dialog) |
+| `edit_on_tap` | ja/nein | `true` | Klick öffnet den Termin **zum Bearbeiten** (seit `0.8.2`). Aus = Ansichtsdialog wie in `0.8.1` |
 
 `month_offset` ist bewusst eine Zahl und kein Auswahlfeld, damit auch minus drei
 möglich ist.
@@ -263,8 +264,8 @@ Fehler dieses Repos direkt adressiert.
   Monat liefert die Vorhersage nichts, bei `month_offset: -1` bliebe die Spalte
   dauerhaft leer. Nachrüstbar, falls gewünscht.
 - **Termine anlegen.** Die Karte zeigt an; ändern und löschen übernimmt seit
-  `0.8.1` HAs eigener Dialog (siehe unten), einen Knopf „Termin hinzufügen"
-  gibt es nicht.
+  `0.8.1` HAs eigener Dialog, seit `0.8.2` direkt dessen Editor (siehe unten).
+  Einen Knopf „Termin hinzufügen" gibt es nicht.
 - ~~**Einen Dialog für den einzelnen Termin.**~~ **Seit `0.8.1` enthalten.**
   Die ursprüngliche Begründung — „Home Assistant bietet dafür keine
   öffentliche Schnittstelle" — stimmte für die Schnittstelle, aber nicht für
@@ -286,5 +287,44 @@ Fehler dieses Repos direkt adressiert.
   Klick ist ausgeschlossen** — und das ist unter Node geprüft, während der
   Sondenweg selbst es nicht sein kann: er braucht HAs echtes Frontend, und
   eine Attrappe belegte nur die Attrappe.
+- ~~**Den Editor mit den Eingabefeldern.**~~ **Seit `0.8.2` enthalten.**
+  `showCalendarEventEditDialog` feuert ebenfalls nur ein `show-dialog`, mit
+  `dialogTag: "dialog-calendar-event-editor"`. Sein Vertrag ist
+  `{ calendarId?, selectedDate?, entry?, canDelete?, updated }`; **Pflicht ist
+  genau ein Feld: `updated`** — es wird nach jedem Erfolg unbedingt abgewartet,
+  und fehlt es, wirft der Dialog nach dem Speichern. `entry` hat genau die
+  flache Form, die `calNormalisiereTermin()` ohnehin erzeugt.
+
+  **Der Editor gibt es nicht geschenkt:** Ein einmal geöffneter Ansichtsdialog
+  registriert ihn *nicht* mit, sein Ladeauftrag zieht das Editor-Modul nicht
+  nach. Gut ist dagegen, dass beide Ladefunktionen im selben Teilstück des
+  Frontends liegen — **eine einzige Sonde holt beide**, indem sie nacheinander
+  `_handleEventClick(…)` und `_createEvent()` aufruft; unterschieden wird am
+  `dialogTag`.
+
+  **Die Falle dabei, und sie ist scharf:** Auf einer nicht eingehängten Sonde
+  gibt es `this.calendar` nicht. Der Standardwert von `_activeView` ist
+  `"dayGridMonth"` und trifft einen Zweig, der auf `this.calendar.view`
+  zugreift — die Sonde würde **vor** dem Feuern werfen. Deshalb vorher
+  `sonde._activeView = "listWeek"`, das trifft keinen der drei Zweige. Aus dem
+  Quelltext hergeleitet, **nicht gemessen**.
+
+  **`canEdit` gibt es beim Editor nicht.** Er prüft die
+  Änderungsberechtigung nirgends; das muss die Karte tun (Bit 4 von
+  `supported_features`).
+
+  **Der Serienschutz ist die wichtigste Einschränkung.** Fehlt bei einem
+  wiederkehrenden Termin die Instanzkennung `recurrence_id`, sendet der Editor
+  beim Speichern einen leeren String — und der bedeutet „alle Vorkommen". Der
+  Nutzer bekommt keine Rückfrage, weil die Rückfrage genau an dieser Kennung
+  hängt. **Ob HA für gewöhnliche Instanzen einer Serie überhaupt eine eigene
+  Kennung liefert, ist unbelegt** und steht seit der Vorrunde als offener
+  Punkt. Solange das so ist: `rrule` ohne `recurrence_id` → Stufe 2.
+
+  **Drei Stufen, jede fällt auf die nächste** (`calStufeWaehlen`,
+  `calStufenFolge`): Editor → Ansicht → Kalender-Entität. Unter Node geprüft
+  sind die Stufenwahl, der Serienschutz, die Berechtigungsprüfung, der
+  Standardwert der Option und der Rückfall bei einer werfenden Stufe. Nicht
+  prüfbar bleibt die Sonde selbst.
 - **Wochen- oder Rasteransicht.** Es ist eine Liste. Für ein Raster gibt es die
   eingebaute Kalenderkarte.

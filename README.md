@@ -304,7 +304,8 @@ nur in YAML.
 | `show_empty_days` | ja/nein | `true` | Tage ohne Termin als leere Zeile zeigen |
 | `show_total` | ja/nein | `false` | Fußzeile mit Summe der Termindauern |
 | `title` | Text | leer | Überschrift über dem Monatsnamen |
-| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin zum Bearbeiten |
+| `open_event_on_tap` | ja/nein | `true` | Klick auf eine Zeile öffnet den Termin |
+| `edit_on_tap` | ja/nein | `true` | Klick öffnet den Termin **zum Bearbeiten** — mit den Eingabefeldern statt der Ansicht |
 
 `month_offset` ist bewusst eine Zahl und kein Auswahlfeld — so ist auch minus
 drei möglich. Das Blättern über die Pfeile ändert die Konfiguration **nicht**:
@@ -336,21 +337,36 @@ nicht. Fuß und Liste sollen dasselbe sagen.
 
 ### Klick auf einen Termin
 
-Seit `0.8.1` öffnet ein Klick auf eine Terminzeile **Home Assistants eigenen
-Termin-Dialog** — denselben, der aus der eingebauten Kalenderansicht aufgeht.
-Dort lässt sich der Termin ändern und löschen, und bei einer Serie fragt der
-Dialog selbst, ob nur dieser Termin oder alle folgenden gemeint sind. Was
-erlaubt ist, kommt aus `supported_features` der Kalender-Entität: nur wer
-ändern darf, sieht einen Speichern-Knopf.
+Seit `0.8.2` öffnet ein Klick auf eine Terminzeile **Home Assistants
+Termin-Editor** — den mit den Eingabefeldern, nicht die Ansicht mit den
+Knöpfen. Geht das nicht, fällt die Karte Stufe für Stufe zurück:
 
-Die Karte kommt an diesen Dialog auf einem Umweg — Home Assistant gibt seine
-Ladefunktion dafür nicht öffentlich heraus, und sie wird deshalb einmalig aus
-HAs eigenem Kalenderelement abgegriffen. **Klappt das nicht** — weil eine
-künftige HA-Fassung das Element umbenennt, oder weil der Termin gar keine
-Kennung hat —, öffnet der Klick wie bis `0.8.0` den Info-Dialog der
-**Kalender-Entität**. Ein Klick, der gar nichts tut, kommt dabei nicht heraus;
-in der Browser-Konsole steht dann eine Zeile mit dem Grund. Wer das Verhalten
-ganz abschalten will, setzt `open_event_on_tap: false`.
+| Stufe | Was aufgeht | Wann |
+| --- | --- | --- |
+| 1 | **Editor** (`dialog-calendar-event-editor`) | Standardfall: Ändern erlaubt, kein ungeschützter Serientermin, `edit_on_tap: true` |
+| 2 | **Ansicht** (`dialog-calendar-event-detail`) | Ändern nicht erlaubt · Serientermin ohne Instanzkennung · `edit_on_tap: false` · Editor nicht erreichbar |
+| 3 | **Kalender-Entität** (`hass-more-info`) | Termin ohne Kennung · beide Dialoge nicht erreichbar |
+
+**Serientermine gehen bewusst nur bis Stufe 2.** Fehlt einem wiederkehrenden
+Termin die Instanzkennung, ändert der Editor **stillschweigend die ganze
+Serie** — ohne Rückfrage, weil die Rückfrage genau an dieser Kennung hängt.
+Der Ansichtsdialog hat einen Bearbeiten-Knopf und stellt sie korrekt. Ein
+stillschweigend geänderter Serientermin ist ein Datenverlust, den niemand
+bemerkt, bis es zu spät ist.
+
+Was erlaubt ist, kommt aus `supported_features` der Kalender-Entität. **Der
+Editor prüft das nicht selbst** — er kennt gar kein Feld dafür; die Karte
+prüft Bit 4 (ändern) und nimmt sonst Stufe 2.
+
+Die Karte kommt an beide Dialoge auf einem Umweg — Home Assistant gibt die
+Ladefunktionen dafür nicht öffentlich heraus, und sie werden deshalb einmalig
+aus HAs eigenem Kalenderelement abgegriffen. **Klappt das nicht** — weil eine
+künftige HA-Fassung das Element umbenennt —, greift die nächste Stufe. Ein
+Klick, der gar nichts tut, kommt dabei nicht heraus; in der Browser-Konsole
+steht dann eine Zeile mit dem Grund.
+
+Wer beim Verhalten von `0.8.1` bleiben will, setzt `edit_on_tap: false`; wer
+den Klick ganz abschalten will, `open_event_on_tap: false`.
 
 ### Grenzen
 

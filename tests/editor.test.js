@@ -33,6 +33,7 @@ const OPTIONEN_DER_SPEC = [
   "show_total",
   "title",
   "open_event_on_tap",
+  "edit_on_tap",
 ];
 
 /** Das Schema ist verschachtelt (`type: "grid"`); gesucht sind die Blaetter. */

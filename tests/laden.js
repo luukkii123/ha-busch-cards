@@ -24,7 +24,7 @@ function quelle() {
  * reichere DOM-Attrappe, mit der sich die Kartenklasse selbst ausführen lässt.
  * Ersetzt wird jeweils der ganze Eintrag, nicht in die Tiefe gemischt.
  */
-function ladeKarte(namen, zusatz) {
+function ladeKarte(namen, zusatz, nachlauf) {
   const kontext = {
     console: { info() {}, warn() {}, error() {}, log() {} },
     window: { customCards: [] },
@@ -45,7 +45,14 @@ function ladeKarte(namen, zusatz) {
   kontext.globalThis = kontext;
   vm.createContext(kontext);
   const sammler = `\n;({ ${namen.join(", ")} });`;
-  return vm.runInContext(quelle() + sammler, kontext);
+  // `nachlauf` läuft im SELBEN Gültigkeitsbereich wie die Datei — genau wie
+  // der Sammler darunter. Damit lässt sich ein Modul-`let` von aussen setzen,
+  // ohne dass die Karte dafür eine Test-Hintertür bekommt. Gebraucht wird das
+  // für `calDialogVersuch`: die gemerkte Zusage der EINEN Sonde. Wer sie
+  // vorbelegt, prüft die Stufenwahl der Karte, ohne den Sondenweg selbst
+  // nachzubauen — der bleibt bewusst unbelegt.
+  const vorlauf = nachlauf ? `\n;${nachlauf}\n` : "";
+  return vm.runInContext(quelle() + vorlauf + sammler, kontext);
 }
 
 /**
