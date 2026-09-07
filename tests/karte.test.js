@@ -473,3 +473,82 @@ test("die Fusszeile der Karte schneidet auf den gezeigten Monat", async () => {
     "vom Monatsersten bis zum 5. um 16 Uhr — fuenf Tage, nicht zwoelf"
   );
 });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Markierung auf den Klickflaechen
+ *
+ * Beschwerde des Nutzers: „wieso wird der betreff dann immer markiert lass
+ * das". Die Terminzeilen sind klickbar, trugen aber kein `user-select` — ein
+ * Klick auf den Titel faerbte ihn blau wie Fliesstext.
+ *
+ * WAS DIESE PRUEFUNGEN LEISTEN, UND WAS NICHT: Sie lesen den Stilblock als
+ * TEXT. Sie belegen, dass die Regel dasteht und an welchem Wahlausdruck sie
+ * haengt — sie belegen NICHT, dass sie im Browser wirkt. Eine kaputte
+ * CSS-Regel verwirft der Browser stillschweigend, davon merkt Node nichts.
+ * Der Wirkungsnachweis kommt aus `docs/render/render-kalender.py`: dort wird
+ * ein echter Doppelklick abgesetzt und `getSelection().toString()` gelesen.
+ * Diese Pruefungen hier schuetzen allein gegen ein unbemerktes Zurueckdrehen.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** Kommentare raus — der Text unten NENNT `user-select` mehrfach, und ein
+ *  Muster ueber die Rohfassung wuerde die Erklaerung fuer die Regel halten. */
+function calStilOhneKommentare() {
+  const { CAL_STIL } = ladeKarte(["CAL_STIL"]);
+  return CAL_STIL.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/** Der Regelkoerper zu einem Wahlausdruck, oder `null`. */
+function calRegel(wahlausdruck) {
+  const stil = calStilOhneKommentare();
+  const muster = new RegExp(
+    wahlausdruck.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{([^}]*)\\}"
+  );
+  const treffer = stil.match(muster);
+  return treffer ? treffer[1] : null;
+}
+
+test("die klickbare Terminzeile laesst sich nicht markieren", () => {
+  const regel = calRegel(".cal-termin");
+  assert.ok(regel, "es muss eine Regel fuer .cal-termin geben");
+  assert.match(regel, /cursor:\s*pointer/, "die Zeile ist klickbar — darum geht es");
+  assert.match(regel, /-webkit-user-select:\s*none/, "iOS ist WebKit, die App auch");
+  assert.match(regel, /(^|[^-])user-select:\s*none/, "und die schlichte Form fuer alles andere");
+  // Reihenfolge: das Praefix zuerst, sonst gewinnt in einem Browser, der
+  // beide kennt, die praefigierte Fassung ueber die schlichte.
+  assert.ok(
+    regel.indexOf("-webkit-user-select") < regel.search(/(^|[^-])user-select/),
+    "die praefigierte Form steht vor der schlichten"
+  );
+});
+
+test("der Blaetterpfeil laesst sich ebenfalls nicht markieren", () => {
+  const regel = calRegel(".cal-pfeil");
+  assert.ok(regel, "es muss eine Regel fuer .cal-pfeil geben");
+  assert.match(regel, /cursor:\s*pointer/, "auch der Pfeil ist eine Klickflaeche");
+  assert.match(regel, /-webkit-user-select:\s*none/);
+  assert.match(regel, /(^|[^-])user-select:\s*none/);
+});
+
+/**
+ * Der eigentliche Wert dieser Datei: die Regel darf NICHT pauschal gelten.
+ * Monatsname, Kartentitel, Datumsspalte und Fusszeile sind keine
+ * Klickflaechen — wer sich „25,7 h" herauskopieren will, soll das koennen.
+ */
+test("markierbar bleibt alles, was nicht geklickt wird", () => {
+  const stil = calStilOhneKommentare();
+  const traeger = [...stil.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(([, , koerper]) => /user-select/.test(koerper))
+    .map(([, wahlausdruck]) => wahlausdruck.trim());
+  assert.deepStrictEqual(
+    traeger.slice().sort(),
+    [".cal-pfeil", ".cal-termin"],
+    "genau die beiden Klickflaechen tragen die Regel, sonst nichts"
+  );
+  for (const nicht of [".cal-monat", ".cal-titel-zeile", ".cal-datum", ".cal-fuss"]) {
+    assert.strictEqual(
+      /user-select/.test(calRegel(nicht) || ""),
+      false,
+      `${nicht} muss markierbar bleiben`
+    );
+  }
+});

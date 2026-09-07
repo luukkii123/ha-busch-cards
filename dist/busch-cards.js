@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.8.2";
+const CARD_VERSION = "0.8.3";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1582,8 +1582,24 @@ const CAL_STIL = `
   .cal-kopf { display:flex; align-items:center; justify-content:space-between;
     padding:12px 16px 8px; }
   .cal-monat { font-size:1.1em; font-weight:600; color:var(--primary-text-color); }
+  /* Zum \`user-select: none\` an dieser Stelle und an \`.cal-termin\`:
+     Beschwerde des Nutzers — „wieso wird der betreff dann immer markiert lass
+     das". Beide Flaechen sind KLICKFLAECHEN; wer darauf klickt, will oeffnen
+     bzw. blaettern und nicht markieren. Ein zweiter Klick machte den Text
+     stattdessen blau.
+
+     NUR die Klickflaechen, nicht die ganze Karte: Monatsname, Kartentitel,
+     Datumsspalte und Fusszeile bleiben markierbar — dort klickt niemand
+     versehentlich, und wer sich „25,7 h" herauskopieren will, soll das
+     koennen.
+
+     \`-webkit-user-select\` bleibt Pflicht: die Home-Assistant-App auf iOS ist
+     WebKit, und dort gilt bis heute nur die praefigierte Form. \`-moz-\` und
+     \`-ms-\` stehen bewusst NICHT da — Firefox versteht die schlichte Form seit
+     69, und der alte Edge spielt hier keine Rolle. */
   .cal-pfeil { background:none; border:none; cursor:pointer; padding:6px 10px;
-    color:var(--secondary-text-color); font-size:1.2em; line-height:1; border-radius:6px; }
+    color:var(--secondary-text-color); font-size:1.2em; line-height:1; border-radius:6px;
+    -webkit-user-select:none; user-select:none; }
   .cal-pfeil:hover { background:var(--divider-color); color:var(--primary-text-color); }
   .cal-titel-zeile { padding:12px 16px 0; font-weight:600;
     color:var(--primary-text-color); }
@@ -1598,7 +1614,13 @@ const CAL_STIL = `
   .cal-nr { font-weight:600; color:var(--primary-text-color); }
   .cal-inhalt { flex:1; min-width:0; }
   .cal-termin { display:flex; gap:8px; align-items:baseline; padding:2px 0;
-    cursor:pointer; }
+    cursor:pointer; -webkit-user-select:none; user-select:none; }
+  /* Die leeren Tage tragen \`cursor: default\` und sind nicht klickbar — die
+     Regel darueber gilt trotzdem auch fuer sie, und zwar bewusst: ihr Inhalt
+     ist \`<div class="cal-termin cal-nichts"></div>\`, also LEER. Es gibt dort
+     nichts zu markieren, die Regel kann dort folglich nichts wegnehmen. Eine
+     Ausnahme (\`user-select: text\`) waere eine zweite Stelle, die dasselbe
+     regelt, ohne etwas zu bewirken — und die eines Tages auseinanderlaeuft. */
   .cal-leer .cal-termin { cursor:default; min-height:1.2em; }
   .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
     align-self:center; }
