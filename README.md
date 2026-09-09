@@ -455,9 +455,17 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
-**Stand 09.09.2026, `CARD_VERSION` `0.9.1`** — alle drei Karten gegen die
+**Stand 09.09.2026, `CARD_VERSION` `0.10.0`** — alle **vier** Karten gegen die
 [UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). Veröffentlicht
-als `v0.9.0` (UI-Regeln) und `v0.9.1` (Landkarten-Fehler, siehe unten).
+als `v0.9.0` (UI-Regeln), `v0.9.1` (Landkarten-Fehler, siehe unten) und
+`v0.10.0` (neue Gerätekarte `busch-device-card`).
+
+Die Gerätekarte ist in diesem Lauf neu hinzugekommen und mit denselben vier
+Belegen abgenommen worden: `node --check`, 206 Node-Tests, der statische
+Regelprüfer über alle Repos und `docs/render/render-geraet.py` im
+Playwright-Container. Kalender- und Zeitplan-Karte sind **nach** der Änderung
+erneut gelaufen — sie teilen sich die Datei mit der neuen Karte, und genau dort
+ist dieses Repo einmal an einer Namenskollision gescheitert.
 
 **Der Live-Befund vom 09.09.2026 und was er über die Messung sagt.** Der Nutzer
 meldete, dass `busch-map-card` die konfigurierten Entitäten nur bei der
