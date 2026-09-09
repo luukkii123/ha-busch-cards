@@ -17,15 +17,22 @@ NACHGEBAUT sind dagegen `loadCardHelpers` und die innere Karte: das echte
 deshalb den Eingriff und den Rueckfall — NICHT, dass HAs echte Karte ihr
 `ha-map` an derselben Stelle traegt. Das entscheidet der Live-Test.
 
+Seit 09.09.2026 misst der Lauf ausserdem Regel 1 und 4 aus
+`hacs/docs/ui-regeln.md` — dafuer braucht er das Messmodul `regeln.py`, das
+eine Ebene ueber dem Repo liegt. Der Container mountet deshalb ZWEI Ordner:
+`/repo` (dieses Repo) und `/work` (`hacs/docs/render`).
+
 Auf diesem Server laeuft Playwright nur im Container:
 
     docker run --rm -v "$PWD:/repo" \
+      -v "/mnt/user/Data/Claude Projekte/hacs/docs/render:/work" \
       --entrypoint bash mcr.microsoft.com/playwright/python:v1.62.0-noble \
       -c 'pip install --quiet --break-system-packages playwright==1.62.0 >/dev/null; \
           python3 /repo/docs/render/mapcard.py /repo/dist/busch-cards.js \
                   /repo/docs/render/mapcard-ergebnis'
 """
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -35,6 +42,21 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
+# Das Messmodul liegt NICHT in diesem Repo, sondern eine Ebene darueber in
+# `hacs/docs/render`. Im Container ist das `/work`; ausserhalb wird der Pfad
+# aus dem Ort dieser Datei hergeleitet. Fehlt es, bricht der Lauf ab statt
+# still die halbe Messung wegzulassen.
+for _kandidat in ("/work",
+                  os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "..", "..", "..", "docs", "render")):
+    if os.path.exists(os.path.join(_kandidat, "regeln.py")):
+        sys.path.insert(0, os.path.abspath(_kandidat))
+        break
+else:
+    sys.exit("regeln.py nicht gefunden. Der Container braucht den zweiten "
+             "Mount: -v \"<hacs>/docs/render:/work\" (siehe Kopf dieser Datei).")
+import regeln  # noqa: E402
+
 JS = pathlib.Path(sys.argv[1])
 OUT = pathlib.Path(sys.argv[2])
 OUT.mkdir(parents=True, exist_ok=True)
@@ -43,14 +65,25 @@ SERVE.mkdir(exist_ok=True)
 shutil.copy(JS, SERVE / "busch-cards.js")
 PORT = 8095
 
-LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-ziel = SERVE / "leaflet.js"
-if not ziel.exists():
+# BEIDES wird gebraucht, nicht nur das Skript. Ohne `leaflet.css` sind die
+# Bedienelemente und die Quellenangabe NICHT absolut positioniert: sie fliessen
+# unter die Karte und stehen dann meterweit ausserhalb — gemessen 1797 px unter
+# der Kartenkante. Das waere ein Fehler der ATTRAPPE, der als Regel-1-Verstoss
+# der Karte im Bericht gestanden haette. Home Assistant laedt das Stilblatt mit
+# seiner eigenen Map-Karte; die Attrappe muss es genauso tun.
+LEAFLET_DATEIEN = {
+    "leaflet.js": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+    "leaflet.css": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+}
+for _name, _url in LEAFLET_DATEIEN.items():
+    ziel = SERVE / _name
+    if ziel.exists():
+        continue
     try:
-        with urllib.request.urlopen(LEAFLET, timeout=30) as antwort:
+        with urllib.request.urlopen(_url, timeout=30) as antwort:
             ziel.write_bytes(antwort.read())
     except Exception as fehler:  # noqa: BLE001 - ohne Leaflet ist der Lauf sinnlos
-        sys.exit(f"Leaflet liess sich nicht laden ({fehler}). Ohne echtes Leaflet "
+        sys.exit(f"{_name} liess sich nicht laden ({fehler}). Ohne echtes Leaflet "
                  "prueft der Lauf nichts — Abbruch statt stillem Durchlauf.")
 
 PAGE = """<!doctype html>
@@ -61,6 +94,7 @@ PAGE = """<!doctype html>
           --card-background-color:#fff; --error-color:#db4437; }
   body { margin:0; padding:16px; background:#f2f4f7; font-family:Roboto,sans-serif; }
   #wrap { max-width: 560px; }
+  busch-map-card { display:block; margin-bottom:16px; }
   ha-card { display:block; background:#fff; border-radius:12px; padding:8px; }
 </style>
 <div id="wrap"></div>
@@ -74,6 +108,7 @@ PAGE = """<!doctype html>
     set schema(v){ this._s=v; window.__mapSchema=v; }
     set data(v){ this._d=v; window.__mapData=v; }
     set computeLabel(f){ window.__mapLabel=f; }
+    set computeHelper(f){ window.__mapHelper=f; }
     fire(patch){ this.dispatchEvent(new CustomEvent('value-changed',
       {detail:{value:{...this._d, ...patch}}})); }
   }
@@ -106,7 +141,15 @@ PAGE = """<!doctype html>
     connectedCallback(){
       if (this._gebaut) return;
       this._gebaut = true;
-      this.shadowRoot.innerHTML = '<ha-map style="display:block;width:520px;height:300px"></ha-map>';
+      /* Das Stilblatt gehoert IN den Schatten, nicht in den Dokumentkopf:
+         Dokumentstile ueberschreiten die Schattengrenze nicht, und `ha-map`
+         liegt hier im Schatten der Attrappe. Ohne es fliessen Leaflets
+         Bedienelemente und die Quellenangabe unter die Karte — gemessen
+         1797 px unter deren Kante. Home Assistants eigene Map-Karte bindet
+         das Stilblatt genauso in ihren eigenen Schatten ein. */
+      this.shadowRoot.innerHTML =
+        '<link rel="stylesheet" href="/leaflet.css">'
+        + '<ha-map style="display:block;width:100%;max-width:100%;height:300px"></ha-map>';
       const haMap = this.shadowRoot.querySelector('ha-map');
       if (window.__modus === 'ohneLeaflet') return;
       if (window.__modus === 'stubKarte') {
@@ -126,7 +169,7 @@ PAGE = """<!doctype html>
         return;
       }
       const div = document.createElement('div');
-      div.style.cssText = 'width:520px;height:300px';
+      div.style.cssText = 'width:100%;height:300px';
       haMap.appendChild(div);
       const map = window.L.map(div).setView([48.2, 16.35], 13);
       if (window.__modus === 'raster') {
@@ -143,13 +186,24 @@ PAGE = """<!doctype html>
   customElements.define('ha-map', class extends HTMLElement {});
   customElements.define('fake-map-card', FakeMapCard);
 
-  window.loadCardHelpers = async () => ({
-    createCardElement: async (config) => {
-      const el = document.createElement('fake-map-card');
-      el.setConfig(config);          /* wirft bei leeren Entitaeten */
-      return el;
-    },
-  });
+  window.loadCardHelpers = async () => {
+    /* `wirft` ist der FEHLERFALL: HAs Kartenhelfer sind nicht zu haben. Dann
+       zeichnet busch-map-card ihren eigenen Fehlerkasten — der einzige Text,
+       den diese Karte ueberhaupt selbst schreibt, und damit das Einzige, was
+       an ihr nach Regel 1 zu messen ist. */
+    if (window.__modus === 'wirft') {
+      throw new Error('loadCardHelpers steht in dieser Pruefung absichtlich '
+        + 'nicht zur Verfuegung, damit der Fehlerkasten der Karte mit einem '
+        + 'ausreichend langen Text gemessen werden kann');
+    }
+    return {
+      createCardElement: async (config) => {
+        const el = document.createElement('fake-map-card');
+        el.setConfig(config);          /* wirft bei leeren Entitaeten */
+        return el;
+      },
+    };
+  };
 
   window.__hass = {
     themes: { darkMode: false },
@@ -391,11 +445,70 @@ with sync_playwright() as pw:
           felder: (window.__mapSchema||[]).map(s => s.name),
           vorlagen: ((window.__mapSchema||[])[0]?.selector?.select?.options||[]).map(o => o.value),
           beschriftung: window.__mapLabel ? window.__mapLabel({name:'map_style'}) : null,
+          helfer: window.__mapHelper
+            ? Object.fromEntries((window.__mapSchema||[]).map(
+                s => [s.name, window.__mapHelper({name: s.name})]))
+            : null,
           nachAenderung: geliefert,
           eingebauterEditorDa: !!el.querySelector('#echter-map-editor'),
           hinweisText: (el.textContent || ''),
         };
     }""")
+    # ── Regel 1 und 4: drei Breiten, zwei Themen ─────────────────────────
+    # Erst aufraeumen: die vielen Probekarten der Messungen oben stehen alle
+    # noch im Dokument und wuerden sich gegenseitig ueberdecken. Danach genau
+    # ZWEI Karten, jede mit eigener Kennung:
+    #
+    #   #karte-map    — der Regelfall. Eigenen Text hat die Karte hier nicht;
+    #                   gemessen wird, dass die Umhuellung nichts aus dem
+    #                   Rahmen schiebt. Die Quellenangabe stammt von Leaflet.
+    #   #karte-fehler — der Fehlerkasten. Das ist der EINZIGE Text, den diese
+    #                   Karte selbst schreibt, und damit die eigentliche
+    #                   Regel-1-Messung an ihr.
+    page.evaluate("""async () => {
+        document.getElementById('wrap').innerHTML = '';
+        for (const e of document.querySelectorAll('busch-map-card-editor')) e.remove();
+        const w = document.getElementById('wrap');
+        w.style.maxWidth = 'none'; w.style.width = 'auto';
+        window.__modus = 'raster';
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'carto'});
+        c.id = 'karte-map';
+        await new Promise(r => setTimeout(r, 1200));
+        window.__modus = 'wirft';
+        const f = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas'], map_style:'carto'});
+        f.id = 'karte-fehler';
+        await new Promise(r => setTimeout(r, 600));
+        window.__modus = 'raster';
+    }""")
+    page.wait_for_selector("#karte-fehler", timeout=15000)
+    fehlerkasten = page.evaluate(
+        "() => { const k = document.getElementById('karte-fehler');"
+        "        const d = k.shadowRoot.querySelector('.fehler');"
+        "        return { da: Boolean(d), inHaCard: Boolean(d && d.closest('ha-card')),"
+        "                 text: d ? d.textContent : null }; }")
+
+    ui = {}
+    for kennung in ("#karte-map", "#karte-fehler"):
+        ui[kennung] = regeln.lauf_breiten(
+            page, messung=lambda p, k=kennung: regeln.messe_text(p, k))
+        for lauf in ui[kennung]["laeufe"]:
+            page.set_viewport_size({"width": lauf["breite"], "height": 900})
+            page.evaluate("(t) => { document.documentElement.dataset.theme = t; }",
+                          lauf["thema"])
+            page.wait_for_timeout(250)
+            page.locator(kennung).screenshot(
+                path=str(OUT / ("map-%s-%d-%s.png"
+                                % (kennung[1:], lauf["breite"], lauf["thema"]))))
+
+    # Gegenprobe am WERKZEUG, in beide Richtungen: die fehlerhafte Sonde muss
+    # gemeldet werden, die gewollte Kuerzung darf es nicht.
+    page.set_viewport_size({"width": 640, "height": 900})
+    page.evaluate("() => { document.documentElement.dataset.theme = 'light'; }")
+    page.wait_for_timeout(300)
+    selbsttest = regeln.selbsttest(page, "#karte-fehler")
+
     browser.close()
 
 server.terminate()
@@ -451,9 +564,9 @@ checks["Rueckfall: ha-map bleibt stehen"] = rueckfall["haMapVorhanden"] is True
 checks["Rueckfall: kein erzwungener Filter"] = rueckfall["mapFilter"] in ("", None)
 checks["Rueckfall: keine Ebene uebernommen"] = not rueckfall["layer"]
 checks["Editor-Element"] = editor["tag"] == "busch-map-card-editor"
-checks["Editor: sechs eigene Felder"] = editor["felder"] == [
+checks["Editor: sieben eigene Felder"] = editor["felder"] == [
     "map_style", "tile_url", "tile_url_dark", "tile_attribution",
-    "tile_api_key", "tile_api_key_entity"
+    "tile_max_zoom", "tile_api_key", "tile_api_key_entity"
 ]
 checks["Editor: sieben Vorlagen plus eigene URL"] = editor["vorlagen"] == [
     "ha", "osm", "carto", "voyager", "satellite", "topo", "custom"
@@ -486,7 +599,27 @@ checks["Karteneintrag schlaegt den Helfer"] = (
 checks["Aenderung des Helfers wird nachgezogen"] = (
     nachAenderung["url"] or "").endswith("?key=NEUERSCHLUESSEL")
 checks["eingebauter Map-Editor wird eingebettet"] = editor["eingebauterEditorDa"] is True
-checks["kein Rueckfalltext im Editor"] = "liess sich nicht laden" not in editor["hinweisText"]
+# Der Wortlaut steht seit 09.09.2026 im Woerterbuch der Karte
+# (`TEXTE_BUSCH_MAP_CARD.de.texte.editorFehlt`). Gesucht wird ein Stueck
+# daraus, das dort woertlich vorkommt — ein veralteter Suchtext waere eine
+# Pruefung, die IMMER besteht.
+checks["kein Rueckfalltext im Editor"] = (
+    "in YAML bearbeiten" not in editor["hinweisText"]
+)
+checks["jedes Editorfeld hat einen Helper"] = bool(editor["helfer"]) and all(
+    isinstance(h, str) and h.endswith(".") for h in editor["helfer"].values()
+)
+checks["Fehlerkasten steht in einer ha-card"] = fehlerkasten["inHaCard"] is True
+checks["Regel 1: kein Verstoss bei 320/480/960 in hell und dunkel"] = (
+    regeln.bewerte(ui) == 0
+)
+checks["Gegenprobe schlaegt an (Werkzeug nicht blind)"] = (
+    selbsttest["ueberlauf_erkannt"] and selbsttest["ausserhalb_erkannt"]
+)
+checks["Gegenprobe meldet gewollte Kuerzung NICHT"] = (
+    selbsttest["ellipsis_nicht_gemeldet"]
+    and selbsttest["ellipsis_als_gekuerzt_gezaehlt"]
+)
 
 checks["keine Konsolenfehler ausser Kachelabrufen"] = echte_fehler == []
 checks["keine Seitenfehler"] = errors == []
@@ -499,6 +632,10 @@ report = {
     "schluessel": schluessel, "ohneSchluessel": ohneSchluessel,
     "ausHelfer": ausHelfer, "nachAenderung": nachAenderung,
     "editor": editor,
+    "fehlerkasten": fehlerkasten,
+    "ui_regeln": ui,
+    "ui_regeln_zaehlung": {k: regeln.zaehle(v) for k, v in ui.items()},
+    "ui_selbsttest": {k: v for k, v in selbsttest.items() if k != "befund"},
     "console_errors": echte_fehler,
     "kachel_abrufe_fehlgeschlagen": len(console) - len(echte_fehler),
     "page_errors": errors,

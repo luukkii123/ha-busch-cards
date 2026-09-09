@@ -116,13 +116,38 @@ Fehler zu laufen:
 ## Aussehen anpassen
 
 Die Karte nutzt ausschließlich HA-eigene CSS-Variablen, folgt also dem gewählten
-Theme in hell und dunkel. Zwei eigene Variablen lassen sich im Theme
-überschreiben:
+Theme in hell und dunkel. Drei eigene Variablen kennt sie zusätzlich:
+
+| Variable | Vorgabe | Wirkung |
+| --- | --- | --- |
+| `--busch-schedule-color` | `--primary-color` | Farbe der Blöcke |
+| `--busch-schedule-track-color` | `--divider-color` | Hintergrund der Tagesspur |
+| `--label-col` | `40px` | Breite der Wochentagsspalte |
+
+**Seit 09.09.2026 stehen diese drei mit ihrer Vorgabe auf `:host`.** Das
+verlangt Regel 4 der [UI-Regeln](../docs/ui-regeln.md): Eine Karte darf keine
+CSS-Variable *lesen*, die weder von Home Assistant kommt noch in der Karte
+selbst definiert ist — sonst hängt ihr Aussehen an etwas, das es womöglich
+nirgends gibt.
+
+**Für das Überschreiben heißt das:** Eine Angabe im **Theme** landet am
+Wurzelelement und wird vererbt — eine Vererbung verliert aber gegen die
+`:host`-Zeile der Karte. Sie greift deshalb **nicht mehr**. Wer die Farben
+ändern will, setzt sie **an der Karte selbst**, etwa mit `card-mod`:
 
 ```yaml
-busch-schedule-color: "#e65100"        # Farbe der Blöcke
-busch-schedule-track-color: "#37474f"  # Hintergrund der Tagesspur
+type: custom:busch-schedule-card
+entity: schedule.pool_zeitplan
+card_mod:
+  style: |
+    :host {
+      --busch-schedule-color: #e65100;
+      --busch-schedule-track-color: #37474f;
+    }
 ```
+
+Das ist der bewusst in Kauf genommene Preis für Regel 4; die Alternative wäre
+eine Karte, deren Farben von einer nirgends definierten Variablen abhängen.
 
 ## Grenzen
 
@@ -425,6 +450,53 @@ mehr.
 Gehört die neue Karte zu einer eigenen Integration, gehört sie **nicht hierher**,
 sondern in ein eigenes Kartenrepo — siehe den Umzug oben. Dieses Repo ist die
 Sammlung für alles, was zu keiner eigenen Integration gehört.
+
+## Geprüft
+
+**Stand 09.09.2026, `CARD_VERSION` `0.8.3`** — alle drei Karten gegen die
+[UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). **Nicht
+getaggt:** Diese Runde ändert die Version bewusst nicht, HACS liest den Tag.
+
+| Beleg | Umfang | Ergebnis |
+| --- | --- | --- |
+| `node --check dist/busch-cards.js` | vor jedem Container-Lauf | fehlerfrei |
+| `node --test tests/` | 171 Prüfungen in 9 Dateien | 171 grün, 0 rot |
+| `python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards` | Regel 3 (1–4) und Regel 4 (1) an der ausgelieferten Datei | 0 Verstöße, Exit 0 |
+| `docs/render/render-zeitplan.py` (Playwright) | Zeitplan-Karte: Regel 1 bei 320/480/960 px in hell und dunkel, dazu **beide Dialoge geöffnet**; Regel 2 an beiden Dialogen | 0 Verstöße, Exit 0 |
+| `docs/render/render-kalender.py` (Playwright) | Kalender-Karte, beide Ausprägungen: Regel 1 bei 320/480/960 px in hell und dunkel | 666 Textelemente geprüft, 0 Verstöße, Exit 0 |
+| `docs/render/mapcard.py` (Playwright) | Landkarte: 53 Prüfungen, darunter Regel 1 an der Umhüllung und am Fehlerkasten | alle bestanden, Exit 0 |
+
+Was die Messung im Einzelnen ergab:
+
+- **Regel 1** — Zeitplan-Karte 140 Textelemente, Kalender 486 + 180, jeweils
+  ohne Überlauf, ohne Rechteck außerhalb der Karte, ohne Überlappung. In den
+  **geöffneten** Dialogen 54 bzw. 42 Elemente, ebenfalls ohne Befund. Die
+  Gegenprobe (`regeln.selbsttest`) schlägt in beide Richtungen an: die
+  fehlerhafte Sonde wird gemeldet, eine gewollte Kürzung nicht.
+- **Regel 2** — beide Zeitplan-Dialoge bestehen alle fünf Prüfungen: Escape,
+  `history.back()` ohne Seitenwechsel, Schließ-Knopf ohne verwaisten
+  Verlaufseintrag, `elementFromPoint` in der Mitte, Klick auf den Scrim.
+  **Das war der eigentliche Rückstand:** Bis hierher verließ die Zurück-Taste
+  das Dashboard. Die Ausnahme für ein Formular mit ungespeicherten Änderungen
+  ist eigens gemessen — Escape und Scrim lassen den Blockdialog dann offen und
+  lösen das Wackeln aus, Abbrechen schließt ihn trotzdem.
+- **Regel 3** — je Karte ein Wörterbuch `TEXTE_<TAG>` mit Deutsch und
+  Englisch; jedes Schemafeld hat Label **und** Helper in beiden Sprachen, jeder
+  Helper nennt die Vorgabe. Der Kartenwähler folgt `navigator.language`, Karte
+  und Editor `hass.locale.language`.
+- **Regel 4** — keine Hex-Farbe außerhalb eines `var()`-Rückfalls, keine
+  fremde CSS-Marke, Abstände und Schriftgrößen über `--ha-space-*` und
+  `--ha-font-*`.
+
+Die Berichte liegen unter `docs/render/mapcard-ergebnis/report.json` sowie
+(im Repo `hacs`) `docs/render/ergebnis-zeitplan/report.json` und
+`docs/render/ergebnis-kalender/report.json`.
+
+**Was diese Läufe nicht belegen:** Home Assistants echtes `ha-form` ist nicht
+dabei — Editorbilder entstehen gegen eine Attrappe. Die Landkarte wird gegen
+einen Nachbau von `hui-map-card` gemessen, nicht gegen die echte. Und das
+native `<input type="time">` zeigt im Headless-Chromium AM/PM, unabhängig von
+der Sprache; Dialogbilder mit Zeitfeldern sind dafür kein Beleg.
 
 ## Veröffentlichen
 

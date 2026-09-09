@@ -453,11 +453,18 @@ test("eine Zeile ohne Kalender loest kein Ereignis aus", async () => {
 });
 
 test("die Beschriftung im Editor spricht vom Termin, nicht vom Kalender", () => {
-  const { CAL_LABELS } = ladeKarte(["CAL_LABELS"]);
-  assert.match(CAL_LABELS.open_event_on_tap, /Termin/);
+  // Seit 09.09.2026 stehen die Beschriftungen im Woerterbuch der Karte
+  // (`docs/ui-regeln.md`, Regel 3) — deutsch UND englisch.
+  const { TEXTE_BUSCH_CALENDAR_CARD } = ladeKarte(["TEXTE_BUSCH_CALENDAR_CARD"]);
+  assert.match(TEXTE_BUSCH_CALENDAR_CARD.de.labels.open_event_on_tap, /Termin/);
   assert.doesNotMatch(
-    CAL_LABELS.open_event_on_tap,
+    TEXTE_BUSCH_CALENDAR_CARD.de.labels.open_event_on_tap,
     /Kalender/,
     "die alte Beschriftung versprach den Kalender-Dialog"
+  );
+  assert.match(TEXTE_BUSCH_CALENDAR_CARD.en.labels.open_event_on_tap, /event/i);
+  assert.doesNotMatch(
+    TEXTE_BUSCH_CALENDAR_CARD.en.labels.open_event_on_tap,
+    /calendar/i
   );
 });

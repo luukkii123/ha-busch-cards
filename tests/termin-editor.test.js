@@ -441,8 +441,11 @@ test("`open_event_on_tap: false` schaltet den Klick ganz ab", async () => {
  * 9. Die Option im Karteneditor
  * ---------------------------------------------------------------------- */
 
-test("`edit_on_tap` steht im Schema und hat eine deutsche Beschriftung", () => {
-  const { CAL_CARD_SCHEMA, CAL_LABELS } = ladeKarte(["CAL_CARD_SCHEMA", "CAL_LABELS"]);
+test("`edit_on_tap` steht im Schema und ist in beiden Sprachen erklaert", () => {
+  const { SCHEMA_BUSCH_CALENDAR_CARD, TEXTE_BUSCH_CALENDAR_CARD } = ladeKarte([
+    "SCHEMA_BUSCH_CALENDAR_CARD",
+    "TEXTE_BUSCH_CALENDAR_CARD",
+  ]);
   const namen = [];
   const sammle = (schema) => {
     for (const e of schema) {
@@ -450,7 +453,12 @@ test("`edit_on_tap` steht im Schema und hat eine deutsche Beschriftung", () => {
       else if (e.name) namen.push(e.name);
     }
   };
-  sammle(CAL_CARD_SCHEMA);
+  sammle(SCHEMA_BUSCH_CALENDAR_CARD);
   assert.ok(namen.includes("edit_on_tap"), "die Option fehlt im Schema");
-  assert.match(CAL_LABELS.edit_on_tap, /[Bb]earbeiten/);
+  // Das Label verspricht den EDITOR, nicht bloss eine Ansicht. Frueher stand
+  // dort „zum Bearbeiten"; die Aussage ist dieselbe, das Wort ein anderes.
+  assert.match(TEXTE_BUSCH_CALENDAR_CARD.de.labels.edit_on_tap, /[Bb]earbeit|Editor/);
+  assert.match(TEXTE_BUSCH_CALENDAR_CARD.en.labels.edit_on_tap, /edit/i);
+  // Und der Helper nennt den Serienschutz, der die Stufe erzwingen kann.
+  assert.match(TEXTE_BUSCH_CALENDAR_CARD.de.helpers.edit_on_tap, /Serientermin|Kennung/);
 });

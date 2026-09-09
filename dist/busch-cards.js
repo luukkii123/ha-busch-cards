@@ -25,6 +25,78 @@ console.info(
 
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * Sprache und Wörterbücher — gemeinsam für alle drei Karten
+ *
+ * `docs/ui-regeln.md`, Regel 3: jede Karte hat EIN Wörterbuch mit beiden
+ * Sprachen für Labels, Helper, Knöpfe, Fehlermeldungen und Leerzustände. Kein
+ * nutzersichtbarer Text steht außerhalb davon.
+ *
+ * Welche Sprache gilt, entscheidet `hass.locale.language`. Der Eintrag im
+ * Kartenwähler (`window.customCards`) entsteht aber beim Laden der Datei —
+ * da gibt es noch keinen `hass`. Dort entscheidet `navigator.language`.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** `de` oder `en` — mehr Sprachen hat diese Datei nicht. */
+function buschSprache(hass) {
+  let sprache = "";
+  if (hass && hass.locale && hass.locale.language) sprache = hass.locale.language;
+  else if (hass && hass.language) sprache = hass.language;
+  else if (typeof navigator !== "undefined" && navigator.language) sprache = navigator.language;
+  return String(sprache).toLowerCase().indexOf("de") === 0 ? "de" : "en";
+}
+
+/** Der Sprachabschnitt eines Wörterbuchs. Ohne `hass`: der Kartenwähler-Fall. */
+function buschTexte(tabelle, hass) {
+  return tabelle[buschSprache(hass)] || tabelle.en;
+}
+
+/**
+ * Ein `ha-form`-Schema mit übersetzten Auswahl-Beschriftungen.
+ *
+ * Die Schemakonstanten stehen bewusst als reines Objektliteral in der Datei —
+ * `scripts/ui-regeln-pruefen.py` liest sie so. Übersetzbarer Text darf darin
+ * also nicht stehen. Die Beschriftung einer Auswahloption kommt deshalb aus
+ * `texte.texte["<feld>_<wert>"]`; fehlt sie, bleibt die Vorgabe des Schemas
+ * stehen (bei der Landkarte sind das Eigennamen wie „OpenStreetMap", die in
+ * beiden Sprachen gleich heißen).
+ */
+function buschSchemaMitTexten(schema, texte) {
+  return schema.map((eintrag) => {
+    const kopie = { ...eintrag };
+    if (Array.isArray(eintrag.schema)) {
+      kopie.schema = buschSchemaMitTexten(eintrag.schema, texte);
+    }
+    const auswahl = eintrag.selector && eintrag.selector.select;
+    if (auswahl && Array.isArray(auswahl.options)) {
+      kopie.selector = {
+        ...eintrag.selector,
+        select: {
+          ...auswahl,
+          options: auswahl.options.map((option) => ({
+            ...option,
+            label:
+              (texte.texte && texte.texte[`${eintrag.name}_${option.value}`]) ||
+              option.label ||
+              option.value,
+          })),
+        },
+      };
+    }
+    return kopie;
+  });
+}
+
+/** Platzhalter `{name}` in einem Text ersetzen. */
+function buschFuellen(text, werte) {
+  let aus = String(text);
+  for (const name of Object.keys(werte || {})) {
+    aus = aus.split(`{${name}}`).join(String(werte[name]));
+  }
+  return aus;
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
  * busch-schedule-card — Zeitplan-Helfer (`schedule.*`) direkt im Dashboard
  *
  * Der Datenvertrag stammt aus homeassistant/components/schedule/__init__.py
@@ -53,19 +125,16 @@ const SCHEDULE_DAYS = [
 
 const MINUTES_PER_DAY = 1440;
 
-const SCHEDULE_CARD_SCHEMA = [
+const SCHEMA_BUSCH_SCHEDULE_CARD = [
   { name: "entity", required: true, selector: { entity: { filter: { domain: "schedule" } } } },
   { name: "title", selector: { text: {} } },
+  { name: "icon", selector: { icon: {} } },
   {
     name: "first_day",
     selector: {
       select: {
         mode: "dropdown",
-        options: [
-          { value: "auto", label: "Wie in Home Assistant" },
-          { value: "monday", label: "Montag" },
-          { value: "sunday", label: "Sonntag" },
-        ],
+        options: [{ value: "auto" }, { value: "monday" }, { value: "sunday" }],
       },
     },
   },
@@ -75,11 +144,105 @@ const SCHEDULE_CARD_SCHEMA = [
   },
 ];
 
-const SCHEDULE_LABELS = {
-  entity: "Zeitplan",
-  title: "Titel",
-  first_day: "Woche beginnt am",
-  step: "Raster beim Ziehen",
+const TEXTE_BUSCH_SCHEDULE_CARD = {
+  de: {
+    name: "Busch Zeitplan",
+    description: "Zeitplan-Helfer im Dashboard bearbeiten — ziehen, tippen, kopieren.",
+    labels: {
+      entity: "Zeitplan",
+      title: "Titel",
+      icon: "Symbol",
+      first_day: "Woche beginnt am",
+      step: "Raster beim Ziehen",
+    },
+    helpers: {
+      entity: "Der schedule-Helfer, dessen Blöcke die Karte zeigt und schreibt. Pflichtfeld, ohne ihn bleibt die Karte leer.",
+      title: "Überschrift der Karte. Vorgabe: der Name des Helfers.",
+      icon: "Ein mdi-Symbol links neben der Überschrift. Vorgabe: das Symbol des Helfers, sonst mdi:calendar-clock.",
+      first_day: "Welcher Wochentag in der obersten Zeile steht. Vorgabe: wie in Home Assistant.",
+      step: "Minuten, auf die Ziehen und Größenändern einrasten. Vorgabe 15.",
+    },
+    texte: {
+      first_day_auto: "Wie in Home Assistant",
+      first_day_monday: "Montag",
+      first_day_sunday: "Sonntag",
+      laden: "Lade …",
+      speichernLaeuft: "Speichere …",
+      nichtGefunden: "Zeitplan zu {entity} nicht gefunden. In YAML festgelegte Zeitpläne lassen sich nicht über die Oberfläche ändern.",
+      nichtGespeichert: "Zeitplan nicht gespeichert: {grund}",
+      entitaetFehlt: "Entität nicht gefunden",
+      ein: "Ein",
+      aus: "Aus",
+      bis: "bis",
+      ab: "ab",
+      hinweisNurLesen: "In YAML festgelegt — hier nur zum Ansehen.",
+      hinweisZiehen: "Ziehen legt einen Block an, Tippen öffnet ihn.",
+      von: "Von",
+      dialogBis: "Bis",
+      mitternacht: "Bis <b>00:00</b> bedeutet Mitternacht am Tagesende.",
+      fehlerBeideZeiten: "Bitte beide Zeiten angeben.",
+      fehlerReihenfolge: "Die Startzeit muss vor der Endzeit liegen.",
+      fehlerUeberschneidung: "Der Zeitraum überschneidet sich mit einem anderen Block.",
+      schliessen: "Schließen",
+      abbrechen: "Abbrechen",
+      speichern: "Speichern",
+      loeschen: "Löschen",
+      blockLoeschen: "Block löschen",
+      kopierenAlle: "Auf alle Tage kopieren",
+      kopierenWerktage: "Auf Montag bis Freitag kopieren",
+      kopierenWochenende: "Auf Samstag und Sonntag kopieren",
+      tagLeeren: "Alle Blöcke dieses Tages löschen",
+    },
+  },
+  en: {
+    name: "Busch schedule",
+    description: "Edit a schedule helper right on the dashboard — drag, tap, copy.",
+    labels: {
+      entity: "Schedule",
+      title: "Title",
+      icon: "Icon",
+      first_day: "Week starts on",
+      step: "Drag step",
+    },
+    helpers: {
+      entity: "The schedule helper whose blocks this card shows and writes. Required; without it the card stays empty.",
+      title: "Heading of the card. Default: the name of the helper.",
+      icon: "An mdi icon left of the heading. Default: the icon of the helper, otherwise mdi:calendar-clock.",
+      first_day: "Which weekday sits in the top row. Default: as in Home Assistant.",
+      step: "Minutes that dragging and resizing snap to. Default 15.",
+    },
+    texte: {
+      first_day_auto: "As in Home Assistant",
+      first_day_monday: "Monday",
+      first_day_sunday: "Sunday",
+      laden: "Loading …",
+      speichernLaeuft: "Saving …",
+      nichtGefunden: "No schedule found for {entity}. Schedules defined in YAML cannot be changed from the interface.",
+      nichtGespeichert: "Schedule not saved: {grund}",
+      entitaetFehlt: "Entity not found",
+      ein: "On",
+      aus: "Off",
+      bis: "until",
+      ab: "from",
+      hinweisNurLesen: "Defined in YAML — read only here.",
+      hinweisZiehen: "Drag to add a block, tap to open it.",
+      von: "From",
+      dialogBis: "To",
+      mitternacht: "A <b>00:00</b> end means midnight at the end of the day.",
+      fehlerBeideZeiten: "Please enter both times.",
+      fehlerReihenfolge: "The start time must be before the end time.",
+      fehlerUeberschneidung: "This range overlaps another block.",
+      schliessen: "Close",
+      abbrechen: "Cancel",
+      speichern: "Save",
+      loeschen: "Delete",
+      blockLoeschen: "Delete block",
+      kopierenAlle: "Copy to every day",
+      kopierenWerktage: "Copy to Monday through Friday",
+      kopierenWochenende: "Copy to Saturday and Sunday",
+      tagLeeren: "Delete every block of this day",
+    },
+  },
 };
 
 /** "HH:MM:SS" → Minuten seit Mitternacht. "24:00:00" → 1440. */
@@ -189,6 +352,11 @@ class BuschScheduleCard extends HTMLElement {
     const previous = this._hass;
     this._hass = hass;
     if (!this._config) return;
+    if (!previous || buschSprache(previous) !== buschSprache(hass)) {
+      // Beim Aufbau gab es noch keinen `hass` und damit keine Sprache. Die
+      // festen Texte im Aufbau werden deshalb hier nachgezogen.
+      this._renderTexte();
+    }
     if (!previous) {
       this._load(true);
       return;
@@ -208,6 +376,15 @@ class BuschScheduleCard extends HTMLElement {
 
   disconnectedCallback() {
     document.removeEventListener("visibilitychange", this._onVisibility);
+    // Ein Dialog, dessen Karte aus dem Dokument fliegt, darf keinen
+    // popstate-Lauscher zurücklassen — der hielte die Karte am Leben und
+    // reagierte auf jede spätere Navigation.
+    for (const dialog of [this._els?.blockDialog, this._els?.dayDialog]) {
+      if (dialog && dialog._buschPop) {
+        window.removeEventListener("popstate", dialog._buschPop);
+        dialog._buschPop = null;
+      }
+    }
   }
 
   getCardSize() {
@@ -216,6 +393,11 @@ class BuschScheduleCard extends HTMLElement {
 
   getGridOptions() {
     return { columns: 12, rows: 6, min_columns: 6, min_rows: 5 };
+  }
+
+  /** Der Textabschnitt der geltenden Sprache. */
+  get _texte() {
+    return buschTexte(TEXTE_BUSCH_SCHEDULE_CARD, this._hass).texte;
   }
 
   get _readonly() {
@@ -260,7 +442,7 @@ class BuschScheduleCard extends HTMLElement {
     if (!this._hass || !this._config) return;
     if (this._loading) return;
     this._loading = true;
-    if (showSpinner) this._renderStatus("Lade …");
+    if (showSpinner) this._renderStatus(this._texte.laden);
     try {
       if (!this._scheduleId) {
         this._scheduleId = await this._resolveScheduleId();
@@ -269,7 +451,7 @@ class BuschScheduleCard extends HTMLElement {
       const item = items.find((entry) => entry.id === this._scheduleId);
       if (!item) {
         throw new Error(
-          `Zeitplan zu ${this._config.entity} nicht gefunden. In YAML definierte Zeitpläne lassen sich nicht über die Oberfläche ändern.`
+          buschFuellen(this._texte.nichtGefunden, { entity: this._config.entity })
         );
       }
       this._item = item;
@@ -317,7 +499,7 @@ class BuschScheduleCard extends HTMLElement {
     if (!this._hass || !this._item || !this._scheduleId) return;
     const snapshot = JSON.stringify(this._model);
     this._saving = true;
-    this._renderStatus("Speichere …");
+    this._renderStatus(this._texte.speichernLaeuft);
 
     const payload = {
       type: "schedule/update",
@@ -351,7 +533,7 @@ class BuschScheduleCard extends HTMLElement {
       // Zeitplan wäre schlimmer als gar keine Änderung.
       this._model = JSON.parse(snapshot);
       this._error = err?.message || String(err);
-      this._notify(`Zeitplan nicht gespeichert: ${this._error}`);
+      this._notify(buschFuellen(this._texte.nichtGespeichert, { grund: this._error }));
       this._renderAll();
     } finally {
       this._saving = false;
@@ -379,16 +561,25 @@ class BuschScheduleCard extends HTMLElement {
         :host {
           display: block;
           container-type: inline-size;
+          /* Die drei eigenen Marken der Karte werden HIER definiert — sonst
+             wäre var(--busch-schedule-color) eine Marke, die es nirgends
+             gibt (Regel 4). Wer sie im Theme überschreibt, gewinnt trotzdem:
+             ein :host-Wert verliert gegen eine Vererbung von außen nicht,
+             weil die Karte ihn nur als Vorgabe setzt und die Nutzung darunter
+             denselben Namen liest. */
+          --label-col: 40px;
+          --busch-schedule-color: var(--primary-color);
+          --busch-schedule-track-color: var(--divider-color);
         }
         ha-card {
           display: block;
-          padding: 12px 16px 16px;
+          padding: var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-4, 16px);
         }
         .head {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding-bottom: 12px;
+          gap: var(--ha-space-3, 12px);
+          padding-bottom: var(--ha-space-3, 12px);
         }
         .head ha-icon {
           color: var(--state-icon-color, var(--paper-item-icon-color));
@@ -403,19 +594,25 @@ class BuschScheduleCard extends HTMLElement {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
         }
         .head .sub {
-          font-size: 12px;
+          font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
           margin-top: 2px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
         }
         .head .status {
-          flex: 0 0 auto;
-          font-size: 12px;
+          flex: 0 1 auto;
+          font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
         }
 
         .ruler {
@@ -426,7 +623,11 @@ class BuschScheduleCard extends HTMLElement {
           height: 16px;
           margin-bottom: 2px;
         }
-        .ruler .scale { position: relative; height: 100%; }
+        /* overflow: hidden ist Pflicht, weil die Beschriftungen darin
+           ABSOLUT sitzen (Regel 1): der Container muss schneiden können, und
+           sein Maß darf nicht vom Text abhängen — es kommt aus dem Raster
+           (1fr) und der Höhe des Lineals. */
+        .ruler .scale { position: relative; height: 100%; overflow: hidden; min-width: 0; }
         .ruler span {
           position: absolute;
           font-size: 10px;
@@ -434,7 +635,10 @@ class BuschScheduleCard extends HTMLElement {
           color: var(--secondary-text-color);
           font-variant-numeric: tabular-nums;
           transform: translateX(-50%);
+          overflow: hidden;
+          text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
         }
         .ruler span[data-edge="start"] { transform: none; }
         .ruler span[data-edge="end"] { transform: translateX(-100%); }
@@ -451,14 +655,18 @@ class BuschScheduleCard extends HTMLElement {
           margin-bottom: 4px;
         }
         .day .label {
-          font-size: 12px;
+          font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
           text-align: right;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
         }
-        .day.today .label { color: var(--primary-text-color); font-weight: 500; }
+        .day.today .label {
+          color: var(--primary-text-color);
+          font-weight: var(--ha-font-weight-medium, 500);
+        }
 
         .track {
           position: relative;
@@ -499,7 +707,9 @@ class BuschScheduleCard extends HTMLElement {
           text-align: center;
           font-variant-numeric: tabular-nums;
           overflow: hidden;
+          text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
           cursor: grab;
           box-sizing: border-box;
           /* Eigener Container je Block: nur so lässt sich die Beschriftung an
@@ -548,14 +758,22 @@ class BuschScheduleCard extends HTMLElement {
         .foot {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
           margin-top: 10px;
-          font-size: 12px;
+          font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
         }
-        .foot .hint { flex: 1 1 auto; }
+        .foot .hint { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
         .foot .err { color: var(--error-color, #db4437); }
 
+        /* ── Dialoge ──────────────────────────────────────────────────────
+           Anatomie nach docs/ui-regeln.md, Regel 2: Titel, Schließen-X oben
+           links, Aktionsknöpfe unten rechts, Breite höchstens 560 px,
+           Vollbild unter 450 px Breite oder 500 px Höhe.
+
+           Der Stapelkontext braucht kein z-index: ein natives <dialog> im
+           showModal-Zustand steht in der Top-Layer und liegt damit über
+           JEDER Leaflet-Ebene, auch über deren 1000er Bedienelementen. */
         dialog {
           border: none;
           border-radius: var(--ha-card-border-radius, 12px);
@@ -567,57 +785,128 @@ class BuschScheduleCard extends HTMLElement {
           box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
         }
         dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-        .dlg { padding: 20px; }
-        .dlg h2 {
-          margin: 0 0 16px;
-          font-size: 18px;
-          font-weight: 400;
+        @media (max-width: 450px), (max-height: 500px) {
+          dialog {
+            max-width: 100%;
+            width: 100%;
+            height: 100%;
+            max-height: 100%;
+            border-radius: 0;
+          }
+          /* Am Handy stehen die Aktionsknoepfe unten fest (Regel 2). Das
+             erledigt der Spaltenfluss allein: .dlg ist so hoch wie der
+             Dialog, .body nimmt den ganzen Rest, .actions bleibt darunter.
+             KEIN position: sticky — es waere hier wirkungslos (nur .body
+             rollt) und Chromium liess bei jedem Groessenwechsel eine zweite,
+             veraltete Fassung der Knopfzeile im Bild stehen. Gemessen: im DOM
+             genau EIN .actions bei y=1152, im Bild zwei. */
+          .dlg { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+          .dlg .body { flex: 1 1 auto; overflow: auto; min-height: 0; }
         }
-        .fields { display: flex; gap: 12px; }
+        /* Wackeln statt Schließen: die HA-Ausnahme für ein Formular mit
+           ungespeicherten Änderungen (Regel 2). Nur der Blockdialog ist ein
+           Formular; die Tagesansicht ist keins und schließt immer. */
+        @keyframes busch-schedule-wackeln {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-6px); }
+          40% { transform: translateX(6px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+        dialog.wackelt { animation: busch-schedule-wackeln 0.25s ease-in-out; }
+        .dlg { padding: var(--ha-space-4, 16px); }
+        .dlg-kopf {
+          display: flex;
+          align-items: center;
+          gap: var(--ha-space-2, 8px);
+          margin-bottom: var(--ha-space-4, 16px);
+        }
+        .dlg h2 {
+          flex: 1 1 auto;
+          margin: 0;
+          font-size: 18px;
+          font-weight: var(--ha-font-weight-normal, 400);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
+        }
+        .dlg-kopf button {
+          flex: 0 0 auto;
+          font: inherit;
+          border: none;
+          background: none;
+          color: var(--secondary-text-color);
+          width: 40px;
+          height: 40px;
+          line-height: 1;
+          border-radius: 50%;
+          cursor: pointer;
+        }
+        .dlg-kopf button:hover { background: var(--divider-color); }
+        .dlg-kopf button.danger { color: var(--error-color, #db4437); }
+        .fields { display: flex; gap: var(--ha-space-3, 12px); }
         .fields label {
           flex: 1 1 0;
           display: flex;
           flex-direction: column;
           gap: 4px;
-          font-size: 12px;
+          font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
+          min-width: 0;
+          overflow-wrap: anywhere;
         }
         .fields input {
           font: inherit;
-          font-size: 16px; /* unter 16px zoomt iOS beim Fokus hinein */
-          padding: 8px 10px;
+          font-size: var(--ha-font-size-l, 16px); /* unter 16px zoomt iOS beim Fokus hinein */
+          padding: var(--ha-space-2, 8px) 10px;
           border-radius: 6px;
           border: 1px solid var(--divider-color);
           background: var(--card-background-color, #fff);
           color: var(--primary-text-color);
           color-scheme: light dark;
+          min-width: 0;
         }
         .fields input:focus-visible {
           outline: 2px solid var(--primary-color);
           outline-offset: -1px;
         }
-        .dlg .note { margin-top: 8px; font-size: 12px; color: var(--secondary-text-color); }
-        .dlg .msg { margin-top: 12px; font-size: 13px; color: var(--error-color, #db4437); }
+        .dlg .note {
+          margin-top: var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-s, 12px);
+          color: var(--secondary-text-color);
+          overflow-wrap: anywhere;
+        }
+        .dlg .msg {
+          margin-top: var(--ha-space-3, 12px);
+          font-size: 13px;
+          color: var(--error-color, #db4437);
+          overflow-wrap: anywhere;
+        }
         .dlg .msg:empty { display: none; }
         .actions {
           display: flex;
           align-items: center;
-          gap: 8px;
+          justify-content: flex-end;
+          gap: var(--ha-space-2, 8px);
           margin: 20px 0 0;
           padding: 0;
         }
-        .actions .spacer { flex: 1 1 auto; }
         .actions button {
           font: inherit;
-          font-size: 14px;
+          font-size: var(--ha-font-size-m, 14px);
           text-transform: uppercase;
           letter-spacing: 0.05em;
           border: none;
           background: none;
           color: var(--primary-color);
-          padding: 8px 12px;
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
           border-radius: 6px;
           cursor: pointer;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
         }
         .actions button:hover { background: color-mix(in srgb, var(--primary-color) 12%, transparent); }
         .actions button.danger { color: var(--error-color, #db4437); }
@@ -626,14 +915,16 @@ class BuschScheduleCard extends HTMLElement {
         .choices { display: flex; flex-direction: column; }
         .choices button {
           font: inherit;
-          font-size: 14px;
+          font-size: var(--ha-font-size-m, 14px);
           text-align: left;
           border: none;
           background: none;
           color: var(--primary-text-color);
-          padding: 12px 8px;
+          padding: var(--ha-space-3, 12px) var(--ha-space-2, 8px);
           border-radius: 6px;
           cursor: pointer;
+          min-width: 0;
+          overflow-wrap: anywhere;
         }
         .choices button:hover { background: var(--divider-color); }
         .choices button.danger { color: var(--error-color, #db4437); }
@@ -657,34 +948,42 @@ class BuschScheduleCard extends HTMLElement {
 
       <dialog class="block-dialog">
         <div class="dlg">
-          <h2></h2>
-          <div class="fields">
-            <label>Von <input type="time" class="f-from"></label>
-            <label>Bis <input type="time" class="f-to"></label>
+          <div class="dlg-kopf">
+            <button class="dlg-x" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
+            <h2></h2>
+            <button class="danger dlg-del" data-act="delete"><ha-icon icon="mdi:delete"></ha-icon></button>
           </div>
-          <div class="note">Bis <b>00:00</b> bedeutet Mitternacht am Tagesende.</div>
-          <div class="msg"></div>
+          <div class="body">
+            <div class="fields">
+              <label><span class="l-from"></span> <input type="time" class="f-from"></label>
+              <label><span class="l-to"></span> <input type="time" class="f-to"></label>
+            </div>
+            <div class="note"></div>
+            <div class="msg"></div>
+          </div>
           <menu class="actions">
-            <button class="danger" data-act="delete">Löschen</button>
-            <span class="spacer"></span>
-            <button data-act="cancel">Abbrechen</button>
-            <button data-act="ok">Übernehmen</button>
+            <button data-act="cancel"></button>
+            <button data-act="ok"></button>
           </menu>
         </div>
       </dialog>
 
       <dialog class="day-dialog">
         <div class="dlg">
-          <h2></h2>
-          <div class="choices">
-            <button data-act="all">Auf alle Tage kopieren</button>
-            <button data-act="weekdays">Auf Montag–Freitag kopieren</button>
-            <button data-act="weekend">Auf Samstag und Sonntag kopieren</button>
-            <button data-act="clear" class="danger">Alle Blöcke dieses Tages löschen</button>
+          <div class="dlg-kopf">
+            <button class="dlg-x" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
+            <h2></h2>
+          </div>
+          <div class="body">
+            <div class="choices">
+              <button data-act="all"></button>
+              <button data-act="weekdays"></button>
+              <button data-act="weekend"></button>
+              <button data-act="clear" class="danger"></button>
+            </div>
           </div>
           <menu class="actions">
-            <span class="spacer"></span>
-            <button data-act="cancel">Abbrechen</button>
+            <button data-act="cancel"></button>
           </menu>
         </div>
       </dialog>
@@ -705,7 +1004,44 @@ class BuschScheduleCard extends HTMLElement {
     };
 
     this._buildRuler();
+    this._renderTexte();
     this._wireDialogs();
+  }
+
+  /** Alles Feste im Aufbau, das Text ist — aus dem Wörterbuch, in der
+   *  Sprache von `hass.locale.language`. Läuft beim Aufbau und noch einmal,
+   *  sobald `hass` da ist: beim Aufbau gibt es ihn noch nicht. */
+  _renderTexte() {
+    if (!this._els) return;
+    const t = this._texte;
+    const setze = (sel, wert) => {
+      const el = this.shadowRoot.querySelector(sel);
+      if (el) el.textContent = wert;
+    };
+    setze(".block-dialog .l-from", t.von);
+    setze(".block-dialog .l-to", t.dialogBis);
+    setze(".block-dialog .actions button[data-act='cancel']", t.abbrechen);
+    setze(".block-dialog .actions button[data-act='ok']", t.speichern);
+    setze(".day-dialog .actions button[data-act='cancel']", t.abbrechen);
+    setze(".day-dialog .choices button[data-act='all']", t.kopierenAlle);
+    setze(".day-dialog .choices button[data-act='weekdays']", t.kopierenWerktage);
+    setze(".day-dialog .choices button[data-act='weekend']", t.kopierenWochenende);
+    setze(".day-dialog .choices button[data-act='clear']", t.tagLeeren);
+    // Der Hinweis unter den Zeitfeldern enthält ein <b>; er ist der einzige
+    // Text der Karte mit Auszeichnung und der einzige Grund für innerHTML.
+    // Die Quelle ist das eigene Wörterbuch, nie Nutzereingabe.
+    const note = this.shadowRoot.querySelector(".block-dialog .note");
+    if (note) note.innerHTML = t.mitternacht;
+    for (const [sel, titel] of [
+      [".block-dialog .dlg-x", t.schliessen],
+      [".day-dialog .dlg-x", t.schliessen],
+      [".block-dialog .dlg-del", t.blockLoeschen],
+    ]) {
+      const el = this.shadowRoot.querySelector(sel);
+      if (!el) continue;
+      el.setAttribute("title", titel);
+      el.setAttribute("aria-label", titel);
+    }
   }
 
   _buildRuler() {
@@ -723,24 +1059,129 @@ class BuschScheduleCard extends HTMLElement {
   _wireDialogs() {
     const blockDialog = this._els.blockDialog;
     blockDialog.addEventListener("click", (event) => {
+      // Ein Klick NEBEN den Inhalt trifft das <dialog> selbst — das ist der
+      // Scrim. Regel 2 verlangt, dass er schließt (beim Formular mit
+      // ungespeicherten Änderungen: wackeln statt schließen).
+      if (event.target === blockDialog) {
+        this._resolveBlockDialog("scrim");
+        return;
+      }
       const button = event.target.closest("button");
       if (!button) return;
       event.preventDefault();
       this._resolveBlockDialog(button.dataset.act);
     });
+    // Escape löst am nativen <dialog> `cancel` aus. Der Vorgabeweg würde den
+    // Dialog schließen, ohne den eigenen Verlaufseintrag abzuräumen — deshalb
+    // abgefangen und über denselben Weg geführt wie jeder andere Schließer.
     blockDialog.addEventListener("cancel", (event) => {
       event.preventDefault();
-      this._resolveBlockDialog("cancel");
+      this._resolveBlockDialog("escape");
     });
 
     const dayDialog = this._els.dayDialog;
     dayDialog.addEventListener("click", (event) => {
+      if (event.target === dayDialog) {
+        this._dialogSchliessen(dayDialog);
+        this._dayTarget = null;
+        return;
+      }
       const button = event.target.closest("button");
       if (!button) return;
       event.preventDefault();
-      dayDialog.close();
+      this._dialogSchliessen(dayDialog);
       this._applyDayAction(button.dataset.act);
     });
+    dayDialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      this._dialogSchliessen(dayDialog);
+      this._dayTarget = null;
+    });
+  }
+
+  /* ── Verlauf: Zurück-Taste und Zurück-Geste ──────────────────────────────
+   *
+   * `docs/ui-regeln.md`, Regel 2: Ein Popup schließt mit der Zurück-Taste,
+   * OHNE die Seite zu verlassen. Ein selbstgebautes Überlagerungsfenster tut
+   * das nicht von allein — die Zurück-Geste am Handy ist eine
+   * Verlaufsnavigation, und ohne eigenen Eintrag verlässt sie das ganze
+   * Dashboard. Genau das war der Stand bis hierher.
+   *
+   * Das Muster ist HAs eigenem Dialog-Manager (`addHistory`) nachgebaut, so
+   * wie es in `ha-busch-lightcards` schon steht:
+   *
+   *   1. Beim Öffnen `history.pushState({ dialog: '<name>' }, '')` — die URL
+   *      bleibt unangetastet, sonst wechselte das Dashboard die Ansicht.
+   *   2. Ein `popstate`-Listener schließt das Popup, sobald der eigene
+   *      Eintrag verschwunden ist.
+   *   3. Beim Schließen über Knopf, Scrim oder Escape: liegt der eigene
+   *      Eintrag oben, `history.back()`; sonst wird am Verlauf nichts
+   *      geändert. So bleibt kein verwaister Eintrag stehen.
+   *   4. Der Listener wird beim Schließen wieder entfernt.
+   * ────────────────────────────────────────────────────────────────────── */
+
+  /** Kennung des eigenen Verlaufseintrags eines der beiden Dialoge. */
+  _dialogName(dialog) {
+    return dialog === this._els.dayDialog
+      ? "busch-schedule-card:tag"
+      : "busch-schedule-card:block";
+  }
+
+  _liegtObenauf(dialog) {
+    const zustand = typeof history !== "undefined" ? history.state : null;
+    return Boolean(zustand && zustand.dialog === this._dialogName(dialog));
+  }
+
+  _dialogOeffnen(dialog) {
+    if (dialog.open) return;
+    dialog.showModal();
+    if (typeof history === "undefined") return;
+    try {
+      history.pushState({ dialog: this._dialogName(dialog) }, "");
+    } catch (fehler) {
+      // Privater Modus und Ratenbegrenzung können das ablehnen. Escape,
+      // Scrim und Schließ-Knopf wirken weiter; nur die Zurück-Geste fehlt.
+      return;
+    }
+    const aufPop = () => {
+      window.removeEventListener("popstate", aufPop);
+      if (dialog._buschPop === aufPop) dialog._buschPop = null;
+      if (dialog.open) dialog.close();
+      if (dialog === this._els.blockDialog) this._dialogTarget = null;
+      else this._dayTarget = null;
+    };
+    dialog._buschPop = aufPop;
+    window.addEventListener("popstate", aufPop);
+  }
+
+  /** Schließt den Dialog und räumt genau den eigenen Verlaufseintrag ab. */
+  _dialogSchliessen(dialog) {
+    const aufPop = dialog._buschPop;
+    if (aufPop && this._liegtObenauf(dialog)) {
+      // `history.back()` löst `popstate` aus; der Listener schließt und
+      // räumt sich selbst ab. Ein Notnagel für den Fall, dass `popstate`
+      // ausbleibt — sonst bliebe der Dialog offen stehen.
+      history.back();
+      setTimeout(() => {
+        if (dialog.open) dialog.close();
+      }, 300);
+      return;
+    }
+    if (aufPop) {
+      window.removeEventListener("popstate", aufPop);
+      dialog._buschPop = null;
+    }
+    if (dialog.open) dialog.close();
+  }
+
+  /** Kurzes Wackeln statt Schließen — die HA-Ausnahme für ein Formular mit
+   *  ungespeicherten Änderungen (Regel 2). */
+  _wackeln(dialog) {
+    dialog.classList.remove("wackelt");
+    // Neuzeichnen erzwingen, sonst startet die Animation beim zweiten Mal nicht.
+    void dialog.offsetWidth;
+    dialog.classList.add("wackelt");
+    setTimeout(() => dialog.classList.remove("wackelt"), 300);
   }
 
   /* ── Zeichnen ───────────────────────────────────────────────────────── */
@@ -761,8 +1202,8 @@ class BuschScheduleCard extends HTMLElement {
     } else {
       hint.classList.remove("err");
       hint.textContent = this._readonly
-        ? "In YAML festgelegt — hier nur zum Ansehen."
-        : "Ziehen legt einen Block an, Tippen öffnet ihn.";
+        ? this._texte.hinweisNurLesen
+        : this._texte.hinweisZiehen;
     }
   }
 
@@ -779,10 +1220,10 @@ class BuschScheduleCard extends HTMLElement {
       this._config.title || state?.attributes?.friendly_name || this._config.entity;
 
     if (!state) {
-      this._els.sub.textContent = "Entität nicht gefunden";
+      this._els.sub.textContent = this._texte.entitaetFehlt;
       return;
     }
-    const parts = [isOn ? "Ein" : "Aus"];
+    const parts = [isOn ? this._texte.ein : this._texte.aus];
     const next = state.attributes?.next_event;
     if (next) {
       const date = new Date(next);
@@ -790,7 +1231,7 @@ class BuschScheduleCard extends HTMLElement {
         const time = this._hass.formatEntityAttributeValue
           ? this._hass.formatEntityAttributeValue(state, "next_event")
           : date.toLocaleString(this._hass.locale?.language || "de");
-        parts.push(`${isOn ? "bis" : "ab"} ${time}`);
+        parts.push(`${isOn ? this._texte.bis : this._texte.ab} ${time}`);
       }
     }
     this._els.sub.textContent = parts.join(" · ");
@@ -1054,20 +1495,50 @@ class BuschScheduleCard extends HTMLElement {
     dialog.querySelector(".f-from").value = toInputTime(block.start);
     dialog.querySelector(".f-to").value = toInputTime(block.end);
     dialog.querySelector(".msg").textContent = "";
+    // Ausgangsstand für die HA-Ausnahme „Formular mit ungespeicherten
+    // Änderungen schließt nicht auf Escape oder Scrim".
+    this._dialogStand = this._blockStand();
     this._dialogTarget = { day, index };
-    dialog.showModal();
+    this._dialogOeffnen(dialog);
+  }
+
+  /** Was gerade in den beiden Zeitfeldern steht — für den Vergleich mit dem
+   *  Stand beim Öffnen. */
+  _blockStand() {
+    const dialog = this._els.blockDialog;
+    return [
+      dialog.querySelector(".f-from").value,
+      dialog.querySelector(".f-to").value,
+    ].join("|");
+  }
+
+  /** Hat der Nutzer im Blockdialog etwas geändert, ohne zu speichern? */
+  _blockGeaendert() {
+    return this._dialogStand !== undefined && this._blockStand() !== this._dialogStand;
   }
 
   _resolveBlockDialog(action) {
     const dialog = this._els.blockDialog;
     const target = this._dialogTarget;
     if (!target) {
-      dialog.close();
+      this._dialogSchliessen(dialog);
       return;
     }
 
+    // Escape und Scrim: die einzige Ausnahme der Spec. Ein Formular mit
+    // ungespeicherten Änderungen wackelt, statt sie wegzuwerfen. Der
+    // Abbrechen-Knopf und die Zurück-Taste schließen weiterhin — sie sind
+    // eine ausdrückliche Ansage, kein Danebentippen.
+    if (action === "escape" || action === "scrim") {
+      if (this._blockGeaendert()) {
+        this._wackeln(dialog);
+        return;
+      }
+      action = "cancel";
+    }
+
     if (action === "cancel") {
-      dialog.close();
+      this._dialogSchliessen(dialog);
       this._dialogTarget = null;
       return;
     }
@@ -1076,7 +1547,7 @@ class BuschScheduleCard extends HTMLElement {
 
     if (action === "delete") {
       blocks.splice(target.index, 1);
-      dialog.close();
+      this._dialogSchliessen(dialog);
       this._dialogTarget = null;
       this._renderDays();
       this._save();
@@ -1087,7 +1558,7 @@ class BuschScheduleCard extends HTMLElement {
     const toValue = dialog.querySelector(".f-to").value;
     const message = dialog.querySelector(".msg");
     if (!fromValue || !toValue) {
-      message.textContent = "Bitte beide Zeiten angeben.";
+      message.textContent = this._texte.fehlerBeideZeiten;
       return;
     }
 
@@ -1097,18 +1568,18 @@ class BuschScheduleCard extends HTMLElement {
     const end = parsedTo === 0 ? MINUTES_PER_DAY : parsedTo;
 
     if (start >= end) {
-      message.textContent = "Die Startzeit muss vor der Endzeit liegen.";
+      message.textContent = this._texte.fehlerReihenfolge;
       return;
     }
     const others = blocks.filter((_, index) => index !== target.index);
     if (others.some((block) => start < block.end && end > block.start)) {
-      message.textContent = "Der Zeitraum überschneidet sich mit einem anderen Block.";
+      message.textContent = this._texte.fehlerUeberschneidung;
       return;
     }
 
     blocks[target.index] = { ...blocks[target.index], start, end };
     blocks.sort((a, b) => a.start - b.start);
-    dialog.close();
+    this._dialogSchliessen(dialog);
     this._dialogTarget = null;
     this._renderDays();
     this._save();
@@ -1120,7 +1591,7 @@ class BuschScheduleCard extends HTMLElement {
     const dialog = this._els.dayDialog;
     dialog.querySelector("h2").textContent = labels[day].long;
     this._dayTarget = day;
-    dialog.showModal();
+    this._dialogOeffnen(dialog);
   }
 
   _applyDayAction(action) {
@@ -1164,10 +1635,11 @@ class BuschScheduleCardEditor extends HTMLElement {
     if (!this._hass || !this._config) return;
 
     if (!this._form) {
+      const texte = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD, this._hass);
       this._form = document.createElement("ha-form");
-      this._form.schema = SCHEDULE_CARD_SCHEMA;
-      this._form.computeLabel = (schema) =>
-        SCHEDULE_LABELS[schema.name] || schema.name;
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_SCHEDULE_CARD, texte);
+      this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
+      this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
         this.dispatchEvent(
@@ -1446,13 +1918,15 @@ function calWochentagKurz(datum, locale) {
 
 function calTerminHtml(termin, optionen) {
   // `farben` ist optional: ein von Hand gebautes Optionsobjekt (Pruefungen,
-  // spaetere Nachweise) soll die Liste nicht sprengen.
+  // spaetere Nachweise) soll die Liste nicht sprengen. Fuer `texte` gilt
+  // dasselbe — ohne Angabe gilt die deutsche Fassung des Woerterbuchs.
+  const texte = optionen.texte || TEXTE_BUSCH_CALENDAR_CARD.de.texte;
   const farbe = (optionen.farben || {})[termin._entity] || calPalette[0];
   const punkt = optionen.mehrereKalender
     ? `<span class="cal-punkt" style="background:${calEscape(farbe)}"></span>`
     : "";
   const zeit = calIstGanztags(termin)
-    ? "ganztägig"
+    ? texte.ganztags
     : `${calFormatUhrzeit(calStartDatum(termin), optionen.locale)} – ` +
       `${calFormatUhrzeit(calEndDatum(termin), optionen.locale)}`;
   // Beschreibung und Ort stehen zusaetzlich im `title` und erscheinen beim
@@ -1470,7 +1944,7 @@ function calTerminHtml(termin, optionen) {
     `data-rid="${calEscape(termin.recurrence_id || "")}" ` +
     `title="${calEscape(hinweis)}">` +
     `${punkt}<span class="cal-zeit">${calEscape(zeit)}</span>` +
-    `<span class="cal-titel">${calEscape(termin.summary || "(ohne Titel)")}</span>` +
+    `<span class="cal-titel">${calEscape(termin.summary || texte.ohneTitel)}</span>` +
     `</div>`
   );
 }
@@ -1562,17 +2036,20 @@ function calZaehleNichtGezeigt(termine, tage) {
  * Ohne Fehler und ohne uebersprungene Termine ist das Ergebnis leer; die
  * Zeile entfaellt dann ganz.
  */
-function calHinweisText(fehler, nichtGezeigt) {
+function calHinweisText(fehler, nichtGezeigt, texte) {
+  const t = texte || TEXTE_BUSCH_CALENDAR_CARD.de.texte;
   const teile = [];
-  if (fehler && fehler.length) teile.push(`Nicht erreichbar: ${fehler.join(", ")}`);
+  if (fehler && fehler.length) {
+    teile.push(buschFuellen(t.nichtErreichbar, { liste: fehler.join(", ") }));
+  }
   if (nichtGezeigt > 0) {
     // Der Wortlaut nennt den GEMEINSAMEN Grund, nicht mehr nur einen von
     // mehreren: die Zahl kommt aus der Differenz und deckt jeden Termin ab,
     // fuer den die Tagesschleife keinen Platz im gezeigten Monat hatte.
     teile.push(
       nichtGezeigt === 1
-        ? "1 Termin ohne Tag im gezeigten Monat, nicht angezeigt."
-        : `${nichtGezeigt} Termine ohne Tag im gezeigten Monat, nicht angezeigt.`
+        ? t.einerOhneTag
+        : buschFuellen(t.mehrereOhneTag, { n: nichtGezeigt })
     );
   }
   return teile.join(" · ");
@@ -1580,8 +2057,11 @@ function calHinweisText(fehler, nichtGezeigt) {
 
 const CAL_STIL = `
   .cal-kopf { display:flex; align-items:center; justify-content:space-between;
-    padding:12px 16px 8px; }
-  .cal-monat { font-size:1.1em; font-weight:600; color:var(--primary-text-color); }
+    gap:var(--ha-space-2, 8px);
+    padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
+  .cal-monat { font-size:1.1em; font-weight:var(--ha-font-weight-bold, 600);
+    color:var(--primary-text-color); min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Zum \`user-select: none\` an dieser Stelle und an \`.cal-termin\`:
      Beschwerde des Nutzers — „wieso wird der betreff dann immer markiert lass
      das". Beide Flaechen sind KLICKFLAECHEN; wer darauf klickt, will oeffnen
@@ -1601,17 +2081,23 @@ const CAL_STIL = `
     color:var(--secondary-text-color); font-size:1.2em; line-height:1; border-radius:6px;
     -webkit-user-select:none; user-select:none; }
   .cal-pfeil:hover { background:var(--divider-color); color:var(--primary-text-color); }
-  .cal-titel-zeile { padding:12px 16px 0; font-weight:600;
-    color:var(--primary-text-color); }
-  .cal-liste { padding:0 8px 8px; }
+  /* Der Kartentitel ist einzeilig und wird GEKUERZT, nicht umgebrochen
+     (Regel 1, letzter Punkt). */
+  .cal-titel-zeile { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) 0;
+    font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color);
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-liste { padding:0 var(--ha-space-2, 8px) var(--ha-space-2, 8px); }
   .cal-tag { display:flex; gap:12px; padding:6px 8px; border-radius:8px;
     border-bottom:1px solid var(--divider-color); }
   .cal-tag:last-child { border-bottom:none; }
   .cal-wochenende { background:var(--secondary-background-color); }
   .cal-heute { outline:2px solid var(--primary-color); outline-offset:-2px; }
-  .cal-datum { display:flex; gap:6px; min-width:64px; align-items:baseline;
+  .cal-datum { display:flex; gap:6px; flex:0 0 auto; min-width:64px;
+    align-items:baseline;
     color:var(--secondary-text-color); font-variant-numeric:tabular-nums; }
-  .cal-nr { font-weight:600; color:var(--primary-text-color); }
+  .cal-wt, .cal-nr { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    min-width:0; }
+  .cal-nr { font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color); }
   .cal-inhalt { flex:1; min-width:0; }
   .cal-termin { display:flex; gap:8px; align-items:baseline; padding:2px 0;
     cursor:pointer; -webkit-user-select:none; user-select:none; }
@@ -1624,10 +2110,14 @@ const CAL_STIL = `
   .cal-leer .cal-termin { cursor:default; min-height:1.2em; }
   .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
     align-self:center; }
+  /* Die Zeitspalte SCHRUMPFT NICHT (flex:0 0 auto) — der Titel daneben tut es
+     und wird gekuerzt. Ohne min-width:0 am Titel waeche der Flexkasten ueber
+     seinen Elternteil hinaus, statt zu kuerzen (Regel 1). */
   .cal-zeit { color:var(--secondary-text-color); font-variant-numeric:tabular-nums;
-    white-space:nowrap; }
-  .cal-titel { color:var(--primary-text-color); overflow:hidden;
-    text-overflow:ellipsis; white-space:nowrap; }
+    flex:0 0 auto; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-titel { color:var(--primary-text-color); flex:1 1 auto; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Linksbuendig mit festem Abstand, NICHT ueber die Breite verteilt.
      Gemessen: Mit \`space-between\` sassen bei zwei Werten "3 Tage" und
      "25,7 h" in den gegenueberliegenden Ecken, 436 px Leerraum dazwischen —
@@ -1635,10 +2125,15 @@ const CAL_STIL = `
      Monat einen ganztaegigen Termin gab. Die Zeile sprang also, je nachdem ob
      Urlaub drin war. Mit \`gap\` steht sie ruhig und liest sich als eine
      Angabe, ohne dass ein Trennzeichen noetig waere. */
-  .cal-fuss { display:flex; justify-content:flex-start; gap:24px; padding:10px 16px;
+  .cal-fuss { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:24px;
+    padding:10px var(--ha-space-4, 16px);
     border-top:1px solid var(--divider-color); color:var(--secondary-text-color); }
-  .cal-hinweis { padding:12px 16px; color:var(--error-color, #db4437); }
-  .cal-leermeldung { padding:16px; color:var(--secondary-text-color); }
+  .cal-fuss span { min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; }
+  .cal-hinweis { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px);
+    color:var(--error-color, #db4437); overflow-wrap:anywhere; }
+  .cal-leermeldung { padding:var(--ha-space-4, 16px);
+    color:var(--secondary-text-color); overflow-wrap:anywhere; }
 `;
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -2046,6 +2541,17 @@ class BuschCalendarCard extends HTMLElement {
     return this._config && this._config.show_empty_days ? 12 : 6;
   }
 
+  /** Spalten in Vielfachen von 3 (Regel 3). Eine Monatsliste braucht Hoehe,
+   *  aber keine volle Breite — halbe Breite ist das Mindestmass. */
+  getGridOptions() {
+    return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
+  }
+
+  /** Der Textabschnitt der geltenden Sprache. */
+  get _texte() {
+    return buschTexte(TEXTE_BUSCH_CALENDAR_CARD, this._hass).texte;
+  }
+
   _ladeWennVeraendert() {
     if (!this._config || !this._hass) return;
     const stempel = this._config.entities
@@ -2245,6 +2751,7 @@ class BuschCalendarCard extends HTMLElement {
 
   _render() {
     if (!this._config) return;
+    const t = this._texte;
     const locale = (this._hass && this._hass.locale && this._hass.locale.language) || "de-DE";
     const { start, ende } = calMonatsGrenzen(new Date(), this._versatzLaufend);
 
@@ -2281,29 +2788,30 @@ class BuschCalendarCard extends HTMLElement {
         : "") +
       `<div class="cal-kopf">` +
       (this._config.navigation
-        ? `<button class="cal-pfeil" data-schritt="-1" aria-label="Voriger Monat">‹</button>`
+        ? `<button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>`
         : `<span></span>`) +
       `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>` +
       (this._config.navigation
-        ? `<button class="cal-pfeil" data-schritt="1" aria-label="Naechster Monat">›</button>`
+        ? `<button class="cal-pfeil" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button>`
         : `<span></span>`) +
       `</div>`;
 
     let rumpf;
     if (this._config.entities.length === 0) {
-      rumpf = `<div class="cal-leermeldung">Kein Kalender gewählt. Im Karteneditor einen auswählen.</div>`;
+      rumpf = `<div class="cal-leermeldung">${calEscape(t.keinKalender)}</div>`;
     } else if (this._tage === null) {
-      rumpf = `<div class="cal-leermeldung">Wird geladen …</div>`;
+      rumpf = `<div class="cal-leermeldung">${calEscape(t.laden)}</div>`;
     } else {
       const liste = calListeHtml(this._tage, {
         zeigeLeereTage: this._config.show_empty_days,
         locale,
         farben,
+        texte: t,
         mehrereKalender: this._config.entities.length > 1,
       });
       rumpf = liste
         ? `<div class="cal-liste">${liste}</div>`
-        : `<div class="cal-leermeldung">Keine Termine in diesem Monat.</div>`;
+        : `<div class="cal-leermeldung">${calEscape(t.keineTermine)}</div>`;
     }
 
     let fuss = "";
@@ -2311,8 +2819,11 @@ class BuschCalendarCard extends HTMLElement {
       // MIT den Monatsgrenzen: eine Summe, die schneiden kann, aber
       // ungeschnitten aufgerufen wird, ist so falsch wie eine, die es nicht kann.
       const s = calSummeStunden(this._alleTermine || [], start, ende);
-      const teile = [`${s.tageMitTermin} Tage`, `${calFormatStunden(s.stunden, locale)} h`];
-      if (s.ganztags) teile.push(`${s.ganztags} ganztägig`);
+      const teile = [
+        buschFuellen(t.tage, { n: s.tageMitTermin }),
+        buschFuellen(t.stunden, { n: calFormatStunden(s.stunden, locale) }),
+      ];
+      if (s.ganztags) teile.push(buschFuellen(t.summeGanztags, { n: s.ganztags }));
       // Ein Span JE WERT, linksbuendig mit festem `gap` im Stil. KEIN Trenner
       // dazwischen: auf dem Bildschirm trennt sie der Raum.
       //
@@ -2325,7 +2836,7 @@ class BuschCalendarCard extends HTMLElement {
       fuss = `<div class="cal-fuss">${teile.map((t) => `<span>${calEscape(t)}</span>`).join("")}</div>`;
     }
 
-    const hinweisText = calHinweisText(this._fehler || [], this._nichtGezeigt || 0);
+    const hinweisText = calHinweisText(this._fehler || [], this._nichtGezeigt || 0, t);
     const hinweis = hinweisText
       ? `<div class="cal-hinweis">${calEscape(hinweisText)}</div>`
       : "";
@@ -2345,7 +2856,7 @@ class BuschCalendarCard extends HTMLElement {
  * dieselbe Farbe hat, traegt keine Information).
  * ────────────────────────────────────────────────────────────────────────── */
 
-const CAL_CARD_SCHEMA = [
+const SCHEMA_BUSCH_CALENDAR_CARD = [
   { name: "title", selector: { text: {} } },
   {
     name: "entities",
@@ -2367,15 +2878,87 @@ const CAL_CARD_SCHEMA = [
   },
 ];
 
-const CAL_LABELS = {
-  title: "Überschrift",
-  entities: "Kalender",
-  month_offset: "Monatsversatz (-1 = Vormonat)",
-  navigation: "Pfeile zum Blättern",
-  show_empty_days: "Leere Tage zeigen",
-  show_total: "Summe in der Fußzeile",
-  open_event_on_tap: "Klick öffnet den Termin",
-  edit_on_tap: "Klick öffnet den Termin zum Bearbeiten",
+const TEXTE_BUSCH_CALENDAR_CARD = {
+  de: {
+    name: "Busch Kalender",
+    description: "Termine als Monatsliste, mit Monatsversatz und Blättern.",
+    labels: {
+      title: "Überschrift",
+      entities: "Kalender",
+      month_offset: "Monatsversatz",
+      navigation: "Pfeile zum Blättern",
+      show_empty_days: "Leere Tage zeigen",
+      show_total: "Summe in der Fußzeile",
+      open_event_on_tap: "Klick öffnet den Termin",
+      edit_on_tap: "Klick öffnet den Editor",
+    },
+    helpers: {
+      title: "Zeile über dem Monatsnamen. Leer lässt sie ganz weg. Vorgabe: leer.",
+      entities: "Die Kalender, deren Termine die Karte zeigt. Ab dem zweiten erscheint darunter je ein Farbfeld. Vorgabe: keiner.",
+      month_offset: "0 zeigt den laufenden Monat, -1 den Vormonat, 1 den nächsten. Vorgabe 0.",
+      navigation: "Setzt links und rechts vom Monatsnamen je einen Pfeil. Geblättert wird nur in dieser Ansicht, das Dashboard bleibt unverändert. Vorgabe an.",
+      show_empty_days: "An steht jeder Tag des Monats in der Liste, auch ohne Termin. Vorgabe an.",
+      show_total: "Zeigt unter der Liste Tage mit Terminen, Stunden und ganztägige Termine des gezeigten Monats. Vorgabe aus.",
+      open_event_on_tap: "An öffnet ein Klick auf eine Terminzeile den Termin-Dialog von Home Assistant. Vorgabe an.",
+      edit_on_tap: "An öffnet der Klick gleich den Editor mit den Eingabefeldern, aus die Ansicht mit den Knöpfen. Bei einem Serientermin ohne eigene Kennung bleibt es immer bei der Ansicht. Vorgabe an.",
+    },
+    texte: {
+      ganztags: "ganztägig",
+      ohneTitel: "(ohne Titel)",
+      keinKalender: "Kein Kalender gewählt. Im Karteneditor einen auswählen.",
+      laden: "Wird geladen …",
+      keineTermine: "Keine Termine in diesem Monat.",
+      nichtErreichbar: "Nicht erreichbar: {liste}",
+      einerOhneTag: "1 Termin ohne Tag im gezeigten Monat, nicht angezeigt.",
+      mehrereOhneTag: "{n} Termine ohne Tag im gezeigten Monat, nicht angezeigt.",
+      tage: "{n} Tage",
+      stunden: "{n} h",
+      summeGanztags: "{n} ganztägig",
+      vorigerMonat: "Voriger Monat",
+      naechsterMonat: "Nächster Monat",
+      farben: "Farben",
+    },
+  },
+  en: {
+    name: "Busch calendar",
+    description: "Events as a month list, with a month offset and paging.",
+    labels: {
+      title: "Heading",
+      entities: "Calendars",
+      month_offset: "Month offset",
+      navigation: "Paging arrows",
+      show_empty_days: "Show empty days",
+      show_total: "Total in the footer",
+      open_event_on_tap: "Tap opens the event",
+      edit_on_tap: "Tap opens the editor",
+    },
+    helpers: {
+      title: "A line above the month name. Empty leaves it out entirely. Default: empty.",
+      entities: "The calendars whose events this card shows. From the second one on, a colour field appears below. Default: none.",
+      month_offset: "0 shows the current month, -1 the previous one, 1 the next. Default 0.",
+      navigation: "Puts an arrow on each side of the month name. Paging affects this view only, the dashboard stays unchanged. Default on.",
+      show_empty_days: "On, every day of the month is listed, even without an event. Default on.",
+      show_total: "Shows days with events, hours and all-day events of the shown month below the list. Default off.",
+      open_event_on_tap: "On, a tap on an event row opens Home Assistant's event dialog. Default on.",
+      edit_on_tap: "On, the tap goes straight to the editor with the input fields, off to the view with the buttons. For a recurring event without its own id it always stays on the view. Default on.",
+    },
+    texte: {
+      ganztags: "all day",
+      ohneTitel: "(untitled)",
+      keinKalender: "No calendar chosen. Pick one in the card editor.",
+      laden: "Loading …",
+      keineTermine: "No events this month.",
+      nichtErreichbar: "Unreachable: {liste}",
+      einerOhneTag: "1 event has no day in the month shown and is not listed.",
+      mehrereOhneTag: "{n} events have no day in the month shown and are not listed.",
+      tage: "{n} days",
+      stunden: "{n} h",
+      summeGanztags: "{n} all day",
+      vorigerMonat: "Previous month",
+      naechsterMonat: "Next month",
+      farben: "Colours",
+    },
+  },
 };
 
 class BuschCalendarCardEditor extends HTMLElement {
@@ -2403,9 +2986,12 @@ class BuschCalendarCardEditor extends HTMLElement {
     if (!this._hass || !this._config) return;
 
     if (!this._form) {
+      const texte = buschTexte(TEXTE_BUSCH_CALENDAR_CARD, this._hass);
+      this._texte = texte.texte;
       this._form = document.createElement("ha-form");
-      this._form.schema = CAL_CARD_SCHEMA;
-      this._form.computeLabel = (schema) => CAL_LABELS[schema.name] || schema.name;
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_CALENDAR_CARD, texte);
+      this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
+      this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
       this._form.addEventListener("value-changed", (ereignis) => {
         ereignis.stopPropagation();
         const werte = { ...ereignis.detail.value };
@@ -2444,8 +3030,9 @@ class BuschCalendarCardEditor extends HTMLElement {
       this._farbFeld.innerHTML = "";
       return;
     }
+    const farbenTitel = (this._texte || TEXTE_BUSCH_CALENDAR_CARD.de.texte).farben;
     this._farbFeld.innerHTML =
-      `<div style="font-weight:600;margin:8px 0 4px">Farben</div>` +
+      `<div style="font-weight:600;margin:8px 0 4px">${calEscape(farbenTitel)}</div>` +
       normal.entities
         .map((e) => {
           const name =
@@ -2483,11 +3070,17 @@ class BuschCalendarCardEditor extends HTMLElement {
 customElements.define("busch-schedule-card", BuschScheduleCard);
 customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
+/* Der Kartenwaehler liest `name` und `description` beim LADEN der Datei —
+ * da gibt es noch keinen `hass`. Die Sprache kommt hier deshalb aus
+ * `navigator.language`; `buschTexte` ohne zweites Argument macht genau das
+ * (docs/ui-regeln.md, Regel 3). */
+const waehlerZeitplan = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD);
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "busch-schedule-card",
-  name: "Busch Zeitplan",
-  description: "Zeitplan-Helfer im Dashboard bearbeiten — ziehen, tippen, kopieren.",
+  name: waehlerZeitplan.name,
+  description: waehlerZeitplan.description,
   preview: true,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
@@ -2638,12 +3231,16 @@ const MAP_OWN_KEYS = [
   "tile_api_key", "tile_api_key_entity",
 ];
 
-const MAP_CARD_SCHEMA = [
+const SCHEMA_BUSCH_MAP_CARD = [
   {
     name: "map_style",
     selector: {
       select: {
         mode: "dropdown",
+        // Die Beschriftungen der Vorlagen sind Eigennamen (OpenStreetMap,
+        // CARTO, Esri) und in beiden Sprachen gleich. Nur `ha` und `custom`
+        // heissen anders — `buschSchemaMitTexten` ersetzt genau die beiden
+        // aus `texte.map_style_ha` bzw. `texte.map_style_custom`.
         options: Object.entries(MAP_STYLES).map(([value, s]) => ({ value, label: s.name })),
       },
     },
@@ -2651,6 +3248,7 @@ const MAP_CARD_SCHEMA = [
   { name: "tile_url", selector: { text: {} } },
   { name: "tile_url_dark", selector: { text: {} } },
   { name: "tile_attribution", selector: { text: {} } },
+  { name: "tile_max_zoom", selector: { number: { min: 1, max: 22, step: 1, mode: "box" } } },
   { name: "tile_api_key", selector: { text: {} } },
   {
     name: "tile_api_key_entity",
@@ -2658,13 +3256,65 @@ const MAP_CARD_SCHEMA = [
   },
 ];
 
-const MAP_LABELS = {
-  map_style: "Kartenvorlage",
-  tile_url: "Eigene Kachel-URL (hell)",
-  tile_url_dark: "Eigene Kachel-URL (dunkel, optional)",
-  tile_attribution: "Eigene Quellenangabe",
-  tile_api_key: "Schlüssel direkt eintragen (überschreibt den Helfer)",
-  tile_api_key_entity: `Schlüssel-Helfer (Standard: ${MAP_KEY_ENTITY})`,
+const TEXTE_BUSCH_MAP_CARD = {
+  de: {
+    name: "Busch Landkarte",
+    description: "Die eingebaute Map-Karte mit frei wählbaren Kacheln — nur der Typ wird getauscht.",
+    labels: {
+      map_style: "Kartenvorlage",
+      tile_url: "Eigene Kachel-URL",
+      tile_url_dark: "Eigene Kachel-URL dunkel",
+      tile_attribution: "Eigene Quellenangabe",
+      tile_max_zoom: "Größte Zoomstufe",
+      tile_api_key: "Schlüssel",
+      tile_api_key_entity: "Schlüssel-Helfer",
+    },
+    helpers: {
+      map_style: "Welche Kacheln die Karte zeichnet. Home-Assistant-Standard lässt sie unberührt. Vorgabe: CARTO Positron / Dark Matter.",
+      tile_url: "Gilt nur bei der Vorlage Eigene URL. Eine Kachel-URL mit den Platzhaltern für Zoom, Spalte und Zeile. Vorgabe: leer.",
+      tile_url_dark: "Wird im dunklen Thema anstelle der hellen URL geladen. Leer heißt: die helle gilt in beiden Themen. Vorgabe: leer.",
+      tile_attribution: "Die Quellenangabe unten rechts in der Karte. Die meisten Anbieter verlangen sie. Vorgabe: leer.",
+      tile_max_zoom: "Die größte Zoomstufe, die die eigene Kachelquelle liefert. Gilt nur bei der Vorlage Eigene URL. Vorgabe 19.",
+      tile_api_key: "Ein Kachelschlüssel nur für diese Karte. Er überschreibt den Helfer. Vorgabe: leer, dann gilt der Helfer.",
+      tile_api_key_entity: "Der input_text-Helfer, in dem der Kachelschlüssel steht. Ein Eintrag genügt für alle Karten. Vorgabe: input_text.carto_api_key.",
+    },
+    texte: {
+      map_style_ha: "Home-Assistant-Standard",
+      map_style_custom: "Eigene URL",
+      innenTitel: "Alles Weitere wie bei der eingebauten Karte:",
+      karteFehlt: "Die eingebaute Karte ließ sich nicht erzeugen: {grund}",
+      editorFehlt: "Der eingebaute Map-Editor ließ sich nicht laden — die übrigen Optionen bitte in YAML bearbeiten. Sie sind dieselben wie bei type: map.",
+    },
+  },
+  en: {
+    name: "Busch map",
+    description: "The built-in map card with freely chosen tiles — only the type changes.",
+    labels: {
+      map_style: "Tile preset",
+      tile_url: "Own tile URL",
+      tile_url_dark: "Own tile URL dark",
+      tile_attribution: "Own attribution",
+      tile_max_zoom: "Maximum zoom",
+      tile_api_key: "Key",
+      tile_api_key_entity: "Key helper",
+    },
+    helpers: {
+      map_style: "Which tiles the map draws. Home Assistant default leaves them untouched. Default: CARTO Positron / Dark Matter.",
+      tile_url: "Only used with the Own URL preset. A tile URL with the placeholders for zoom, column and row. Default: empty.",
+      tile_url_dark: "Loaded instead of the light URL in the dark theme. Empty means the light one applies to both. Default: empty.",
+      tile_attribution: "The attribution in the bottom right of the map. Most providers require it. Default: empty.",
+      tile_max_zoom: "The highest zoom level your own tile source serves. Only used with the Own URL preset. Default 19.",
+      tile_api_key: "A tile key for this card alone. It overrides the helper. Default: empty, then the helper applies.",
+      tile_api_key_entity: "The input_text helper holding the tile key. One entry is enough for every card. Default: input_text.carto_api_key.",
+    },
+    texte: {
+      map_style_ha: "Home Assistant default",
+      map_style_custom: "Own URL",
+      innenTitel: "Everything else as on the built-in card:",
+      karteFehlt: "The built-in map card could not be created: {grund}",
+      editorFehlt: "The built-in map editor could not be loaded — please edit the remaining options in YAML. They are the same as for type: map.",
+    },
+  },
 };
 
 /** Sucht ein Element durch verschachtelte Shadow-DOMs, mit Tiefenbegrenzung.
@@ -2741,6 +3391,17 @@ class BuschMapCard extends HTMLElement {
     return 5;
   }
 
+  /** Spalten in Vielfachen von 3 (Regel 3). Dieselben Masse wie bei HAs
+   *  eingebauter Map-Karte: eine Landkarte unter halber Breite zeigt nichts. */
+  getGridOptions() {
+    return { columns: 12, rows: 4, min_columns: 6, min_rows: 3 };
+  }
+
+  /** Der Textabschnitt der geltenden Sprache. */
+  get _texte() {
+    return buschTexte(TEXTE_BUSCH_MAP_CARD, this._hass).texte;
+  }
+
   /** Konfiguration fuer die eingebaute Karte: die eigenen Schluessel muessen
    *  raus, sonst reicht man ihr Felder, die sie nicht kennt. */
   _innerConfig() {
@@ -2788,7 +3449,8 @@ class BuschMapCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; position: relative; z-index: 0; }
-        .fehler { padding: 16px; color: var(--error-color, #db4437); font-size: 0.9em; }
+        .fehler { padding: var(--ha-space-4, 16px); color: var(--error-color, #db4437);
+                  font-size: 0.9em; overflow-wrap: anywhere; min-width: 0; }
       </style>
       <div class="wrap"></div>
     `;
@@ -2801,9 +3463,22 @@ class BuschMapCard extends HTMLElement {
       wrap.appendChild(inner);
       this._sucheKarte();
     } catch (error) {
-      wrap.innerHTML = `<div class="fehler">Die eingebaute Karte liess sich nicht erzeugen: ${
-        error?.message || error
-      }</div>`;
+      const meldung = buschFuellen(this._texte.karteFehlt, {
+        grund: error?.message || error,
+      });
+      wrap.textContent = "";
+      // Im Regelfall bringt HAs eingebaute map-Karte ihre eigene `ha-card`
+      // mit — eine zweite darum wäre ein Rahmen im Rahmen. Im FEHLERFALL
+      // gibt es sie nicht, und dann muss die Karte selbst eine stellen
+      // (Regel 4: jede Karte rendert in `<ha-card>`).
+      const karte = document.createElement("ha-card");
+      const kasten = document.createElement("div");
+      kasten.className = "fehler";
+      // `textContent`, nicht `innerHTML`: die Fehlermeldung kommt aus einer
+      // fremden Bibliothek und ist damit nichts, was man in HTML einsetzt.
+      kasten.textContent = meldung;
+      karte.appendChild(kasten);
+      wrap.appendChild(karte);
     }
   }
 
@@ -2981,9 +3656,12 @@ class BuschMapCardEditor extends HTMLElement {
     if (!this._hass || !this._config) return;
     if (!this._aufgebaut) {
       this._aufgebaut = true;
+      const texte = buschTexte(TEXTE_BUSCH_MAP_CARD, this._hass);
+      this._texte = texte.texte;
       this._form = document.createElement("ha-form");
-      this._form.schema = MAP_CARD_SCHEMA;
-      this._form.computeLabel = (s) => MAP_LABELS[s.name] || s.name;
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_MAP_CARD, texte);
+      this._form.computeLabel = (s) => texte.labels[s.name] || s.name;
+      this._form.computeHelper = (s) => texte.helpers[s.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
         const merged = { ...this._config, ...event.detail.value };
@@ -2996,7 +3674,7 @@ class BuschMapCardEditor extends HTMLElement {
 
       const hinweis = document.createElement("div");
       hinweis.style.cssText = "margin:12px 0 4px;font-size:0.85em;opacity:.7;";
-      hinweis.textContent = "Alles Weitere wie bei der eingebauten Karte:";
+      hinweis.textContent = texte.texte.innenTitel;
       this.appendChild(hinweis);
       this._innenBehaelter = document.createElement("div");
       this.appendChild(this._innenBehaelter);
@@ -3050,10 +3728,11 @@ class BuschMapCardEditor extends HTMLElement {
       this._innen = editor;
       this._innenBehaelter.appendChild(editor);
     } catch (error) {
-      this._innenBehaelter.innerHTML =
-        '<div style="font-size:0.85em;opacity:.7;">Der eingebaute Map-Editor liess sich '
-        + 'nicht laden — die uebrigen Optionen bitte in YAML bearbeiten. Sie sind '
-        + 'dieselben wie bei <code>type: map</code>.</div>';
+      const kasten = document.createElement("div");
+      kasten.style.cssText = "font-size:0.85em;opacity:.7;overflow-wrap:anywhere;";
+      kasten.textContent = (this._texte || TEXTE_BUSCH_MAP_CARD.de.texte).editorFehlt;
+      this._innenBehaelter.textContent = "";
+      this._innenBehaelter.appendChild(kasten);
     }
   }
 
@@ -3072,10 +3751,12 @@ class BuschMapCardEditor extends HTMLElement {
 customElements.define("busch-map-card", BuschMapCard);
 customElements.define("busch-map-card-editor", BuschMapCardEditor);
 
+const waehlerLandkarte = buschTexte(TEXTE_BUSCH_MAP_CARD);
+
 window.customCards.push({
   type: "busch-map-card",
-  name: "Busch Landkarte",
-  description: "Die eingebaute Map-Karte mit frei wählbaren Kacheln — nur `type:` tauschen.",
+  name: waehlerLandkarte.name,
+  description: waehlerLandkarte.description,
   preview: true,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
@@ -3083,10 +3764,12 @@ window.customCards.push({
 customElements.define("busch-calendar-card", BuschCalendarCard);
 customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
 
+const waehlerKalender = buschTexte(TEXTE_BUSCH_CALENDAR_CARD);
+
 window.customCards.push({
   type: "busch-calendar-card",
-  name: "Busch Kalender",
-  description: "Termine als Monatsliste, mit Monatsversatz und Blättern.",
+  name: waehlerKalender.name,
+  description: waehlerKalender.description,
   preview: true,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });

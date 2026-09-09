@@ -16,13 +16,21 @@ const test = require("node:test");
 const assert = require("node:assert");
 const { ladeKarte } = require("./laden.js");
 
-const { CAL_CARD_SCHEMA, CAL_LABELS, CAL_STANDARD, BuschCalendarCardEditor } =
-  ladeKarte([
-    "CAL_CARD_SCHEMA",
-    "CAL_LABELS",
-    "CAL_STANDARD",
-    "BuschCalendarCardEditor",
-  ]);
+const {
+  SCHEMA_BUSCH_CALENDAR_CARD: CAL_CARD_SCHEMA,
+  TEXTE_BUSCH_CALENDAR_CARD,
+  CAL_STANDARD,
+  BuschCalendarCardEditor,
+} = ladeKarte([
+  "SCHEMA_BUSCH_CALENDAR_CARD",
+  "TEXTE_BUSCH_CALENDAR_CARD",
+  "CAL_STANDARD",
+  "BuschCalendarCardEditor",
+]);
+
+/** Die Beschriftungen der geltenden Sprache — seit 09.09.2026 stehen sie im
+ *  Woerterbuch der Karte (`docs/ui-regeln.md`, Regel 3). */
+const CAL_LABELS = TEXTE_BUSCH_CALENDAR_CARD.de.labels;
 
 /** Abschnitt 5 der Spec, woertlich: alle Optionen der Karte. */
 const OPTIONEN_DER_SPEC = [
@@ -71,6 +79,46 @@ test("jedes Schemafeld hat eine deutsche Beschriftung", () => {
       name,
       `${name} traegt nur den technischen Namen`
     );
+  }
+});
+
+/* ── Woerterbuchform (docs/ui-regeln.md, Regel 3) ───────────────────────────
+ * Label UND Helper, in BEIDEN Sprachen, fuer JEDES Schemafeld. Der statische
+ * Pruefer misst dasselbe an der Datei; hier steht es noch einmal am geladenen
+ * Objekt — er liest Text, dieser Test liest Werte.
+ * ------------------------------------------------------------------------ */
+
+test("jedes Schemafeld hat Label und Helper in beiden Sprachen", () => {
+  const fehlend = [];
+  for (const sprache of ["de", "en"]) {
+    const abschnitt = TEXTE_BUSCH_CALENDAR_CARD[sprache];
+    for (const name of schemaNamen(CAL_CARD_SCHEMA)) {
+      if (!abschnitt.labels[name]) fehlend.push(`${sprache}.labels.${name}`);
+      if (!abschnitt.helpers[name]) fehlend.push(`${sprache}.helpers.${name}`);
+    }
+  }
+  assert.deepStrictEqual(fehlend, []);
+});
+
+test("jeder Helper ist ein ganzer Satz und nennt die Vorgabe", () => {
+  for (const sprache of ["de", "en"]) {
+    const helfer = TEXTE_BUSCH_CALENDAR_CARD[sprache].helpers;
+    for (const [name, text] of Object.entries(helfer)) {
+      assert.match(text, /\.$/, `${sprache}.${name} endet nicht mit Punkt`);
+      assert.match(
+        text,
+        sprache === "de" ? /Vorgabe/ : /Default/,
+        `${sprache}.${name} nennt keine Vorgabe`
+      );
+    }
+  }
+});
+
+test("kein Label endet auf einen Punkt", () => {
+  for (const sprache of ["de", "en"]) {
+    for (const [name, text] of Object.entries(TEXTE_BUSCH_CALENDAR_CARD[sprache].labels)) {
+      assert.doesNotMatch(text, /\.$/, `${sprache}.${name} traegt einen Punkt`);
+    }
   }
 });
 
