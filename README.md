@@ -124,30 +124,30 @@ Theme in hell und dunkel. Drei eigene Variablen kennt sie zusätzlich:
 | `--busch-schedule-track-color` | `--divider-color` | Hintergrund der Tagesspur |
 | `--label-col` | `40px` | Breite der Wochentagsspalte |
 
-**Seit 09.09.2026 stehen diese drei mit ihrer Vorgabe auf `:host`.** Das
-verlangt Regel 4 der [UI-Regeln](../docs/ui-regeln.md): Eine Karte darf keine
-CSS-Variable *lesen*, die weder von Home Assistant kommt noch in der Karte
-selbst definiert ist — sonst hängt ihr Aussehen an etwas, das es womöglich
-nirgends gibt.
-
-**Für das Überschreiben heißt das:** Eine Angabe im **Theme** landet am
-Wurzelelement und wird vererbt — eine Vererbung verliert aber gegen die
-`:host`-Zeile der Karte. Sie greift deshalb **nicht mehr**. Wer die Farben
-ändern will, setzt sie **an der Karte selbst**, etwa mit `card-mod`:
+Die beiden Farben lassen sich wie bisher im **Theme** setzen:
 
 ```yaml
-type: custom:busch-schedule-card
-entity: schedule.pool_zeitplan
-card_mod:
-  style: |
-    :host {
-      --busch-schedule-color: #e65100;
-      --busch-schedule-track-color: #37474f;
-    }
+busch-schedule-color: "#e65100"        # Farbe der Blöcke
+busch-schedule-track-color: "#37474f"  # Hintergrund der Tagesspur
 ```
 
-Das ist der bewusst in Kauf genommene Preis für Regel 4; die Alternative wäre
-eine Karte, deren Farben von einer nirgends definierten Variablen abhängen.
+`--label-col` ist ein reines Innenmaß und steht auf `:host`; die beiden Farben
+stehen dort **bewusst nicht**. Ein Theme setzt sie am Wurzelelement, von wo sie
+die Karte durch Vererbung erreichen — und eine Vererbung verliert gegen jede
+Regel, die das Element selbst trifft. Eine `:host`-Zeile für dieselbe Marke
+würde den Haken also still totlegen. Genau das war am 09.09.2026 kurzzeitig der
+Fall und ist in Chromium nachgemessen worden.
+
+Stattdessen steht die Vorgabe an der Verwendungsstelle als Rückfall —
+`var(--busch-schedule-color, var(--primary-color))` — und der Rückfall ist eine
+HA-Variable, keine Hex-Farbe. Damit ist auch Regel 4 der
+[UI-Regeln](../docs/ui-regeln.md) erfüllt: `scripts/ui-regeln-pruefen.py` führt
+beide Marken in seiner Liste `THEME_HAKEN` und besteht nur, solange der
+Rückfall von Home Assistant kommt.
+
+Der Nachweis, dass eine Theme-Angabe wirklich durchschlägt, läuft im
+Playwright-Container mit: `render-zeitplan.py` misst die Blockfarbe erst ohne
+Theme und dann mit `--busch-schedule-color: rgb(1, 2, 3)` am `<html>`.
 
 ## Grenzen
 

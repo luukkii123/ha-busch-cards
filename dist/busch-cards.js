@@ -561,15 +561,24 @@ class BuschScheduleCard extends HTMLElement {
         :host {
           display: block;
           container-type: inline-size;
-          /* Die drei eigenen Marken der Karte werden HIER definiert — sonst
-             wäre var(--busch-schedule-color) eine Marke, die es nirgends
-             gibt (Regel 4). Wer sie im Theme überschreibt, gewinnt trotzdem:
-             ein :host-Wert verliert gegen eine Vererbung von außen nicht,
-             weil die Karte ihn nur als Vorgabe setzt und die Nutzung darunter
-             denselben Namen liest. */
+          /* --label-col ist ein reines Innenmass der Karte und wird deshalb
+             hier festgelegt.
+
+             Die beiden FARBEN stehen bewusst NICHT hier. Sie sind
+             dokumentierte Theme-Haken: der Nutzer setzt sie in seinem Theme,
+             und HA schreibt sie ans Wurzelelement. Von dort kommen sie durch
+             Vererbung an. Eine Vererbung verliert aber gegen jede Regel, die
+             das Element selbst trifft — eine Zeile
+             --busch-schedule-color: ... an dieser Stelle wuerde die
+             Themeangabe also totlegen. In Chromium nachgemessen: mit der
+             :host-Zeile wirkte ein Theme am <html> nicht mehr.
+
+             Stattdessen steht der Vorgabewert an der VERWENDUNGSSTELLE als
+             var()-Rueckfall, und der Rueckfall ist eine HA-Variable, keine
+             Hex-Farbe. Regel 4 ist damit erfuellt, und der Haken bleibt
+             erhalten. Das Pruefskript kennt beide Namen in seiner Liste
+             THEME_HAKEN. */
           --label-col: 40px;
-          --busch-schedule-color: var(--primary-color);
-          --busch-schedule-track-color: var(--divider-color);
         }
         ha-card {
           display: block;
@@ -2727,11 +2736,28 @@ class BuschCalendarCard extends HTMLElement {
     }
   }
 
-  /** Ein `show-dialog` an HAs Dialogverwaltung. */
+  /**
+   * Ein `show-dialog` an HAs Dialogverwaltung.
+   *
+   * `addHistory: true` ist der dokumentierte Weg, die Zurueck-Taste an einen
+   * HA-Dialog zu binden: `src/dialogs/make-dialog-manager.ts` fuehrt das Feld
+   * in `ShowDialogParams` und legt bei `true` beim Oeffnen
+   * `history.pushState({ dialog: dialogTag }, '')` an und ruft beim Schliessen
+   * `history.back()`. Genau das verlangt Regel 2 aus `docs/ui-regeln.md`.
+   *
+   * Es WEGZULASSEN waere die Annahme, HAs Vorgabe sei `true`. Ist sie es,
+   * aendert die Zeile nichts; ist sie es nicht, verliesse die Zurueck-Taste
+   * das Dashboard. Deshalb steht es hier ausdruecklich.
+   */
   _zeigeDialog(tag, laden, parameter) {
     this.dispatchEvent(
       new CustomEvent("show-dialog", {
-        detail: { dialogTag: tag, dialogImport: laden, dialogParams: parameter },
+        detail: {
+          dialogTag: tag,
+          dialogImport: laden,
+          dialogParams: parameter,
+          addHistory: true,
+        },
         bubbles: true,
         composed: true,
       })
