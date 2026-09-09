@@ -3804,6 +3804,129 @@ window.customCards.push({
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * busch-device-card — eine Entität, ihr ganzes Gerät
+ *
+ * Spec: docs/superpowers/specs/2026-09-09-geraetekarte-design.md
+ *
+ * Alles, was die Karte über Geräte weiß, steht schon im `hass`-Objekt:
+ * `hass.entities` (Registereinträge mit `device_id`, `labels`, `hidden`,
+ * `entity_category`, `platform`), `hass.devices`, `hass.areas`. Belegt am
+ * Frontend-Quelltext (`src/data/entity/entity_registry.ts`,
+ * `src/data/device/device_registry.ts`) am 09.09.2026. Nur die Label-NAMEN
+ * kommen per WebSocket (`config/label_registry/list`).
+ *
+ * Bedienelement und Entitätenzeilen zeichnet HA selbst — über
+ * `window.loadCardHelpers()`: `createCardElement({type:"tile", …})` und
+ * `createRowElement({entity})`. Diese Datei zeichnet nur Kopfzeile, Chips und
+ * Gruppenköpfe. Namensraum: `dev` / `DEV_`.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const DEV_STANDARD = {
+  title: "",
+  template: "auto",
+  labels: [],
+  show_subtitle: true,
+  show_config: true,
+  show_diagnostic: true,
+  start_expanded: false,
+  tap_action: "expand",
+  hold_action: "more-info",
+  navigation_path: "",
+};
+
+/** Die Kopfzeilen-Aktionen aus Spec Abschnitt 6. */
+const DEV_AKTIONEN = ["expand", "more-info", "toggle", "device-page", "navigate", "none"];
+
+/**
+ * Vorlage → Features der Tile-Karte (Spec Abschnitt 4). Die Typnamen stehen
+ * in `src/panels/lovelace/card-features/types.ts`. Ein Feature, das die
+ * Domain nicht unterstützt oder das die HA-Version nicht kennt, rendert HA
+ * leer — die Karte prüft das nicht selbst.
+ */
+const DEV_VORLAGEN = {
+  light: { domains: ["light"], features: [{ type: "light-brightness" }] },
+  climate: {
+    domains: ["climate"],
+    features: [{ type: "target-temperature" }, { type: "climate-hvac-modes" }],
+  },
+  cover: {
+    domains: ["cover"],
+    features: [{ type: "cover-open-close" }, { type: "cover-position" }],
+  },
+  fan: { domains: ["fan"], features: [{ type: "fan-speed" }] },
+  media: { domains: ["media_player"], features: [{ type: "media-player-volume-slider" }] },
+  lock: { domains: ["lock"], features: [{ type: "lock-commands" }] },
+  switch: { domains: ["switch", "input_boolean"], features: [{ type: "toggle" }] },
+  generic: { domains: [], features: [] },
+};
+
+function devNormalisiereKonfig(config) {
+  const roh = config || {};
+  const k = { ...DEV_STANDARD, ...roh };
+  k.entity = typeof roh.entity === "string" ? roh.entity : "";
+  if (typeof roh.labels === "string") k.labels = [roh.labels];
+  else if (Array.isArray(roh.labels)) k.labels = roh.labels.filter((l) => typeof l === "string");
+  else k.labels = [];
+  if (!DEV_AKTIONEN.includes(k.tap_action)) k.tap_action = DEV_STANDARD.tap_action;
+  if (!DEV_AKTIONEN.includes(k.hold_action)) k.hold_action = DEV_STANDARD.hold_action;
+  if (typeof k.navigation_path !== "string") k.navigation_path = "";
+  if (typeof k.title !== "string") k.title = "";
+  return k;
+}
+
+function devDomain(entityId) {
+  const s = String(entityId || "");
+  const p = s.indexOf(".");
+  return p > 0 ? s.slice(0, p) : "";
+}
+
+function devVorlageWaehlen(template, entityId) {
+  if (template && template !== "auto") {
+    return DEV_VORLAGEN[template] ? template : "generic";
+  }
+  const domain = devDomain(entityId);
+  for (const name of Object.keys(DEV_VORLAGEN)) {
+    if (DEV_VORLAGEN[name].domains.includes(domain)) return name;
+  }
+  return "generic";
+}
+
+/** „Hersteller · Modell · Bereich" — leere Teile fallen samt Punkt weg. */
+function devUntertitel(geraet, bereich) {
+  const teile = [];
+  if (geraet && geraet.manufacturer) teile.push(String(geraet.manufacturer));
+  if (geraet && geraet.model) teile.push(String(geraet.model));
+  if (bereich && bereich.name) teile.push(String(bereich.name));
+  return teile.join(" · ");
+}
+
+/**
+ * Entität → Gerät → Bereich. Liefert `{ fehler }` mit einem Wörterbuch-
+ * schlüssel aus `texte`, oder die Auflösung.
+ */
+function devGeraetAufloesen(hass, entityId) {
+  if (!entityId) return { fehler: "keineEntitaet" };
+  if (!hass || !hass.entities || !hass.devices) return { fehler: "altesHa" };
+  const eintrag = hass.entities[entityId];
+  if (!eintrag) return { fehler: "nichtRegistriert" };
+  if (!eintrag.device_id) return { fehler: "keinGeraet" };
+  const geraet = hass.devices[eintrag.device_id];
+  if (!geraet) return { fehler: "keinGeraet" };
+  const bereich = (geraet.area_id && hass.areas && hass.areas[geraet.area_id]) || null;
+  const name = geraet.name_by_user || geraet.name || entityId;
+  return {
+    eintrag,
+    geraet,
+    bereich,
+    name,
+    untertitel: devUntertitel(geraet, bereich),
+    platform: eintrag.platform || "",
+  };
+}
+
+/* DEV-ENDE */
+
 customElements.define("busch-calendar-card", BuschCalendarCard);
 customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
 
