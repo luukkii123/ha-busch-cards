@@ -460,7 +460,7 @@ getaggt:** Diese Runde ändert die Version bewusst nicht, HACS liest den Tag.
 | Beleg | Umfang | Ergebnis |
 | --- | --- | --- |
 | `node --check dist/busch-cards.js` | vor jedem Container-Lauf | fehlerfrei |
-| `node --test tests/` | 171 Prüfungen in 9 Dateien | 171 grün, 0 rot |
+| `node --test tests/*.test.js` | 171 Prüfungen in 9 Dateien | 171 grün, 0 rot |
 | `python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards` | Regel 3 (1–4) und Regel 4 (1) an der ausgelieferten Datei | 0 Verstöße, Exit 0 |
 | `docs/render/render-zeitplan.py` (Playwright) | Zeitplan-Karte: Regel 1 bei 320/480/960 px in hell und dunkel, dazu **beide Dialoge geöffnet**; Regel 2 an beiden Dialogen | 0 Verstöße, Exit 0 |
 | `docs/render/render-kalender.py` (Playwright) | Kalender-Karte, beide Ausprägungen: Regel 1 bei 320/480/960 px in hell und dunkel | 666 Textelemente geprüft, 0 Verstöße, Exit 0 |
@@ -491,6 +491,41 @@ Was die Messung im Einzelnen ergab:
 Die Berichte liegen unter `docs/render/mapcard-ergebnis/report.json` sowie
 (im Repo `hacs`) `docs/render/ergebnis-zeitplan/report.json` und
 `docs/render/ergebnis-kalender/report.json`.
+
+### Die Läufe selbst wiederholen
+
+Die Kartentests laufen ohne Container:
+
+```bash
+node --check dist/busch-cards.js
+node --test tests/*.test.js
+```
+
+**`node --test tests/` (ohne Muster) tut es nicht.** Node 22 versucht den
+Ordner als Modul zu laden und bricht mit `MODULE_NOT_FOUND` ab — der Lauf
+meldet dann „1 fail" statt 171 grüner Prüfungen, und `tests/laden.js` ist
+ohnehin ein Helfer, keine Testdatei.
+
+Playwright läuft auf diesem Server **nur** im Container. Der Aufruf braucht
+**beide** Mounts: `/work` ist `hacs/docs/render` — dort liegen die
+Renderskripte der Zeitplan- und der Kalenderkarte **und** das gemeinsame
+Messmodul `regeln.py` —, `/cards` ist dieses Repo:
+
+```bash
+docker run --rm \
+  -v "/mnt/user/Data/Claude Projekte/hacs/docs/render:/work" \
+  -v "/mnt/user/Data/Claude Projekte/hacs/busch-cards:/cards" \
+  --entrypoint bash mcr.microsoft.com/playwright/python:v1.62.0-noble \
+  -c 'pip install --quiet --break-system-packages playwright==1.62.0 >/dev/null; \
+      python3 /work/render-zeitplan.py /cards/dist/busch-cards.js \
+              /work/ergebnis-zeitplan'
+```
+
+Für die Kalenderkarte dasselbe mit `render-kalender.py` und
+`/work/ergebnis-kalender`. Die Landkarte hat ihr Skript im Repo, mountet aber
+ebenfalls beides — die Zeile steht im Kopf von `docs/render/mapcard.py`.
+Ohne `/work` findet kein Skript `regeln.py` und der Lauf endet in einem
+`ModuleNotFoundError`, bevor irgendetwas gemessen wird.
 
 **Was diese Läufe nicht belegen:** Home Assistants echtes `ha-form` ist nicht
 dabei — Editorbilder entstehen gegen eine Attrappe. Die Landkarte wird gegen
