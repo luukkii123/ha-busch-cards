@@ -29,6 +29,7 @@ const {
   devKurzname,
   devGruppieren,
   devStrukturStempel,
+  BuschDeviceCard,
 } = ladeKarte([
   "DEV_STANDARD",
   "DEV_VORLAGEN",
@@ -45,6 +46,7 @@ const {
   "devKurzname",
   "devGruppieren",
   "devStrukturStempel",
+  "BuschDeviceCard",
 ]);
 
 /* ── Konfiguration ─────────────────────────────────────────────────────── */
@@ -248,4 +250,19 @@ test("eine neue Entitaet, eine andere Vorlage oder Konfiguration aendern den Ste
   assert.notStrictEqual(devStrukturStempel("d1", "switch", g1, k), s1);
   const k2 = devNormalisiereKonfig({ entity: "light.decke", show_subtitle: false });
   assert.notStrictEqual(devStrukturStempel("d1", "light", g1, k2), s1);
+});
+
+/* ── Kartenklasse: Vorgabe fuer den Kartenwaehler ──────────────────────── */
+
+test("getStubConfig nimmt die erste Entitaet, die zu einem Geraet gehoert", () => {
+  const h = baueHass();
+  const stub = BuschDeviceCard.getStubConfig(h, ["sensor.ohne_geraet", "sensor.decke_leistung", "light.decke"]);
+  assert.strictEqual(stub.type, "custom:busch-device-card");
+  assert.strictEqual(stub.entity, "sensor.decke_leistung");
+});
+
+test("getStubConfig ohne Entitaetenliste sucht in hass.states; ohne alles bleibt entity leer", () => {
+  const h = baueHass();
+  assert.ok(h.entities[BuschDeviceCard.getStubConfig(h).entity].device_id);
+  assert.strictEqual(BuschDeviceCard.getStubConfig(undefined).entity, "");
 });

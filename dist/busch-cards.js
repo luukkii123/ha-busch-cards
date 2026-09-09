@@ -4236,6 +4236,414 @@ function devHelferLaden() {
   return devHelferCache;
 }
 
+const DEV_STIL = `
+  .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
+    padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
+    user-select:none; -webkit-user-select:none; min-width:0; }
+  .dev-icon { flex:0 0 40px; width:40px; height:40px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(var(--rgb-primary-color, 3, 169, 244), .12);
+    color:var(--primary-color); --mdc-icon-size:24px; }
+  .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .dev-name { font-size:1.05em; font-weight:var(--ha-font-weight-medium, 500);
+    color:var(--primary-text-color);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .dev-unter { display:flex; align-items:center; gap:6px; min-width:0;
+    font-size:.85em; color:var(--secondary-text-color); }
+  .dev-unter[hidden] { display:none; }
+  .dev-unter-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .dev-brand { width:16px; height:16px; flex:0 0 16px; }
+  .dev-brand[hidden] { display:none; }
+  .dev-pfeil { flex:0 0 auto; width:24px; height:24px; color:var(--secondary-text-color);
+    transition:transform .2s ease; --mdc-icon-size:24px; }
+  .dev-pfeil[hidden] { display:none; }
+  .dev-offen .dev-pfeil { transform:rotate(180deg); }
+  .dev-chips { display:flex; flex-wrap:wrap; gap:4px;
+    padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
+  .dev-chips:empty { display:none; }
+  .dev-chip { display:inline-flex; align-items:center; gap:4px; max-width:100%; min-width:0;
+    font-size:.75em; padding:2px 8px; border-radius:12px;
+    border:1px solid var(--dev-chip-farbe, var(--divider-color));
+    color:var(--primary-text-color); }
+  .dev-chip-punkt { width:8px; height:8px; border-radius:50%; flex:0 0 8px;
+    background:var(--dev-chip-farbe, var(--secondary-text-color)); }
+  .dev-chip-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .dev-tile { padding:0 var(--ha-space-3, 12px) var(--ha-space-3, 12px); }
+  .dev-tile:empty { display:none; }
+  .dev-liste { border-top:1px solid var(--divider-color);
+    padding:var(--ha-space-1, 4px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
+  .dev-liste[hidden] { display:none; }
+  .dev-gruppe-kopf { display:flex; align-items:center; gap:6px; min-width:0;
+    padding:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px);
+    font-size:.78em; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--secondary-text-color); background:none; border:0; width:100%;
+    text-align:left; font-family:inherit; cursor:default; }
+  .dev-gruppe-kopf.dev-klappbar { cursor:pointer; }
+  .dev-gruppe-kopf .dev-gruppe-text { overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; min-width:0; }
+  .dev-gruppe-kopf .dev-gruppe-pfeil { width:18px; height:18px; flex:0 0 18px;
+    --mdc-icon-size:18px; transition:transform .2s ease; }
+  .dev-gruppe.dev-zu .dev-gruppe-pfeil { transform:rotate(-90deg); }
+  .dev-gruppe.dev-zu .dev-zeilen { display:none; }
+  .dev-zeilen > * { display:block; padding:var(--ha-space-1, 4px) 0; }
+  .dev-hinweis { padding:var(--ha-space-2, 8px) var(--ha-space-4, 16px) var(--ha-space-4, 16px);
+    color:var(--secondary-text-color); font-size:.9em; overflow-wrap:anywhere; }
+  .dev-hinweis[hidden] { display:none; }
+  .dev-hinweis.dev-fehler { color:var(--error-color); }
+`;
+
+class BuschDeviceCard extends HTMLElement {
+  static getConfigElement() {
+    return document.createElement("busch-device-card-editor");
+  }
+
+  /** Die erste Entität, die zu einem Gerät gehört — damit die Vorschau im
+   *  Kartenwähler sofort ein Gerät zeigt (Spec Abschnitt 8). */
+  static getStubConfig(hass, entities) {
+    const register = (hass && hass.entities) || {};
+    const liste = Array.isArray(entities) && entities.length
+      ? entities
+      : Object.keys((hass && hass.states) || {});
+    const treffer = liste.find((id) => register[id] && register[id].device_id) || liste[0] || "";
+    return { type: "custom:busch-device-card", entity: treffer };
+  }
+
+  setConfig(config) {
+    this._config = devNormalisiereKonfig(config);
+    this._offen = Boolean(this._config.start_expanded);
+    this._zu = { config: true, diagnostic: true };
+    this._stempel = null;
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._labels && hass && typeof hass.callWS === "function") {
+      this._labels = new Map();
+      devLabelsLaden(hass).then((m) => {
+        this._labels = m;
+        this._zeichneChips();
+      });
+    }
+    this._render();
+  }
+
+  getCardSize() {
+    return 3 + (this._offen ? this._zeilenZahl || 0 : 0);
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: "auto" };
+  }
+
+  get _texte() {
+    return buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass).texte;
+  }
+
+  /* ── Aufbau ─────────────────────────────────────────────────────────── */
+
+  _geruest() {
+    if (this._karte) return;
+    this._karte = document.createElement("ha-card");
+    const stil = document.createElement("style");
+    stil.textContent = DEV_STIL;
+    this._karte.appendChild(stil);
+
+    this._kopf = document.createElement("div");
+    this._kopf.className = "dev-kopf";
+    this._icon = document.createElement("div");
+    this._icon.className = "dev-icon";
+    this._titel = document.createElement("div");
+    this._titel.className = "dev-titel";
+    this._name = document.createElement("div");
+    this._name.className = "dev-name";
+    this._unter = document.createElement("div");
+    this._unter.className = "dev-unter";
+    this._brand = document.createElement("img");
+    this._brand.className = "dev-brand";
+    this._brand.alt = "";
+    this._brand.addEventListener("error", () => { this._brand.hidden = true; });
+    this._unterText = document.createElement("span");
+    this._unterText.className = "dev-unter-text";
+    this._unter.append(this._brand, this._unterText);
+    this._titel.append(this._name, this._unter);
+    this._pfeil = document.createElement("ha-icon");
+    this._pfeil.className = "dev-pfeil";
+    this._pfeil.setAttribute("icon", "mdi:chevron-down");
+    this._pfeil.icon = "mdi:chevron-down";
+    this._kopf.append(this._icon, this._titel, this._pfeil);
+
+    this._chips = document.createElement("div");
+    this._chips.className = "dev-chips";
+    this._tileBehaelter = document.createElement("div");
+    this._tileBehaelter.className = "dev-tile";
+    this._liste = document.createElement("div");
+    this._liste.className = "dev-liste";
+    this._hinweis = document.createElement("div");
+    this._hinweis.className = "dev-hinweis";
+    this._hinweis.hidden = true;
+
+    this._karte.append(this._kopf, this._chips, this._tileBehaelter, this._liste, this._hinweis);
+    this.appendChild(this._karte);
+    this._bindeKopf();
+  }
+
+  /** Tippen/Halten wie in HA: 500 ms, Bewegung über 10 px bricht ab. */
+  _bindeKopf() {
+    let timer = null;
+    let gehalten = false;
+    let start = null;
+    const abbrechen = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    this._kopf.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".dev-pfeil")) return;
+      gehalten = false;
+      start = { x: e.clientX, y: e.clientY };
+      abbrechen();
+      timer = setTimeout(() => { timer = null; gehalten = true; this._aktion(this._config.hold_action); }, 500);
+    });
+    this._kopf.addEventListener("pointermove", (e) => {
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) abbrechen();
+    });
+    this._kopf.addEventListener("pointerup", (e) => {
+      if (e.target.closest(".dev-pfeil")) return;
+      const warTimer = Boolean(timer);
+      abbrechen();
+      if (!gehalten && warTimer) this._aktion(this._config.tap_action);
+      start = null;
+    });
+    this._kopf.addEventListener("pointercancel", abbrechen);
+    this._kopf.addEventListener("pointerleave", abbrechen);
+    // Der Pfeil klappt immer, unabhängig von tap_action (Spec Abschnitt 6).
+    this._pfeil.addEventListener("click", (e) => { e.stopPropagation(); this._aktion("expand"); });
+    this._kopf.setAttribute("role", "button");
+    this._kopf.tabIndex = 0;
+    this._kopf.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this._aktion(this._config.tap_action); }
+    });
+  }
+
+  /* ── Zeichnen ───────────────────────────────────────────────────────── */
+
+  _render() {
+    if (!this._config || !this._hass) return;
+    this._geruest();
+    const t = this._texte;
+    const a = devGeraetAufloesen(this._hass, this._config.entity);
+
+    if (a.fehler) {
+      this._stempel = null;
+      this._auf = null;
+      this._name.textContent = this._config.title || this._config.entity || t.keineEntitaet;
+      this._unter.hidden = true;
+      this._icon.textContent = "";
+      this._pfeil.hidden = true;
+      this._chips.textContent = "";
+      this._tileBehaelter.textContent = "";
+      this._liste.textContent = "";
+      this._liste.hidden = true;
+      this._karte.classList.remove("dev-offen");
+      this._hinweis.textContent = buschFuellen(t[a.fehler], { entity: this._config.entity });
+      this._hinweis.className = "dev-hinweis dev-fehler";
+      this._hinweis.hidden = false;
+      return;
+    }
+
+    this._auf = a;
+    const vorlage = devVorlageWaehlen(this._config.template, this._config.entity);
+    const alle = devEntitaetenDesGeraets(this._hass, a.geraet.id, this._config.entity);
+    const gefiltert = devLabelFilter(alle, this._config.labels);
+    const gruppen = devGruppieren(this._hass, gefiltert, this._config);
+    const stempel = devStrukturStempel(a.geraet.id, vorlage, gruppen, this._config);
+    this._zeilenZahl = gruppen.reduce((n, g) => n + g.ids.length, 0);
+
+    if (stempel !== this._stempel) {
+      this._stempel = stempel;
+      this._zeichneKopf(a);
+      this._zeichneChips();
+      this._baueBausteine(stempel, vorlage, gruppen);
+    }
+    this._reicheHassDurch();
+    this._zeigeListe();
+  }
+
+  _zeichneKopf(a) {
+    this._name.textContent = this._config.title || a.name;
+    this._unter.hidden = !this._config.show_subtitle;
+    this._unterText.textContent = a.untertitel;
+    if (a.platform) {
+      this._brand.hidden = false;
+      this._brand.src = `https://brands.home-assistant.io/_/${encodeURIComponent(a.platform)}/icon.png`;
+    } else {
+      this._brand.hidden = true;
+    }
+    this._icon.textContent = "";
+    const icon = document.createElement("ha-state-icon");
+    if (a.eintrag.icon) icon.icon = a.eintrag.icon;
+    this._stateIcon = icon;
+    this._icon.appendChild(icon);
+    this._hinweis.hidden = true;
+  }
+
+  _zeichneChips() {
+    if (!this._chips || !this._config) return;
+    this._chips.textContent = "";
+    for (const id of this._config.labels) {
+      const e = this._labels && this._labels.get(id);
+      const chip = document.createElement("span");
+      chip.className = "dev-chip";
+      const farbe = devLabelFarbe(e);
+      if (farbe) chip.style.setProperty("--dev-chip-farbe", farbe);
+      const punkt = document.createElement("span");
+      punkt.className = "dev-chip-punkt";
+      const text = document.createElement("span");
+      text.className = "dev-chip-text";
+      text.textContent = (e && e.name) || id;
+      chip.append(punkt, text);
+      this._chips.appendChild(chip);
+    }
+  }
+
+  /** Tile und Zeilen von HA. Asynchron; eine veraltete Antwort (Stempel
+   *  inzwischen anders) wird verworfen. */
+  async _baueBausteine(stempel, vorlage, gruppen) {
+    const t = this._texte;
+    this._tileBehaelter.textContent = "";
+    this._liste.textContent = "";
+    this._tile = null;
+    this._zeilen = [];
+    const laden = document.createElement("div");
+    laden.className = "dev-hinweis";
+    laden.textContent = t.laden;
+    this._tileBehaelter.appendChild(laden);
+
+    const helfer = await devHelferLaden();
+    if (this._stempel !== stempel) return;
+    this._tileBehaelter.textContent = "";
+    if (!helfer) {
+      this._helferFehlt = true;
+      this._hinweis.textContent = t.helferFehlt;
+      this._hinweis.className = "dev-hinweis dev-fehler";
+      this._hinweis.hidden = false;
+      this._zeigeListe();
+      return;
+    }
+
+    try {
+      const tile = helfer.createCardElement({
+        type: "tile",
+        entity: this._config.entity,
+        features: DEV_VORLAGEN[vorlage].features.map((f) => ({ ...f })),
+      });
+      this._tile = tile;
+      this._tileBehaelter.appendChild(tile);
+    } catch (e) {
+      this._tile = null;
+    }
+
+    const geraeteName = this._auf ? this._auf.name : "";
+    for (const g of gruppen) {
+      const block = document.createElement("div");
+      block.className = "dev-gruppe";
+      block.dataset.gruppe = g.gruppe;
+      const klappbar = g.gruppe === "config" || g.gruppe === "diagnostic";
+      const kopf = document.createElement(klappbar ? "button" : "div");
+      kopf.className = "dev-gruppe-kopf" + (klappbar ? " dev-klappbar" : "");
+      if (klappbar) {
+        kopf.type = "button";
+        const pfeil = document.createElement("ha-icon");
+        pfeil.className = "dev-gruppe-pfeil";
+        pfeil.setAttribute("icon", "mdi:chevron-down");
+        pfeil.icon = "mdi:chevron-down";
+        kopf.appendChild(pfeil);
+        if (this._zu[g.gruppe]) block.classList.add("dev-zu");
+        kopf.addEventListener("click", () => {
+          this._zu[g.gruppe] = !this._zu[g.gruppe];
+          block.classList.toggle("dev-zu", this._zu[g.gruppe]);
+        });
+      }
+      const text = document.createElement("span");
+      text.className = "dev-gruppe-text";
+      text.textContent = klappbar ? `${t["gruppe_" + g.gruppe]} (${g.ids.length})` : t["gruppe_" + g.gruppe];
+      kopf.appendChild(text);
+      const zeilen = document.createElement("div");
+      zeilen.className = "dev-zeilen";
+      for (const id of g.ids) {
+        try {
+          const voll = devAnzeigename(this._hass, this._hass.entities[id]);
+          const zeile = helfer.createRowElement({ entity: id, name: devKurzname(voll, geraeteName) });
+          this._zeilen.push(zeile);
+          zeilen.appendChild(zeile);
+        } catch (e) { /* eine kaputte Zeile reißt die anderen nicht mit */ }
+      }
+      block.append(kopf, zeilen);
+      this._liste.appendChild(block);
+    }
+    if (!gruppen.length && this._config.labels.length) {
+      const leer = document.createElement("div");
+      leer.className = "dev-hinweis";
+      leer.textContent = t.keineTreffer;
+      this._liste.appendChild(leer);
+    }
+    this._reicheHassDurch();
+    this._zeigeListe();
+  }
+
+  _reicheHassDurch() {
+    if (this._tile) this._tile.hass = this._hass;
+    for (const z of this._zeilen || []) z.hass = this._hass;
+    if (this._stateIcon && this._auf) {
+      this._stateIcon.hass = this._hass;
+      this._stateIcon.stateObj = this._hass.states[this._config.entity];
+    }
+  }
+
+  _zeigeListe() {
+    const hatListe = !this._helferFehlt
+      && ((this._zeilenZahl || 0) > 0 || this._config.labels.length > 0);
+    this._pfeil.hidden = !hatListe;
+    this._liste.hidden = !(this._offen && hatListe);
+    this._karte.classList.toggle("dev-offen", this._offen && hatListe);
+    const t = this._texte;
+    this._kopf.setAttribute("aria-expanded", String(this._offen && hatListe));
+    this._pfeil.setAttribute("title", this._offen ? t.zuklappen : t.aufklappen);
+  }
+
+  /* ── Aktionen (Spec Abschnitt 6) ─────────────────────────────────────── */
+
+  _aktion(name) {
+    if (!this._auf && name !== "none") return;
+    switch (name) {
+      case "expand":
+        this._offen = !this._offen;
+        this._zeigeListe();
+        break;
+      case "more-info":
+        this.dispatchEvent(new CustomEvent("hass-more-info", {
+          detail: { entityId: this._config.entity }, bubbles: true, composed: true,
+        }));
+        break;
+      case "toggle":
+        this._hass.callService("homeassistant", "toggle", { entity_id: this._config.entity });
+        break;
+      case "device-page":
+        this._navigiere(`/config/devices/device/${this._auf.geraet.id}`);
+        break;
+      case "navigate":
+        if (this._config.navigation_path) this._navigiere(this._config.navigation_path);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** So navigiert HA selbst (`src/common/navigate.ts`): pushState, dann
+   *  `location-changed` am `window`. */
+  _navigiere(pfad) {
+    history.pushState(null, "", pfad);
+    window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+  }
+}
+
 /* DEV-ENDE */
 
 customElements.define("busch-calendar-card", BuschCalendarCard);
