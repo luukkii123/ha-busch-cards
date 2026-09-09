@@ -4240,6 +4240,7 @@ const DEV_STIL = `
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
     padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
     user-select:none; -webkit-user-select:none; min-width:0; }
+  .dev-icon[hidden] { display:none; }
   .dev-icon { flex:0 0 40px; width:40px; height:40px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
     background:rgba(var(--rgb-primary-color, 3, 169, 244), .12);
@@ -4256,7 +4257,7 @@ const DEV_STIL = `
   .dev-brand[hidden] { display:none; }
   .dev-pfeil { flex:0 0 auto; width:24px; height:24px; color:var(--secondary-text-color);
     transition:transform .2s ease; --mdc-icon-size:24px; }
-  .dev-pfeil[hidden] { display:none; }
+  .dev-pfeil[hidden] { display:none !important; }
   .dev-offen .dev-pfeil { transform:rotate(180deg); }
   .dev-chips { display:flex; flex-wrap:wrap; gap:4px;
     padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
@@ -4436,6 +4437,7 @@ class BuschDeviceCard extends HTMLElement {
       this._name.textContent = this._config.title || this._config.entity || t.keineEntitaet;
       this._unter.hidden = true;
       this._icon.textContent = "";
+      this._icon.hidden = true;
       this._pfeil.hidden = true;
       this._chips.textContent = "";
       this._tileBehaelter.textContent = "";
@@ -4477,6 +4479,7 @@ class BuschDeviceCard extends HTMLElement {
       this._brand.hidden = true;
     }
     this._icon.textContent = "";
+    this._icon.hidden = false;
     const icon = document.createElement("ha-state-icon");
     if (a.eintrag.icon) icon.icon = a.eintrag.icon;
     this._stateIcon = icon;
