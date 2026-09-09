@@ -4002,6 +4002,240 @@ function devStrukturStempel(deviceId, vorlage, gruppen, konfig) {
   return [deviceId, vorlage, g.join("|"), felder.join("&")].join("#");
 }
 
+const SCHEMA_BUSCH_DEVICE_CARD = [
+  { name: "entity", required: true, selector: { entity: {} } },
+  { name: "title", selector: { text: {} } },
+  {
+    name: "template",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [
+          { value: "auto" }, { value: "light" }, { value: "climate" }, { value: "cover" },
+          { value: "fan" }, { value: "media" }, { value: "lock" }, { value: "switch" },
+          { value: "generic" },
+        ],
+      },
+    },
+  },
+  { name: "labels", selector: { label: { multiple: true } } },
+  {
+    type: "grid",
+    schema: [
+      { name: "show_subtitle", selector: { boolean: {} } },
+      { name: "start_expanded", selector: { boolean: {} } },
+      { name: "show_config", selector: { boolean: {} } },
+      { name: "show_diagnostic", selector: { boolean: {} } },
+    ],
+  },
+  {
+    type: "grid",
+    schema: [
+      {
+        name: "tap_action",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "expand" }, { value: "more-info" }, { value: "toggle" },
+              { value: "device-page" }, { value: "navigate" }, { value: "none" },
+            ],
+          },
+        },
+      },
+      {
+        name: "hold_action",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "expand" }, { value: "more-info" }, { value: "toggle" },
+              { value: "device-page" }, { value: "navigate" }, { value: "none" },
+            ],
+          },
+        },
+      },
+    ],
+  },
+  { name: "navigation_path", selector: { text: {} } },
+];
+
+const TEXTE_BUSCH_DEVICE_CARD = {
+  de: {
+    name: "Busch Gerät",
+    description: "Zeigt zu einer Entität ihr ganzes Gerät: Kopfzeile, Bedienelement und alle Entitäten, gruppiert wie auf der Geräteseite.",
+    labels: {
+      entity: "Entität",
+      title: "Überschrift",
+      template: "Darstellung",
+      labels: "Nur Entitäten mit Label",
+      show_subtitle: "Untertitel zeigen",
+      start_expanded: "Offen starten",
+      show_config: "Konfiguration zeigen",
+      show_diagnostic: "Diagnose zeigen",
+      tap_action: "Tippen auf die Kopfzeile",
+      hold_action: "Halten auf der Kopfzeile",
+      navigation_path: "Navigationsziel",
+    },
+    helpers: {
+      entity: "Irgendeine Entität des Geräts. Die Karte sucht daraus das Gerät und zeigt diese Entität oben als Bedienelement.",
+      title: "Überschrift der Karte. Leer nimmt den Gerätenamen. Vorgabe: leer.",
+      template: "Welche Bedienelemente oben stehen. Automatisch richtet sich nach der Art der Entität. Vorgabe: automatisch.",
+      labels: "Zeigt unten nur Entitäten, die eines dieser Labels tragen. Die Entität oben bleibt immer. Vorgabe: alle.",
+      show_subtitle: "Hersteller, Modell und Bereich unter dem Namen. Vorgabe an.",
+      start_expanded: "An zeigt die Entitätenliste sofort, aus erst nach dem Aufklappen. Vorgabe aus.",
+      show_config: "Die Gruppe Konfiguration überhaupt anbieten. Vorgabe an.",
+      show_diagnostic: "Die Gruppe Diagnose überhaupt anbieten. Vorgabe an.",
+      tap_action: "Was ein Tippen auf Name und Untertitel tut. Vorgabe: aufklappen.",
+      hold_action: "Was ein Halten auf Name und Untertitel tut. Vorgabe: Details öffnen.",
+      navigation_path: "Pfad im Dashboard, etwa /lovelace/geraete. Wirkt nur bei der Aktion Navigieren. Vorgabe: leer.",
+    },
+    texte: {
+      template_auto: "Automatisch",
+      template_light: "Licht",
+      template_climate: "Klima",
+      template_cover: "Rollo/Tor",
+      template_fan: "Lüfter",
+      template_media: "Medien",
+      template_lock: "Schloss",
+      template_switch: "Schalter",
+      template_generic: "Allgemein",
+      tap_action_expand: "Aufklappen",
+      "tap_action_more-info": "Details öffnen",
+      tap_action_toggle: "Umschalten",
+      "tap_action_device-page": "Geräteseite öffnen",
+      tap_action_navigate: "Navigieren",
+      tap_action_none: "Nichts",
+      hold_action_expand: "Aufklappen",
+      "hold_action_more-info": "Details öffnen",
+      hold_action_toggle: "Umschalten",
+      "hold_action_device-page": "Geräteseite öffnen",
+      hold_action_navigate: "Navigieren",
+      hold_action_none: "Nichts",
+      gruppe_control: "Steuerung",
+      gruppe_sensor: "Sensoren",
+      gruppe_config: "Konfiguration",
+      gruppe_diagnostic: "Diagnose",
+      keineEntitaet: "Keine Entität gewählt. Im Karteneditor eine auswählen.",
+      altesHa: "Braucht Home Assistant 2024.11 oder neuer.",
+      nichtRegistriert: "{entity} ist nicht registriert.",
+      keinGeraet: "{entity} gehört zu keinem Gerät.",
+      helferFehlt: "Bausteine von Home Assistant nicht ladbar.",
+      laden: "Wird geladen …",
+      keineTreffer: "Kein Eintrag mit diesen Labels.",
+      aufklappen: "Aufklappen",
+      zuklappen: "Zuklappen",
+    },
+  },
+  en: {
+    name: "Busch device",
+    description: "Shows the whole device behind an entity: header, control and every entity, grouped like the device page.",
+    labels: {
+      entity: "Entity",
+      title: "Heading",
+      template: "Layout",
+      labels: "Only entities with label",
+      show_subtitle: "Show subtitle",
+      start_expanded: "Start expanded",
+      show_config: "Show configuration",
+      show_diagnostic: "Show diagnostic",
+      tap_action: "Tap on the header",
+      hold_action: "Hold on the header",
+      navigation_path: "Navigation target",
+    },
+    helpers: {
+      entity: "Any entity of the device. The card finds the device from it and shows this entity as the control at the top.",
+      title: "Heading of the card. Empty uses the device name. Default: empty.",
+      template: "Which controls appear at the top. Automatic follows the kind of entity. Default: automatic.",
+      labels: "Lists only entities carrying one of these labels below. The entity at the top always stays. Default: all.",
+      show_subtitle: "Manufacturer, model and area below the name. Default on.",
+      start_expanded: "On shows the entity list right away, off only after expanding. Default off.",
+      show_config: "Offer the configuration group at all. Default on.",
+      show_diagnostic: "Offer the diagnostic group at all. Default on.",
+      tap_action: "What a tap on name and subtitle does. Default: expand.",
+      hold_action: "What a hold on name and subtitle does. Default: open details.",
+      navigation_path: "Dashboard path such as /lovelace/devices. Only used by the navigate action. Default: empty.",
+    },
+    texte: {
+      template_auto: "Automatic",
+      template_light: "Light",
+      template_climate: "Climate",
+      template_cover: "Cover",
+      template_fan: "Fan",
+      template_media: "Media",
+      template_lock: "Lock",
+      template_switch: "Switch",
+      template_generic: "Generic",
+      tap_action_expand: "Expand",
+      "tap_action_more-info": "Open details",
+      tap_action_toggle: "Toggle",
+      "tap_action_device-page": "Open device page",
+      tap_action_navigate: "Navigate",
+      tap_action_none: "Nothing",
+      hold_action_expand: "Expand",
+      "hold_action_more-info": "Open details",
+      hold_action_toggle: "Toggle",
+      "hold_action_device-page": "Open device page",
+      hold_action_navigate: "Navigate",
+      hold_action_none: "Nothing",
+      gruppe_control: "Controls",
+      gruppe_sensor: "Sensors",
+      gruppe_config: "Configuration",
+      gruppe_diagnostic: "Diagnostic",
+      keineEntitaet: "No entity chosen. Pick one in the card editor.",
+      altesHa: "Needs Home Assistant 2024.11 or newer.",
+      nichtRegistriert: "{entity} is not registered.",
+      keinGeraet: "{entity} belongs to no device.",
+      helferFehlt: "Home Assistant building blocks could not be loaded.",
+      laden: "Loading …",
+      keineTreffer: "No entry with these labels.",
+      aufklappen: "Expand",
+      zuklappen: "Collapse",
+    },
+  },
+};
+
+/** Ein Aufruf je Seite, nicht je Karte. Bei Fehler eine leere Map. */
+let devLabelCache = null;
+function devLabelsLaden(hass) {
+  if (!devLabelCache) {
+    devLabelCache = Promise.resolve()
+      .then(() => hass.callWS({ type: "config/label_registry/list" }))
+      .then((liste) => {
+        const m = new Map();
+        for (const e of Array.isArray(liste) ? liste : []) m.set(e.label_id, e);
+        return m;
+      })
+      .catch(() => new Map());
+  }
+  return devLabelCache;
+}
+
+/** HA speichert Label-Farben als Namen (`red`, `indigo`) — im Frontend
+ *  werden sie zu `var(--<name>-color)`. Hex-Werte bleiben, wie sie sind. */
+function devLabelFarbe(eintrag) {
+  const farbe = eintrag && eintrag.color;
+  if (!farbe) return "";
+  const s = String(farbe);
+  if (s.startsWith("#") || s.startsWith("rgb") || s.startsWith("var(")) return s;
+  return `var(--${s}-color)`;
+}
+
+/** `window.loadCardHelpers()` einmal je Seite; `null`, wenn es fehlt. */
+let devHelferCache = null;
+function devHelferLaden() {
+  if (!devHelferCache) {
+    devHelferCache = Promise.resolve()
+      .then(() => {
+        if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return null;
+        return window.loadCardHelpers();
+      })
+      .then((h) => (h && typeof h.createCardElement === "function" && typeof h.createRowElement === "function" ? h : null))
+      .catch(() => null);
+  }
+  return devHelferCache;
+}
+
 /* DEV-ENDE */
 
 customElements.define("busch-calendar-card", BuschCalendarCard);
