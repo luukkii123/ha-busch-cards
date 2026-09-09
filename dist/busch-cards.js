@@ -3925,6 +3925,83 @@ function devGeraetAufloesen(hass, entityId) {
   };
 }
 
+/**
+ * HAs `SENSOR_ENTITIES` aus `src/common/const.ts` plus `event`. HA führt
+ * `event`, `notify` und Assist als eigene Gruppen; diese Karte faltet `event`
+ * in Sensoren und den Rest in Steuerung (Spec Abschnitt 5).
+ */
+const DEV_SENSOR_DOMAINS = [
+  "sensor", "binary_sensor", "calendar", "camera", "device_tracker", "image", "weather", "event",
+];
+
+/** Reihenfolge der Gruppen in der Karte. */
+const DEV_GRUPPEN = ["control", "sensor", "config", "diagnostic"];
+
+function devEntitaetenDesGeraets(hass, deviceId, hauptId) {
+  const aus = [];
+  const register = (hass && hass.entities) || {};
+  for (const id of Object.keys(register)) {
+    const e = register[id];
+    if (!e || e.device_id !== deviceId || e.hidden || id === hauptId) continue;
+    aus.push(e);
+  }
+  return aus;
+}
+
+function devLabelFilter(eintraege, labels) {
+  if (!Array.isArray(labels) || labels.length === 0) return eintraege.slice();
+  return eintraege.filter((e) => Array.isArray(e.labels) && e.labels.some((l) => labels.includes(l)));
+}
+
+function devGruppe(eintrag) {
+  if (eintrag.entity_category === "config") return "config";
+  if (eintrag.entity_category === "diagnostic") return "diagnostic";
+  return DEV_SENSOR_DOMAINS.includes(devDomain(eintrag.entity_id)) ? "sensor" : "control";
+}
+
+function devAnzeigename(hass, eintrag) {
+  if (eintrag.name) return String(eintrag.name);
+  const zustand = hass && hass.states && hass.states[eintrag.entity_id];
+  const fn = zustand && zustand.attributes && zustand.attributes.friendly_name;
+  return fn ? String(fn) : eintrag.entity_id;
+}
+
+/** „Wohnzimmer Deckenlampe Leistung" → „Leistung"; der Gerätename allein bleibt. */
+function devKurzname(anzeigename, geraeteName) {
+  const n = String(anzeigename || "");
+  const g = String(geraeteName || "");
+  if (g && n.length > g.length + 1 && n.startsWith(g + " ")) return n.slice(g.length + 1);
+  return n;
+}
+
+function devGruppieren(hass, eintraege, konfig) {
+  const koerbe = { control: [], sensor: [], config: [], diagnostic: [] };
+  for (const e of eintraege) koerbe[devGruppe(e)].push(e);
+  const aus = [];
+  for (const gruppe of DEV_GRUPPEN) {
+    if (gruppe === "config" && !konfig.show_config) continue;
+    if (gruppe === "diagnostic" && !konfig.show_diagnostic) continue;
+    const liste = koerbe[gruppe];
+    if (!liste.length) continue;
+    liste.sort((a, b) =>
+      devAnzeigename(hass, a).localeCompare(devAnzeigename(hass, b), undefined, { sensitivity: "base" })
+    );
+    aus.push({ gruppe, ids: liste.map((e) => e.entity_id) });
+  }
+  return aus;
+}
+
+/**
+ * Spec Abschnitt 7: Nur wenn sich dieser Stempel ändert, wird das DOM neu
+ * gebaut. Ein Zustandswechsel ändert ihn nicht — der wird nur durchgereicht.
+ */
+function devStrukturStempel(deviceId, vorlage, gruppen, konfig) {
+  const felder = Object.keys(DEV_STANDARD).concat(["entity"]).sort()
+    .map((k) => `${k}=${JSON.stringify(konfig[k])}`);
+  const g = gruppen.map((x) => `${x.gruppe}:${x.ids.join(",")}`);
+  return [deviceId, vorlage, g.join("|"), felder.join("&")].join("#");
+}
+
 /* DEV-ENDE */
 
 customElements.define("busch-calendar-card", BuschCalendarCard);

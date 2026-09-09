@@ -21,6 +21,14 @@ const {
   devVorlageWaehlen,
   devGeraetAufloesen,
   devUntertitel,
+  DEV_SENSOR_DOMAINS,
+  devEntitaetenDesGeraets,
+  devLabelFilter,
+  devGruppe,
+  devAnzeigename,
+  devKurzname,
+  devGruppieren,
+  devStrukturStempel,
 } = ladeKarte([
   "DEV_STANDARD",
   "DEV_VORLAGEN",
@@ -29,6 +37,14 @@ const {
   "devVorlageWaehlen",
   "devGeraetAufloesen",
   "devUntertitel",
+  "DEV_SENSOR_DOMAINS",
+  "devEntitaetenDesGeraets",
+  "devLabelFilter",
+  "devGruppe",
+  "devAnzeigename",
+  "devKurzname",
+  "devGruppieren",
+  "devStrukturStempel",
 ]);
 
 /* ── Konfiguration ─────────────────────────────────────────────────────── */
@@ -140,4 +156,96 @@ test("ein device_id ohne Geraet im Register zaehlt als keinGeraet", () => {
   const hass = baueHass();
   hass.entities["light.decke"].device_id = "d_weg";
   assert.strictEqual(devGeraetAufloesen(hass, "light.decke").fehler, "keinGeraet");
+});
+
+/* ── Entitaetenmenge ───────────────────────────────────────────────────── */
+
+test("alle Entitaeten desselben Geraets, ohne hidden, ohne Hauptentitaet", () => {
+  const ids = devEntitaetenDesGeraets(baueHass(), "d1", "light.decke").map((e) => e.entity_id).sort();
+  assert.strictEqual(ids.join(","),
+    "binary_sensor.decke_ueberhitzt,event.decke_taster,sensor.decke_energie," +
+    "sensor.decke_leistung,sensor.decke_rssi,switch.decke_kindersicherung,update.decke_firmware");
+});
+
+test("Label-Filter: Oder-Verknuepfung, leer heisst alle", () => {
+  const alle = devEntitaetenDesGeraets(baueHass(), "d1", "light.decke");
+  assert.strictEqual(devLabelFilter(alle, []).length, alle.length);
+  const energie = devLabelFilter(alle, ["l_energie"]).map((e) => e.entity_id).sort().join(",");
+  assert.strictEqual(energie, "sensor.decke_energie,sensor.decke_leistung");
+  const beide = devLabelFilter(alle, ["l_energie", "l_wichtig"]).map((e) => e.entity_id).sort().join(",");
+  assert.strictEqual(beide, "sensor.decke_energie,sensor.decke_leistung");
+  assert.strictEqual(devLabelFilter(alle, ["l_gibtsnicht"]).length, 0);
+});
+
+/* ── Gruppierung ───────────────────────────────────────────────────────── */
+
+test("die Sensorliste ist HAs SENSOR_ENTITIES plus event", () => {
+  assert.strictEqual(DEV_SENSOR_DOMAINS.slice().sort().join(","),
+    "binary_sensor,calendar,camera,device_tracker,event,image,sensor,weather");
+});
+
+test("entity_category gewinnt, sonst entscheidet die Domain", () => {
+  const h = baueHass();
+  assert.strictEqual(devGruppe(h.entities["sensor.decke_rssi"]), "diagnostic");
+  assert.strictEqual(devGruppe(h.entities["update.decke_firmware"]), "config");
+  assert.strictEqual(devGruppe(h.entities["switch.decke_kindersicherung"]), "config");
+  assert.strictEqual(devGruppe(h.entities["sensor.decke_leistung"]), "sensor");
+  assert.strictEqual(devGruppe(h.entities["event.decke_taster"]), "sensor");
+  assert.strictEqual(devGruppe(h.entities["binary_sensor.decke_ueberhitzt"]), "sensor");
+  assert.strictEqual(devGruppe({ entity_id: "switch.x" }), "control");
+  assert.strictEqual(devGruppe({ entity_id: "notify.x" }), "control");
+});
+
+test("Anzeigename: Registername, sonst friendly_name, sonst die ID; Kurzname ohne Geraetepraefix", () => {
+  const h = baueHass();
+  assert.strictEqual(devAnzeigename(h, h.entities["sensor.decke_leistung"]), "Wohnzimmer Deckenlampe Leistung");
+  h.entities["sensor.decke_leistung"].name = "Verbrauch";
+  assert.strictEqual(devAnzeigename(h, h.entities["sensor.decke_leistung"]), "Verbrauch");
+  assert.strictEqual(devAnzeigename(h, { entity_id: "sensor.fremd" }), "sensor.fremd");
+  assert.strictEqual(devKurzname("Wohnzimmer Deckenlampe Leistung", "Wohnzimmer Deckenlampe"), "Leistung");
+  assert.strictEqual(devKurzname("Wohnzimmer Deckenlampe", "Wohnzimmer Deckenlampe"), "Wohnzimmer Deckenlampe");
+  assert.strictEqual(devKurzname("Leistung", "Wohnzimmer Deckenlampe"), "Leistung");
+});
+
+test("vier Gruppen in fester Reihenfolge, leere fehlen, innen nach Name sortiert", () => {
+  const h = baueHass();
+  const konfig = devNormalisiereKonfig({ entity: "light.decke" });
+  const alle = devEntitaetenDesGeraets(h, "d1", "light.decke");
+  const gruppen = devGruppieren(h, alle, konfig);
+  assert.strictEqual(gruppen.map((g) => g.gruppe).join(","), "sensor,config,diagnostic");
+  assert.strictEqual(gruppen[0].ids.join(","),
+    "sensor.decke_energie,sensor.decke_leistung,event.decke_taster,binary_sensor.decke_ueberhitzt");
+  assert.strictEqual(gruppen[1].ids.join(","), "update.decke_firmware,switch.decke_kindersicherung");
+  assert.strictEqual(gruppen[2].ids.join(","), "sensor.decke_rssi");
+});
+
+test("show_config / show_diagnostic blenden ihre Gruppe ganz aus", () => {
+  const h = baueHass();
+  const alle = devEntitaetenDesGeraets(h, "d1", "light.decke");
+  const k = devNormalisiereKonfig({ entity: "light.decke", show_config: false, show_diagnostic: false });
+  assert.strictEqual(devGruppieren(h, alle, k).map((g) => g.gruppe).join(","), "sensor");
+});
+
+/* ── Strukturstempel (Spec Abschnitt 7) ────────────────────────────────── */
+
+test("gleiche Struktur ergibt denselben Stempel, ein Zustandswechsel aendert nichts", () => {
+  const h = baueHass();
+  const k = devNormalisiereKonfig({ entity: "light.decke" });
+  const g1 = devGruppieren(h, devEntitaetenDesGeraets(h, "d1", "light.decke"), k);
+  h.states["light.decke"].state = "off";
+  const g2 = devGruppieren(h, devEntitaetenDesGeraets(h, "d1", "light.decke"), k);
+  assert.strictEqual(devStrukturStempel("d1", "light", g1, k), devStrukturStempel("d1", "light", g2, k));
+});
+
+test("eine neue Entitaet, eine andere Vorlage oder Konfiguration aendern den Stempel", () => {
+  const h = baueHass();
+  const k = devNormalisiereKonfig({ entity: "light.decke" });
+  const g1 = devGruppieren(h, devEntitaetenDesGeraets(h, "d1", "light.decke"), k);
+  const s1 = devStrukturStempel("d1", "light", g1, k);
+  h.entities["sensor.decke_neu"] = { entity_id: "sensor.decke_neu", device_id: "d1", labels: [] };
+  const g2 = devGruppieren(h, devEntitaetenDesGeraets(h, "d1", "light.decke"), k);
+  assert.notStrictEqual(devStrukturStempel("d1", "light", g2, k), s1);
+  assert.notStrictEqual(devStrukturStempel("d1", "switch", g1, k), s1);
+  const k2 = devNormalisiereKonfig({ entity: "light.decke", show_subtitle: false });
+  assert.notStrictEqual(devStrukturStempel("d1", "light", g1, k2), s1);
 });
