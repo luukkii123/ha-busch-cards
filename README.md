@@ -478,11 +478,12 @@ freundlicher als die Wirklichkeit.
 | Beleg | Umfang | Ergebnis |
 | --- | --- | --- |
 | `node --check dist/busch-cards.js` | vor jedem Container-Lauf | fehlerfrei |
-| `node --test tests/*.test.js` | 171 Prüfungen in 9 Dateien | 171 grün, 0 rot |
+| `node --test tests/*.test.js` | 206 Prüfungen in 11 Dateien (seit 0.10.0 mit `geraet.test.js`, `geraet-editor.test.js`) | 206 grün, 0 rot |
 | `python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards` | Regel 3 (1–4) und Regel 4 (1) an der ausgelieferten Datei | 0 Verstöße, Exit 0 |
 | `docs/render/render-zeitplan.py` (Playwright) | Zeitplan-Karte: Regel 1 bei 320/480/960 px in hell und dunkel, dazu **beide Dialoge geöffnet**; Regel 2 an beiden Dialogen | 0 Verstöße, Exit 0 |
 | `docs/render/render-kalender.py` (Playwright) | Kalender-Karte, beide Ausprägungen: Regel 1 bei 320/480/960 px in hell und dunkel | 666 Textelemente geprüft, 0 Verstöße, Exit 0 |
 | `docs/render/mapcard.py` (Playwright) | Landkarte: 57 Prüfungen, darunter Regel 1 an der Umhüllung und am Fehlerkasten sowie das Paar aus Anwesenheit und Malreihenfolge der Entitäten | alle bestanden, Exit 0; derselbe Lauf gegen `v0.9.0` scheitert an genau diesem Paar |
+| `docs/render/render-geraet.py` (Playwright) | Gerätekarte, vier Ausprägungen (zugeklappt, aufgeklappt mit Label-Filter, Sensor-Gerät mit langen Namen, Fehlerfall): Regel 1 bei 320/480/960 px in hell und dunkel, dazu Verhalten (kein DOM-Umbau beim Zustandswechsel, Tippen/Halten, `device-page`, Gruppen klappen); Tile und Zeilen als Attrappe | 162 Textelemente geprüft, 0 Verstöße, Exit 0; Kalender und Zeitplan danach unverändert grün |
 
 Was die Messung im Einzelnen ergab:
 

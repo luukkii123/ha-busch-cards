@@ -78,7 +78,7 @@ Playwright-Container mit `docs/render/regeln.py`.
   `keinGeraet`.
 - Erzeugt: `devUntertitel(geraet, bereich) → "Shelly · Plus 1PM · Wohnzimmer"`.
 
-- [ ] **Schritt 1: Die Attrappe schreiben**
+- [x] **Schritt 1: Die Attrappe schreiben**
 
 `tests/geraet-attrappe.js`:
 
@@ -160,7 +160,7 @@ function baueHass() {
 module.exports = { baueHass };
 ```
 
-- [ ] **Schritt 2: Den fehlschlagenden Test schreiben**
+- [x] **Schritt 2: Den fehlschlagenden Test schreiben**
 
 `tests/geraet.test.js`:
 
@@ -302,12 +302,12 @@ test("ein device_id ohne Geraet im Register zaehlt als keinGeraet", () => {
 });
 ```
 
-- [ ] **Schritt 3: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 3: Test laufen lassen, muss fehlschlagen**
 
 Run: `cd "/mnt/user/Data/Claude Projekte/hacs/busch-cards" && node --test tests/geraet.test.js`
 Erwartet: FAIL — `DEV_STANDARD is not defined` (ReferenceError aus dem Sammler).
 
-- [ ] **Schritt 4: Umsetzen**
+- [x] **Schritt 4: Umsetzen**
 
 In `dist/busch-cards.js`, **direkt vor** der Zeile
 `customElements.define("busch-calendar-card", BuschCalendarCard);` einfügen:
@@ -435,12 +435,12 @@ function devGeraetAufloesen(hass, entityId) {
 }
 ```
 
-- [ ] **Schritt 5: Prüfen, muss grün sein**
+- [x] **Schritt 5: Prüfen, muss grün sein**
 
 Run: `node --check dist/busch-cards.js && node --test tests/`
 Erwartet: alle Tests bestanden, auch `namensraum.test.js`.
 
-- [ ] **Schritt 6: Commit**
+- [x] **Schritt 6: Commit**
 
 ```bash
 git add tests/geraet-attrappe.js tests/geraet.test.js dist/busch-cards.js
@@ -469,7 +469,7 @@ git commit -m "busch-device-card: Konfiguration, Vorlagenwahl, Geräteauflösung
   innerhalb sortiert nach Anzeigename.
 - Erzeugt: `devStrukturStempel(deviceId, vorlage, gruppen, konfig) → string`.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 An `tests/geraet.test.js` anhängen (und die neuen Namen oben im `ladeKarte`-
 Aufruf ergänzen: `DEV_SENSOR_DOMAINS`, `devEntitaetenDesGeraets`,
@@ -570,12 +570,12 @@ test("eine neue Entitaet, eine andere Vorlage oder Konfiguration aendern den Ste
 });
 ```
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet.test.js`
 Erwartet: FAIL — `DEV_SENSOR_DOMAINS is not defined`.
 
-- [ ] **Schritt 3: Umsetzen**
+- [x] **Schritt 3: Umsetzen**
 
 Hinter `devGeraetAufloesen` einfügen:
 
@@ -658,11 +658,11 @@ function devStrukturStempel(deviceId, vorlage, gruppen, konfig) {
 }
 ```
 
-- [ ] **Schritt 4: Prüfen, muss grün sein**
+- [x] **Schritt 4: Prüfen, muss grün sein**
 
 Run: `node --check dist/busch-cards.js && node --test tests/`
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet.test.js dist/busch-cards.js
@@ -685,7 +685,7 @@ git commit -m "busch-device-card: Entitätenmenge, Label-Filter, Gruppierung, St
 - Erzeugt: `devHelferLaden() → Promise<helfer|null>`; Zwischenspeicher `devHelferCache`.
 - Erzeugt: `devLabelFarbe(eintrag) → "var(--red-color)" | "#rrggbb" | ""`.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test schreiben**
+- [x] **Schritt 1: Den fehlschlagenden Test schreiben**
 
 `tests/geraet-editor.test.js`:
 
@@ -818,12 +818,12 @@ test("scheitert der WebSocket-Aufruf, kommt eine leere Map und kein Wurf", async
 });
 ```
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet-editor.test.js`
 Erwartet: FAIL — `SCHEMA_BUSCH_DEVICE_CARD is not defined`.
 
-- [ ] **Schritt 3: Umsetzen**
+- [x] **Schritt 3: Umsetzen**
 
 Hinter `devStrukturStempel` einfügen:
 
@@ -1063,14 +1063,14 @@ function devHelferLaden() {
 }
 ```
 
-- [ ] **Schritt 4: Prüfen, muss grün sein**
+- [x] **Schritt 4: Prüfen, muss grün sein**
 
 Run: `node --check dist/busch-cards.js && node --test tests/`
 Zusätzlich: `python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards`
 Erwartet: R3.2 meldet **noch** „kein customCards-Eintrag" für den neuen Tag
 (kommt in Aufgabe 5) — alles andere ohne Befund. Notieren, nicht beheben.
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet-editor.test.js dist/busch-cards.js
@@ -1091,7 +1091,7 @@ git commit -m "busch-device-card: Schema, Wörterbuch, Label- und Helferladen"
   `getGridOptions`.
 - Verbraucht: alles aus Aufgabe 1–3.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test für die Vorgabe anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test für die Vorgabe anhängen**
 
 An `tests/geraet.test.js` anhängen (`BuschDeviceCard` in `ladeKarte` ergänzen):
 
@@ -1112,11 +1112,11 @@ test("getStubConfig ohne Entitaetenliste sucht in hass.states; ohne alles bleibt
 });
 ```
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet.test.js` — FAIL, `BuschDeviceCard is not defined`.
 
-- [ ] **Schritt 3: Stil und Kartenklasse umsetzen**
+- [x] **Schritt 3: Stil und Kartenklasse umsetzen**
 
 ```js
 const DEV_STIL = `
@@ -1521,12 +1521,12 @@ class BuschDeviceCard extends HTMLElement {
 }
 ```
 
-- [ ] **Schritt 4: Prüfen**
+- [x] **Schritt 4: Prüfen**
 
 Run: `node --check dist/busch-cards.js && node --test tests/`
 Erwartet: grün. `namensraum.test.js` bleibt grün (keine Dublette).
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet.test.js dist/busch-cards.js
@@ -1545,7 +1545,7 @@ git commit -m "busch-device-card: Kartenklasse — Kopfzeile, Chips, Tile, Grupp
 **Schnittstellen:**
 - Erzeugt: `BuschDeviceCardEditor` (`setConfig`, `set hass`, `_render`, `_emit`), `waehlerGeraet`.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 An `tests/geraet-editor.test.js` anhängen (`BuschDeviceCardEditor` in
 `ladeKarte` ergänzen):
@@ -1608,11 +1608,11 @@ test("value-changed: Vorgaben fallen aus der Konfiguration, gesetzte Werte bleib
 wobei `class EreignisStub { constructor(name, init) { this.type = name; this.detail = init.detail; } }`
 oben in der Testdatei steht.
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet-editor.test.js` — FAIL, `BuschDeviceCardEditor is not defined`.
 
-- [ ] **Schritt 3: Editor und Anmeldung umsetzen**
+- [x] **Schritt 3: Editor und Anmeldung umsetzen**
 
 Hinter `BuschDeviceCard`:
 
@@ -1682,7 +1682,7 @@ window.customCards.push({
 Außerdem den Dateikopf-Kommentar (Zeile 1–17) um die vierte Karte ergänzen,
 falls er die Karten aufzählt.
 
-- [ ] **Schritt 4: Prüfen — Node und statischer Regelprüfer**
+- [x] **Schritt 4: Prüfen — Node und statischer Regelprüfer**
 
 Run:
 ```bash
@@ -1694,7 +1694,7 @@ Erwartet: alle Tests grün; der Regelprüfer meldet **keinen** Befund für
 config-Schlüssel, R3.4 nowrap/ellipsis). Bleibt ein Befund, ist er zu
 beheben, nicht in die Ausnahmeliste zu schreiben.
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet-editor.test.js dist/busch-cards.js
@@ -1724,7 +1724,7 @@ git commit -m "busch-device-card: Editor und Anmeldung im Kartenwähler"
    **nicht** um (Zeilenknoten identisch); Halten feuert `hass-more-info`;
    `device-page` ändert `location.pathname`.
 
-- [ ] **Schritt 1: Das Renderskript schreiben**
+- [x] **Schritt 1: Das Renderskript schreiben**
 
 `hacs/docs/render/render-geraet.py`:
 
@@ -2067,7 +2067,7 @@ sys.exit(regeln.bewerte(report))
 Falls `regeln.schreibe` eine andere Signatur hat (`schreibe(pfad, report, zeige)`),
 den Aufruf anpassen; die Funktion steht in `regeln.py` ab Zeile ~903.
 
-- [ ] **Schritt 2: Laufen lassen**
+- [x] **Schritt 2: Laufen lassen**
 
 ```bash
 docker run --rm \
@@ -2104,7 +2104,7 @@ Erwartet: Exit 0. Danach `report.json` **lesen**, nicht nur den Exit-Code:
 Ein abweichender Wert ist ein Fehler der Karte oder der Attrappe — erst
 klären, welcher, dann beheben, dann **neu laufen lassen**.
 
-- [ ] **Schritt 3: Die Bilder wirklich ansehen**
+- [x] **Schritt 3: Die Bilder wirklich ansehen**
 
 `geraet-a.png`, `geraet-b.png`, `geraet-c.png`, `geraet-d.png`,
 `geraet-a-offen.png` und je ein 320-px-Bild hell/dunkel mit dem Read-Werkzeug
@@ -2113,7 +2113,7 @@ Rot/Grün, Gruppenköpfe in Kapitälchen, Fehlerkarte D rot ohne Pfeil, dunkles
 Thema lesbar. Was auf dem Bild fehlt oder falsch ist, wird behoben — ein
 grüner Bericht allein ist kein Beleg (`hacs/CLAUDE.md`, „Nicht verhandelbar").
 
-- [ ] **Schritt 4: Die drei anderen Karten gegenprüfen**
+- [x] **Schritt 4: Die drei anderen Karten gegenprüfen**
 
 ```bash
 docker run --rm \
@@ -2128,7 +2128,7 @@ docker run --rm \
 Erwartet: beide Exit 0, `tageZeilen` 31 bzw. der Zeitplan mit `amPm: 0` wie
 vor der Änderung. Das ist der Schritt gegen die Namenskollision.
 
-- [ ] **Schritt 5: Bilder ins Repo, Skript committen**
+- [x] **Schritt 5: Bilder ins Repo, Skript committen**
 
 ```bash
 cp "../docs/render/geraet/geraet-b.png" docs/preview-device-expanded.png
@@ -2153,7 +2153,7 @@ selben Tag), **nur** `docs/render/render-geraet.py` vorlegen, nichts sonst.
 - Ändern: `../CLAUDE.md` (HIER WEITERMACHEN; Versionstabelle **nicht** — die
   zeigt den getaggten Stand)
 
-- [ ] **Schritt 1: README**
+- [x] **Schritt 1: README**
 
 Kopfsatz auf „Vier Lovelace-Karten", Tabelle um
 `busch-device-card | ein Gerät samt aller Entitäten, aus einer Entität ermittelt`.
@@ -2204,11 +2204,11 @@ Ganz oben im README den „Nachweis"-Absatz, falls vorhanden, um einen Satz zum
 Chromium-Lauf `render-geraet.py` ergänzen — mit dem Hinweis, dass die Helfer
 dort Attrappen sind.
 
-- [ ] **Schritt 2: Version**
+- [x] **Schritt 2: Version**
 
 `CARD_VERSION` von `"0.9.1"` auf `"0.10.0"`. `node --check`, `node --test tests/`.
 
-- [ ] **Schritt 3: Commit und Push**
+- [x] **Schritt 3: Commit und Push**
 
 ```bash
 git add README.md dist/busch-cards.js
@@ -2220,7 +2220,7 @@ git push origin main
 „Abnahme", und die Sichtung im echten Home Assistant (Spec Abschnitt 12,
 Schritt 4) — die entscheidet der Nutzer.
 
-- [ ] **Schritt 4: `hacs/CLAUDE.md` fortschreiben**
+- [x] **Schritt 4: `hacs/CLAUDE.md` fortschreiben**
 
 Erst `cd .. && git status --short && git log -1 --format='%cr %s'`. Dann im
 Abschnitt „HIER WEITERMACHEN" einen Punkt ergänzen:
@@ -2236,7 +2236,7 @@ Abschnitt „HIER WEITERMACHEN" einen Punkt ergänzen:
 
 Nur diese Datei vorlegen: `git add CLAUDE.md && git commit -m "HIER WEITERMACHEN: busch-device-card 0.10.0 ungetaggt" && git push origin main`.
 
-- [ ] **Schritt 5: Meldung**
+- [x] **Schritt 5: Meldung**
 
 ```bash
 "/mnt/user/Data/Claude Projekte/scripts/ha-notify.sh" \
