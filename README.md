@@ -453,9 +453,25 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
-**Stand 09.09.2026, `CARD_VERSION` `0.8.3`** — alle drei Karten gegen die
-[UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). **Nicht
-getaggt:** Diese Runde ändert die Version bewusst nicht, HACS liest den Tag.
+**Stand 09.09.2026, `CARD_VERSION` `0.9.1`** — alle drei Karten gegen die
+[UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). Veröffentlicht
+als `v0.9.0` (UI-Regeln) und `v0.9.1` (Landkarten-Fehler, siehe unten).
+
+**Der Live-Befund vom 09.09.2026 und was er über die Messung sagt.** Der Nutzer
+meldete, dass `busch-map-card` die konfigurierten Entitäten nur bei der
+Kachelvorlage „Home Assistant Standard" zeigt. Ursache: Home Assistant flacht
+mit `.leaflet-pane { z-index: 0 !important }` alle Leaflet-Ebenen ein
+(`src/components/map/ha-map.ts`), der von der Karte gesetzte `z-index: 250`
+gilt dort also nicht — und `createPane` hängt die eigene Kachelebene ans Ende,
+über die Marker. Behoben in `0.9.1`, indem die Ebene vor `overlayPane`
+einsortiert wird; das stimmt mit und ohne die `z-index`-Angabe.
+
+Die Lehre für die Prüfung: Die Marker waren in **jedem** Lauf im DOM, auch im
+fehlerhaften. „Element vorhanden" hätte den Fehler nie gefunden, und
+`elementFromPoint` fällt durch `pointer-events: none` hindurch. Erst die
+**Malreihenfolge** der Ebenen unterscheidet. `mapcard.py` misst sie jetzt und
+bringt HAs `z-index`-Regel in der Attrappe mit — ohne sie war die Attrappe
+freundlicher als die Wirklichkeit.
 
 | Beleg | Umfang | Ergebnis |
 | --- | --- | --- |
@@ -464,7 +480,7 @@ getaggt:** Diese Runde ändert die Version bewusst nicht, HACS liest den Tag.
 | `python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards` | Regel 3 (1–4) und Regel 4 (1) an der ausgelieferten Datei | 0 Verstöße, Exit 0 |
 | `docs/render/render-zeitplan.py` (Playwright) | Zeitplan-Karte: Regel 1 bei 320/480/960 px in hell und dunkel, dazu **beide Dialoge geöffnet**; Regel 2 an beiden Dialogen | 0 Verstöße, Exit 0 |
 | `docs/render/render-kalender.py` (Playwright) | Kalender-Karte, beide Ausprägungen: Regel 1 bei 320/480/960 px in hell und dunkel | 666 Textelemente geprüft, 0 Verstöße, Exit 0 |
-| `docs/render/mapcard.py` (Playwright) | Landkarte: 53 Prüfungen, darunter Regel 1 an der Umhüllung und am Fehlerkasten | alle bestanden, Exit 0 |
+| `docs/render/mapcard.py` (Playwright) | Landkarte: 57 Prüfungen, darunter Regel 1 an der Umhüllung und am Fehlerkasten sowie das Paar aus Anwesenheit und Malreihenfolge der Entitäten | alle bestanden, Exit 0; derselbe Lauf gegen `v0.9.0` scheitert an genau diesem Paar |
 
 Was die Messung im Einzelnen ergab:
 
