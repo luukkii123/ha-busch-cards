@@ -4644,7 +4644,49 @@ class BuschDeviceCard extends HTMLElement {
   }
 }
 
-/* DEV-ENDE */
+class BuschDeviceCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config || {};
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    if (!this._form) {
+      const texte = buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass);
+      this._form = document.createElement("ha-form");
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_DEVICE_CARD, texte);
+      this._form.computeLabel = (s) => texte.labels[s.name] || s.name;
+      this._form.computeHelper = (s) => texte.helpers[s.name] || "";
+      this._form.addEventListener("value-changed", (event) => {
+        event.stopPropagation();
+        const neu = { ...this._config, ...event.detail.value };
+        // Vorgaben nicht ins YAML schreiben — so bleibt die Konfiguration
+        // so kurz wie das, was der Nutzer wirklich geändert hat.
+        for (const [k, v] of Object.entries(DEV_STANDARD)) {
+          if (neu[k] === v) delete neu[k];
+          else if (Array.isArray(v) && Array.isArray(neu[k]) && neu[k].length === 0) delete neu[k];
+        }
+        this._emit(neu);
+      });
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = { ...DEV_STANDARD, ...this._config };
+  }
+
+  _emit(config) {
+    this._config = config;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true })
+    );
+  }
+}
 
 customElements.define("busch-calendar-card", BuschCalendarCard);
 customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
@@ -4655,6 +4697,19 @@ window.customCards.push({
   type: "busch-calendar-card",
   name: waehlerKalender.name,
   description: waehlerKalender.description,
+  preview: true,
+  documentationURL: "https://github.com/luukkii123/ha-busch-cards",
+});
+
+customElements.define("busch-device-card", BuschDeviceCard);
+customElements.define("busch-device-card-editor", BuschDeviceCardEditor);
+
+const waehlerGeraet = buschTexte(TEXTE_BUSCH_DEVICE_CARD);
+
+window.customCards.push({
+  type: "busch-device-card",
+  name: waehlerGeraet.name,
+  description: waehlerGeraet.description,
   preview: true,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });

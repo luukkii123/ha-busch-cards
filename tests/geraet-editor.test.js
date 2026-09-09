@@ -120,3 +120,54 @@ test("scheitert der WebSocket-Aufruf, kommt eine leere Map und kein Wurf", async
   const m = await frisch(hass);
   assert.strictEqual(m.size, 0);
 });
+
+/* ── Editor-Verdrahtung: ha-form bekommt Schema, Daten, Label, Helper ──── */
+
+class EreignisStub { constructor(name, init) { this.type = name; this.detail = init.detail; } }
+
+function domAttrappe() {
+  const knoten = () => ({
+    kinder: [], style: {}, eigenschaften: {},
+    setAttribute() {}, addEventListener(name, fn) { this["on_" + name.replace(/-/g, "_")] = fn; },
+    appendChild(k) { this.kinder.push(k); return k; }, append(...k) { this.kinder.push(...k); },
+  });
+  return { createElement(tag) { const k = knoten(); k.tag = tag; return k; } };
+}
+
+test("der Editor gibt ha-form Schema, Daten mit Vorgaben, Label und Helper aus dem Woerterbuch", () => {
+  const dokument = domAttrappe();
+  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"], { document: dokument, CustomEvent: EreignisStub });
+  const ed = new Editor();
+  ed.appendChild = function (k) { this._angehaengt = k; };
+  ed.setConfig({ entity: "light.decke", template: "switch" });
+  ed.hass = baueHass();
+  const form = ed._form;
+  assert.strictEqual(form.tag, "ha-form");
+  assert.strictEqual(form.data.entity, "light.decke");
+  assert.strictEqual(form.data.template, "switch");
+  assert.strictEqual(form.data.tap_action, "expand");
+  assert.strictEqual(form.computeLabel({ name: "labels" }), "Nur Entitäten mit Label");
+  assert.ok(/Vorgabe/.test(form.computeHelper({ name: "template" })));
+  const template = form.schema.find((s) => s.name === "template");
+  assert.strictEqual(template.selector.select.options[1].label, "Licht");
+});
+
+test("value-changed: Vorgaben fallen aus der Konfiguration, gesetzte Werte bleiben", () => {
+  const dokument = domAttrappe();
+  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"], { document: dokument, CustomEvent: EreignisStub });
+  const ed = new Editor();
+  ed.appendChild = function () {};
+  let gemeldet = null;
+  ed.dispatchEvent = (ev) => { gemeldet = ev.detail.config; };
+  ed.setConfig({ type: "custom:busch-device-card", entity: "light.decke" });
+  ed.hass = baueHass();
+  ed._form.on_value_changed({
+    stopPropagation() {},
+    detail: { value: { entity: "light.decke", template: "auto", tap_action: "toggle", labels: [] } },
+  });
+  assert.strictEqual(gemeldet.type, "custom:busch-device-card");
+  assert.strictEqual(gemeldet.entity, "light.decke");
+  assert.strictEqual(gemeldet.tap_action, "toggle");
+  assert.strictEqual(gemeldet.template, undefined, "Vorgabe wandert nicht in die Konfiguration");
+  assert.strictEqual(gemeldet.labels, undefined, "leere Liste ist die Vorgabe");
+});
