@@ -455,10 +455,11 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
-**Stand 09.09.2026, `CARD_VERSION` `0.10.0`** — alle **vier** Karten gegen die
+**Stand 10.09.2026, `CARD_VERSION` `0.10.1`** — alle **vier** Karten gegen die
 [UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). Veröffentlicht
 als `v0.9.0` (UI-Regeln), `v0.9.1` (Landkarten-Fehler, siehe unten) und
-`v0.10.0` (neue Gerätekarte `busch-device-card`).
+`v0.10.0` (neue Gerätekarte `busch-device-card`) und `v0.10.1` (erster
+Live-Befund an der Gerätekarte, siehe unten).
 
 Die Gerätekarte ist in diesem Lauf neu hinzugekommen und mit denselben vier
 Belegen abgenommen worden: `node --check`, 206 Node-Tests, der statische
@@ -626,3 +627,10 @@ eine Zeile verhalten sich wie überall in HA. Versteckte Entitäten (`hidden`)
 erscheinen nicht. Die Karte macht keinen eigenen Server-Aufruf außer einem
 einzigen für die Label-Namen; Geräte, Bereiche und Entitätenregister liest sie
 aus dem `hass`-Objekt, das jede Karte bekommt.
+
+**Entitäten ohne eigenen Namen.** In Home Assistant trägt die Hauptentität
+eines Geräts — und fast immer auch `update.*` — keinen eigenen Namen; ihr
+angezeigter Name **ist** der Gerätename. In der Liste stünde dann eine Zeile,
+die nur das Gerät wiederholt. Seit `0.10.1` setzt die Karte dort das Wort für
+die Domain ein, also „Firmware" statt „Keller Flurlicht". Gefunden wurde das
+nicht im Messlauf, sondern erst an einem echten Gerät.

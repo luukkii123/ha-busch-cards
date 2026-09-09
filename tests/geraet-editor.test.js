@@ -171,3 +171,18 @@ test("value-changed: Vorgaben fallen aus der Konfiguration, gesetzte Werte bleib
   assert.strictEqual(gemeldet.template, undefined, "Vorgabe wandert nicht in die Konfiguration");
   assert.strictEqual(gemeldet.labels, undefined, "leere Liste ist die Vorgabe");
 });
+
+test("beide Sprachen kennen dieselben Domainwoerter, keines leer", () => {
+  const de = Object.keys(TEXTE_BUSCH_DEVICE_CARD.de.texte).filter((k) => k.startsWith("domain_"));
+  const en = Object.keys(TEXTE_BUSCH_DEVICE_CARD.en.texte).filter((k) => k.startsWith("domain_"));
+  assert.ok(de.length >= 20, "genug Domains abgedeckt: " + de.length);
+  assert.strictEqual(de.slice().sort().join(","), en.slice().sort().join(","));
+  for (const k of de) {
+    assert.ok(TEXTE_BUSCH_DEVICE_CARD.de.texte[k], "de." + k);
+    assert.ok(TEXTE_BUSCH_DEVICE_CARD.en.texte[k], "en." + k);
+  }
+  // Die Domains, die in der Attrappe und am echten Geraet vorkommen.
+  for (const d of ["update", "select", "sensor", "light", "switch", "binary_sensor", "event"]) {
+    assert.ok(TEXTE_BUSCH_DEVICE_CARD.de.texte["domain_" + d], "domain_" + d);
+  }
+});

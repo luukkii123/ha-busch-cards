@@ -22,7 +22,9 @@ function baueHass() {
       "sensor.decke_leistung": zustand("Wohnzimmer Deckenlampe Leistung", "12.4"),
       "sensor.decke_energie": zustand("Wohnzimmer Deckenlampe Energie", "3.21"),
       "sensor.decke_rssi": zustand("Wohnzimmer Deckenlampe RSSI", "-61"),
-      "update.decke_firmware": zustand("Wohnzimmer Deckenlampe Firmware", "off"),
+      // Ohne eigenen Namen: `friendly_name` IST der Geraetename. Am 10.09.2026
+      // an einem echten SONOFF-Zigbee-Schalter so vorgefunden.
+      "update.decke_firmware": zustand("Wohnzimmer Deckenlampe", "off"),
       "switch.decke_kindersicherung": zustand("Wohnzimmer Deckenlampe Kindersicherung", "off"),
       "binary_sensor.decke_ueberhitzt": zustand("Wohnzimmer Deckenlampe Überhitzt", "off"),
       "event.decke_taster": zustand("Wohnzimmer Deckenlampe Taster", "2026-09-09T10:00:00+00:00"),

@@ -29,6 +29,8 @@ const {
   devKurzname,
   devGruppieren,
   devStrukturStempel,
+  devDomainName,
+  TEXTE_BUSCH_DEVICE_CARD,
   BuschDeviceCard,
 } = ladeKarte([
   "DEV_STANDARD",
@@ -46,6 +48,8 @@ const {
   "devKurzname",
   "devGruppieren",
   "devStrukturStempel",
+  "devDomainName",
+  "TEXTE_BUSCH_DEVICE_CARD",
   "BuschDeviceCard",
 ]);
 
@@ -205,8 +209,9 @@ test("Anzeigename: Registername, sonst friendly_name, sonst die ID; Kurzname ohn
   assert.strictEqual(devAnzeigename(h, h.entities["sensor.decke_leistung"]), "Verbrauch");
   assert.strictEqual(devAnzeigename(h, { entity_id: "sensor.fremd" }), "sensor.fremd");
   assert.strictEqual(devKurzname("Wohnzimmer Deckenlampe Leistung", "Wohnzimmer Deckenlampe"), "Leistung");
-  assert.strictEqual(devKurzname("Wohnzimmer Deckenlampe", "Wohnzimmer Deckenlampe"), "Wohnzimmer Deckenlampe");
   assert.strictEqual(devKurzname("Leistung", "Wohnzimmer Deckenlampe"), "Leistung");
+  // Ohne Rueckfall bleibt es beim alten Verhalten.
+  assert.strictEqual(devKurzname("Wohnzimmer Deckenlampe", "Wohnzimmer Deckenlampe"), "Wohnzimmer Deckenlampe");
 });
 
 test("vier Gruppen in fester Reihenfolge, leere fehlen, innen nach Name sortiert", () => {
@@ -265,4 +270,36 @@ test("getStubConfig ohne Entitaetenliste sucht in hass.states; ohne alles bleibt
   const h = baueHass();
   assert.ok(h.entities[BuschDeviceCard.getStubConfig(h).entity].device_id);
   assert.strictEqual(BuschDeviceCard.getStubConfig(undefined).entity, "");
+});
+
+/* ── Entitaet ohne eigenen Namen (Befund vom 10.09.2026 am echten Geraet) ── */
+
+test("wiederholt der Name nur das Geraet, gewinnt der Rueckfall", () => {
+  const g = "Wohnzimmer Deckenlampe";
+  assert.strictEqual(devKurzname(g, g, "Firmware"), "Firmware");
+  assert.strictEqual(devKurzname("", g, "Firmware"), "Firmware");
+  assert.strictEqual(devKurzname("  ", g, "Firmware"), "Firmware");
+  // Ein echter eigener Name schlaegt den Rueckfall weiterhin.
+  assert.strictEqual(devKurzname(g + " Leistung", g, "Messwert"), "Leistung");
+  assert.strictEqual(devKurzname("Verbrauch", g, "Messwert"), "Verbrauch");
+});
+
+test("der Rueckfall kommt aus dem Woerterbuch, sonst ist es die Domain", () => {
+  const t = TEXTE_BUSCH_DEVICE_CARD.de.texte;
+  assert.strictEqual(devDomainName(t, "update.x"), "Firmware");
+  assert.strictEqual(devDomainName(t, "light.x"), "Licht");
+  assert.strictEqual(devDomainName(t, "sensor.x"), "Messwert");
+  assert.strictEqual(devDomainName(TEXTE_BUSCH_DEVICE_CARD.en.texte, "update.x"), "Firmware");
+  assert.strictEqual(devDomainName(TEXTE_BUSCH_DEVICE_CARD.en.texte, "light.x"), "Light");
+  assert.strictEqual(devDomainName(t, "gibtsnicht.x"), "gibtsnicht");
+  assert.strictEqual(devDomainName(undefined, "light.x"), "light");
+});
+
+test("die Firmware-Zeile des Geraets heisst nicht mehr wie das Geraet", () => {
+  const h = baueHass();
+  const t = TEXTE_BUSCH_DEVICE_CARD.de.texte;
+  const eintrag = h.entities["update.decke_firmware"];
+  const voll = devAnzeigename(h, eintrag);
+  assert.strictEqual(voll, "Wohnzimmer Deckenlampe", "die Attrappe bildet den echten Fall ab");
+  assert.strictEqual(devKurzname(voll, "Wohnzimmer Deckenlampe", devDomainName(t, eintrag.entity_id)), "Firmware");
 });

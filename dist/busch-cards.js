@@ -16,7 +16,7 @@
  * hat.
  */
 
-const CARD_VERSION = "0.10.0";
+const CARD_VERSION = "0.10.1";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -3967,12 +3967,28 @@ function devAnzeigename(hass, eintrag) {
   return fn ? String(fn) : eintrag.entity_id;
 }
 
-/** „Wohnzimmer Deckenlampe Leistung" → „Leistung"; der Gerätename allein bleibt. */
-function devKurzname(anzeigename, geraeteName) {
-  const n = String(anzeigename || "");
-  const g = String(geraeteName || "");
+/**
+ * „Wohnzimmer Deckenlampe Leistung" → „Leistung".
+ *
+ * Trägt eine Entität KEINEN eigenen Namen (`has_entity_name` mit `name: null`
+ * — bei Home Assistant der Normalfall für die Hauptentität und für `update.*`),
+ * dann ist ihr `friendly_name` **der Gerätename selbst**. Ohne Rückfall stünde
+ * in der Liste eine Zeile, die nur das Gerät wiederholt — am 10.09.2026 an
+ * einem echten SONOFF-Zigbee-Schalter gemessen: die Firmware-Zeile hieß
+ * „Keller Flurlicht". Deshalb `rueckfall`, den die Karte aus der Domain füllt.
+ */
+function devKurzname(anzeigename, geraeteName, rueckfall) {
+  const n = String(anzeigename || "").trim();
+  const g = String(geraeteName || "").trim();
   if (g && n.length > g.length + 1 && n.startsWith(g + " ")) return n.slice(g.length + 1);
+  if (!n || (g && n === g)) return String(rueckfall || n || g);
   return n;
+}
+
+/** Rückfallname einer Entität ohne eigenen Namen: das Wort für ihre Domain. */
+function devDomainName(texte, entityId) {
+  const domain = devDomain(entityId);
+  return (texte && texte["domain_" + domain]) || domain || entityId;
 }
 
 function devGruppieren(hass, eintraege, konfig) {
@@ -4126,6 +4142,45 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       keineTreffer: "Kein Eintrag mit diesen Labels.",
       aufklappen: "Aufklappen",
       zuklappen: "Zuklappen",
+      /* Rueckfallname fuer eine Entitaet ohne eigenen Namen, siehe devKurzname. */
+      domain_update: "Firmware",
+      domain_light: "Licht",
+      domain_switch: "Schalter",
+      domain_sensor: "Messwert",
+      domain_binary_sensor: "Zustand",
+      domain_select: "Auswahl",
+      domain_number: "Wert",
+      domain_button: "Knopf",
+      domain_text: "Text",
+      domain_climate: "Klima",
+      domain_cover: "Behang",
+      domain_fan: "Lüfter",
+      domain_lock: "Schloss",
+      domain_media_player: "Medien",
+      domain_vacuum: "Sauger",
+      domain_siren: "Sirene",
+      domain_valve: "Ventil",
+      domain_humidifier: "Befeuchter",
+      domain_water_heater: "Boiler",
+      domain_camera: "Kamera",
+      domain_device_tracker: "Standort",
+      domain_event: "Ereignis",
+      domain_time: "Uhrzeit",
+      domain_date: "Datum",
+      domain_datetime: "Zeitpunkt",
+      domain_scene: "Szene",
+      domain_remote: "Fernbedienung",
+      domain_lawn_mower: "Mäher",
+      domain_alarm_control_panel: "Alarm",
+      domain_image: "Bild",
+      domain_weather: "Wetter",
+      domain_todo: "Liste",
+      domain_notify: "Nachricht",
+      domain_conversation: "Assistent",
+      domain_stt: "Spracherkennung",
+      domain_tts: "Sprachausgabe",
+      domain_assist_satellite: "Assist-Satellit",
+      domain_input_boolean: "Schalter",
     },
   },
   en: {
@@ -4192,6 +4247,45 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       keineTreffer: "No entry with these labels.",
       aufklappen: "Expand",
       zuklappen: "Collapse",
+      /* Rueckfallname fuer eine Entitaet ohne eigenen Namen, siehe devKurzname. */
+      domain_update: "Firmware",
+      domain_light: "Light",
+      domain_switch: "Switch",
+      domain_sensor: "Measurement",
+      domain_binary_sensor: "State",
+      domain_select: "Selection",
+      domain_number: "Value",
+      domain_button: "Button",
+      domain_text: "Text",
+      domain_climate: "Climate",
+      domain_cover: "Cover",
+      domain_fan: "Fan",
+      domain_lock: "Lock",
+      domain_media_player: "Media",
+      domain_vacuum: "Vacuum",
+      domain_siren: "Siren",
+      domain_valve: "Valve",
+      domain_humidifier: "Humidifier",
+      domain_water_heater: "Water heater",
+      domain_camera: "Camera",
+      domain_device_tracker: "Location",
+      domain_event: "Event",
+      domain_time: "Time",
+      domain_date: "Date",
+      domain_datetime: "Date and time",
+      domain_scene: "Scene",
+      domain_remote: "Remote",
+      domain_lawn_mower: "Lawn mower",
+      domain_alarm_control_panel: "Alarm",
+      domain_image: "Image",
+      domain_weather: "Weather",
+      domain_todo: "List",
+      domain_notify: "Message",
+      domain_conversation: "Assistant",
+      domain_stt: "Speech to text",
+      domain_tts: "Text to speech",
+      domain_assist_satellite: "Assist satellite",
+      domain_input_boolean: "Switch",
     },
   },
 };
@@ -4574,7 +4668,8 @@ class BuschDeviceCard extends HTMLElement {
       for (const id of g.ids) {
         try {
           const voll = devAnzeigename(this._hass, this._hass.entities[id]);
-          const zeile = helfer.createRowElement({ entity: id, name: devKurzname(voll, geraeteName) });
+          const kurz = devKurzname(voll, geraeteName, devDomainName(t, id));
+          const zeile = helfer.createRowElement({ entity: id, name: kurz });
           this._zeilen.push(zeile);
           zeilen.appendChild(zeile);
         } catch (e) { /* eine kaputte Zeile reißt die anderen nicht mit */ }
