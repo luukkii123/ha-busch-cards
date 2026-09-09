@@ -8,14 +8,15 @@
  * Neue Karte hinzufügen: Klasse schreiben, `customElements.define(...)`,
  * Eintrag in `window.customCards` — alles in dieser Datei.
  *
- * Enthält seit 0.4.0 nur noch `busch-schedule-card`. Die Timeline-Karte ist
- * mitsamt dem eingebetteten Leaflet in ein eigenes Repo umgezogen
+ * Enthält vier Karten: `busch-schedule-card`, `busch-map-card`,
+ * `busch-calendar-card` und seit 0.10.0 `busch-device-card`. Die
+ * Timeline-Karte ist mitsamt ihrem Leaflet in ein eigenes Repo umgezogen
  * (https://github.com/luukkii123/ha-localtrack-cards), weil sie zur
  * Integration `localtrack` gehört und nichts mit dem Zeitplan-Helfer zu tun
- * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
+ * hat.
  */
 
-const CARD_VERSION = "0.9.1";
+const CARD_VERSION = "0.10.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,

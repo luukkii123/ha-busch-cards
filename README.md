@@ -4,15 +4,17 @@
 [![Release](https://img.shields.io/github/v/release/luukkii123/ha-busch-cards)](https://github.com/luukkii123/ha-busch-cards/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-**Drei Lovelace-Karten ohne eigene Integration: ein Zeitplan-Editor für
-`schedule.*`-Helfer, die eingebaute Landkarte mit frei wählbaren Kacheln, und
-eine Terminliste je Kalendermonat.**
+**Vier Lovelace-Karten ohne eigene Integration: ein Zeitplan-Editor für
+`schedule.*`-Helfer, die eingebaute Landkarte mit frei wählbaren Kacheln, eine
+Terminliste je Kalendermonat, und eine Gerätekarte, die aus einer Entität ihr
+ganzes Gerät macht.**
 
 | Karte | Wofür |
 | --- | --- |
 | `busch-schedule-card` | Zeitplan-Helfer direkt im Dashboard bearbeiten |
 | `busch-map-card` | die eingebaute `map`-Karte, nur mit anderen Kacheln |
 | `busch-calendar-card` | Termine eines Monats als Tagesliste |
+| `busch-device-card` | ein Gerät samt aller Entitäten, aus einer Entität ermittelt |
 
 ![Die Zeitplan-Karte im hellen Theme](docs/preview.png)
 
@@ -567,3 +569,51 @@ das Repo installierbar bleibt.
 ## Lizenz
 
 MIT — siehe [LICENSE](LICENSE).
+
+---
+
+# `busch-device-card`
+
+Gib der Karte **irgendeine** Entität — sie sucht das Gerät dazu und zeigt
+Name, Hersteller, Modell und Bereich, darunter Home Assistants Tile-Karte mit
+den zur Entität passenden Bedienelementen, und darunter alle übrigen
+Entitäten des Geräts, gruppiert wie auf der Geräteseite: Steuerung, Sensoren,
+Konfiguration, Diagnose (die letzten beiden eingeklappt).
+
+![Aufgeklappt](docs/preview-device.png)
+![Mit Label-Filter und langer Überschrift](docs/preview-device-expanded.png)
+
+*Die Bilder stammen aus dem Chromium-Nachweislauf (`hacs/docs/render/render-geraet.py`).
+Tile und Zeilen sind dort Attrappen mit Text — im echten Home Assistant stehen
+an ihrer Stelle die Tile-Karte und die Entitätenzeilen von HA selbst.*
+
+```yaml
+type: custom:busch-device-card
+entity: light.wohnzimmer_decke
+template: auto          # auto | light | climate | cover | fan | media | lock | switch | generic
+labels: []              # nur Entitäten mit einem dieser Labels
+start_expanded: false
+tap_action: expand      # expand | more-info | toggle | device-page | navigate | none
+hold_action: more-info
+```
+
+## Optionen
+
+| Option | Standard | Bedeutung |
+| --- | --- | --- |
+| `entity` | — | Entität, über die das Gerät gefunden wird; zugleich das Bedienelement oben |
+| `title` | Gerätename | Überschrift |
+| `template` | `auto` | Bedienelemente der Tile-Karte: Licht → Helligkeit, Klima → Solltemperatur + Modi, Rollo → Auf/Zu + Position, Lüfter → Geschwindigkeit, Medien → Lautstärke, Schloss → Sperren, Schalter → Umschalten, Allgemein → nur Zustand. `auto` richtet sich nach der Domain der Entität |
+| `labels` | alle | zeigt unten nur Entitäten mit einem dieser Labels; das Bedienelement oben bleibt |
+| `show_subtitle` | `true` | Hersteller · Modell · Bereich unter dem Namen |
+| `show_config` / `show_diagnostic` | `true` | die eingeklappten Gruppen überhaupt anbieten |
+| `start_expanded` | `false` | Liste beim Laden offen |
+| `tap_action` / `hold_action` | `expand` / `more-info` | Tippen bzw. Halten auf der Kopfzeile; `device-page` öffnet HAs Geräteseite, `navigate` den Pfad aus `navigation_path` |
+| `navigation_path` | leer | Ziel für `navigate` |
+
+Bedienelement und Zeilen sind Home Assistants eigene Bausteine
+(`tile`-Karte, `entities`-Zeilen) — Formatierung, Einheiten und Klick auf
+eine Zeile verhalten sich wie überall in HA. Versteckte Entitäten (`hidden`)
+erscheinen nicht. Die Karte macht keinen eigenen Server-Aufruf außer einem
+einzigen für die Label-Namen; Geräte, Bereiche und Entitätenregister liest sie
+aus dem `hass`-Objekt, das jede Karte bekommt.
