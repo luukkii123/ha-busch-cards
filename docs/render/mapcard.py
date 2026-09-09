@@ -17,6 +17,12 @@ NACHGEBAUT sind dagegen `loadCardHelpers` und die innere Karte: das echte
 deshalb den Eingriff und den Rueckfall — NICHT, dass HAs echte Karte ihr
 `ha-map` an derselben Stelle traegt. Das entscheidet der Live-Test.
 
+SEIT 09.09.2026 bringt die Attrappe HAs Stilregel `.leaflet-pane { z-index: 0
+!important }` mit (`ha-map.ts`), zeichnet je Entitaet eine Nadel und misst als
+PAAR — eigene Vorlage gegen Standardvorlage —, ob die eigene Kachelebene ueber
+dem markerPane liegt. Ohne diese drei Dinge blieb der Lauf gruen, waehrend die
+Karte am echten System die Entitaeten verdeckte.
+
 Seit 09.09.2026 misst der Lauf ausserdem Regel 1 und 4 aus
 `hacs/docs/ui-regeln.md` — dafuer braucht er das Messmodul `regeln.py`, das
 eine Ebene ueber dem Repo liegt. Der Container mountet deshalb ZWEI Ordner:
@@ -147,8 +153,21 @@ PAGE = """<!doctype html>
          Bedienelemente und die Quellenangabe unter die Karte — gemessen
          1797 px unter deren Kante. Home Assistants eigene Map-Karte bindet
          das Stilblatt genauso in ihren eigenen Schatten ein. */
+      /* DIE ZWEI ZEILEN AUS HOME ASSISTANT, die den Ausschlag geben:
+         `src/components/map/ha-map.ts`, Zeilen 958-964 im Stand 20260826.6
+         (das ist das Frontend von HA 2026.9.1). Sie flachen ALLE
+         Leaflet-Ebenen auf `z-index: 0` ein — mit `!important`, also staerker
+         als jede Zeile im `style`-Attribut. Danach stapeln sich die Ebenen
+         einzig nach Dokumentreihenfolge. Ohne diese Regel war die Attrappe
+         zu freundlich: sie liess die 250 aus `busch-map-card` gelten und
+         konnte den gemeldeten Fehler gar nicht finden. */
       this.shadowRoot.innerHTML =
         '<link rel="stylesheet" href="/leaflet.css">'
+        + '<style>.leaflet-pane { z-index: 0 !important; }'
+        + '.leaflet-control,.leaflet-top,.leaflet-bottom { z-index: 1 !important; }'
+        + '.ent-marker { width:36px; height:36px; border-radius:18px;'
+        + ' background:#c62828; color:#fff; font-size:11px; line-height:36px;'
+        + ' text-align:center; }</style>'
         + '<ha-map style="display:block;width:100%;max-width:100%;height:300px"></ha-map>';
       const haMap = this.shadowRoot.querySelector('ha-map');
       if (window.__modus === 'ohneLeaflet') return;
@@ -177,8 +196,40 @@ PAGE = """<!doctype html>
           attribution: 'HA-Standardangabe', maxZoom: 19,
         }).addTo(map);
       } else {
-        /* 'ohneRaster' bildet den Vektorfall nach: eine Ebene ohne setUrl. */
-        window.L.marker([48.2, 16.35]).addTo(map);
+        /* 'ohneRaster' bildet den Vektorfall nach: die Grundkarte ist eine
+           MapLibre-Ebene ohne `setUrl`. Sie gibt sich ueber `getMaplibreMap`
+           zu erkennen — genau daran sucht `busch-map-card` sie, um sie
+           abzuraeumen (HA: `src/common/map/base-layer.ts`, `createVectorLayer`
+           haengt eine `@maplibre/maplibre-gl-leaflet`-Ebene in den tilePane). */
+        const Vektor = window.L.Layer.extend({
+          options: { pane: 'tilePane' },
+          getMaplibreMap() { return this._glMap; },
+          onAdd(m) {
+            this._glMap = {};
+            this._el = window.L.DomUtil.create('div', 'maplibregl-map', m.getPane('tilePane'));
+            this._el.style.cssText = 'position:absolute;inset:0;background:#dfe6ee';
+          },
+          onRemove() { if (this._el) this._el.remove(); this._glMap = null; },
+        });
+        new Vektor().addTo(map);
+      }
+      /* Entitaetsmarker wie HAs `_drawEntities`: je konfigurierter Entitaet
+         ein `divIcon`-Marker im markerPane (HA: `src/components/map/ha-map.ts`,
+         `_drawEntities`, `new DecoratedMarker(..., { icon: Leaflet.divIcon(...) })`).
+         Ohne sie war an der Attrappe gar nicht zu messen, ob die Entitaeten
+         nach dem Kacheltausch noch zu sehen sind. */
+      for (const eintrag of (this._config.entities || [])) {
+        const id = typeof eintrag === 'string' ? eintrag : eintrag.entity;
+        const st = (window.__hass && window.__hass.states || {})[id];
+        if (!st || st.attributes.latitude === undefined) continue;
+        const el = document.createElement('div');
+        el.className = 'ent-marker';
+        el.dataset.entity = id;
+        el.textContent = id.split('.')[1].slice(0, 3);
+        window.L.marker([st.attributes.latitude, st.attributes.longitude], {
+          icon: window.L.divIcon({ html: el, iconSize: [36, 36], className: '' }),
+          title: id,
+        }).addTo(map);
       }
       haMap.leafletMap = map;
     }
@@ -210,6 +261,8 @@ PAGE = """<!doctype html>
     states: {
       'person.lukas': { entity_id:'person.lukas', state:'home',
         attributes:{ friendly_name:'Lukas', latitude:48.2, longitude:16.35 } },
+      'person.marie': { entity_id:'person.marie', state:'not_home',
+        attributes:{ friendly_name:'Marie', latitude:48.21, longitude:16.37 } },
       'input_text.carto_api_key': { entity_id:'input_text.carto_api_key',
         state:'HELFERSCHLUESSEL', attributes:{ friendly_name:'CARTO-Schlüssel' } },
       'zone.home': { entity_id:'zone.home', state:'1',
@@ -226,6 +279,41 @@ PAGE = """<!doctype html>
     document.getElementById('wrap').appendChild(card);
     card.hass = window.__hass;
     return card;
+  };
+
+  /* Wer liegt oben? Nicht `elementFromPoint` — die eigene Kachelebene traegt
+     `pointer-events:none`, ein Treffertest liefe glatt durch sie hindurch und
+     meldete den verdeckten Marker als sichtbar. Gemessen wird deshalb die
+     Malreihenfolge selbst: erst der WIRKSAME z-index (`getComputedStyle`,
+     also nach HAs `!important`), bei Gleichstand die Dokumentreihenfolge. */
+  window.__stapel = (card) => {
+    const inner = card.shadowRoot.querySelector('fake-map-card');
+    const haMap = inner && inner.shadowRoot.querySelector('ha-map');
+    const map = haMap && haMap.leafletMap;
+    if (!map) return null;
+    const info = (name) => {
+      const p = map.getPane(name);
+      if (!p) return null;
+      const wirksam = getComputedStyle(p).zIndex;
+      return {
+        z: wirksam === 'auto' ? 0 : Number(wirksam),
+        wirksamerZ: wirksam,
+        inlineZ: p.style.zIndex || null,
+        reihe: Array.prototype.indexOf.call(p.parentNode.children, p),
+      };
+    };
+    const kachel = info('busch-map-tiles');
+    const marker = info('markerPane');
+    const liegtUeber = (a, b) =>
+      (!a || !b) ? false : (a.z !== b.z ? a.z > b.z : a.reihe > b.reihe);
+    const nadeln = Array.from(haMap.querySelectorAll('.ent-marker'));
+    return {
+      kachelPane: kachel,
+      markerPane: marker,
+      kachelnUeberMarkern: liegtUeber(kachel, marker),
+      markerImDom: nadeln.length,
+      markerEntitaeten: nadeln.map((e) => e.dataset.entity).sort(),
+    };
   };
 </script>
 """
@@ -343,6 +431,41 @@ with sync_playwright() as pw:
         const p = map.getPane('busch-map-tiles');
         return { url, pane, kachel, marker, paneZ: p ? p.style.zIndex : null,
                  mapFilter: inner.style.getPropertyValue('--map-filter') };
+    }""")
+
+    # ── Der gemeldete Fehler vom 09.09.2026, als PAAR ───────────────────
+    # „Entitaeten fehlen bei jeder Vorlage ausser Home-Assistant-Standard."
+    # Zwei Karten mit denselben ZWEI Entitaeten, einziger Unterschied die
+    # Vorlage. Gemessen wird beides: dass beide Nadeln im DOM stehen UND dass
+    # die eigene Kachelebene nicht ueber dem markerPane liegt. Die Nadeln
+    # allein genuegen nicht — verdeckt stehen sie ebenfalls im DOM.
+    paar = page.evaluate("""async () => {
+        window.__modus = 'ohneRaster';
+        const zwei = ['person.lukas', 'person.marie'];
+        const eigen = await window.__mk({type:'custom:busch-map-card',
+          entities: zwei, map_style:'osm'});
+        const standard = await window.__mk({type:'custom:busch-map-card',
+          entities: zwei, map_style:'ha'});
+        await new Promise(r => setTimeout(r, 1400));
+        return { eigen: window.__stapel(eigen), standard: window.__stapel(standard) };
+    }""")
+    page.screenshot(path=str(OUT / "paar-vorlage-vs-standard.png"))
+
+    # Gegenprobe am WERKZEUG: die Ebene wieder ans Ende haengen — das ist
+    # genau der Stand v0.9.0, den `createPane` von sich aus herstellt. Meldet
+    # die Messung das nicht als Verdeckung, ist sie blind und ihr Gruen oben
+    # wertlos.
+    gegenprobe = page.evaluate("""async () => {
+        window.__modus = 'ohneRaster';
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.lukas', 'person.marie'], map_style:'osm'});
+        await new Promise(r => setTimeout(r, 1400));
+        const vorher = window.__stapel(c);
+        const map = c.shadowRoot.querySelector('fake-map-card')
+                     .shadowRoot.querySelector('ha-map').leafletMap;
+        const p = map.getPane('busch-map-tiles');
+        p.parentNode.appendChild(p);
+        return { vorher, nachher: window.__stapel(c) };
     }""")
 
     # Eingebettetes Leaflet: window.L entfernen, dann muss die Karte ihr
@@ -550,9 +673,39 @@ checks["Vektorfall: eigene Rasterebene angelegt"] = vektor["kachel"] == 1
 checks["Vektorfall: richtige URL"] = (vektor["url"] or "") == (
     "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
 checks["Vektorfall: eigene Ebene, nicht tilePane"] = vektor["pane"] == "busch-map-tiles"
-checks["Vektorfall: Ebene unter Markern und Routen"] = vektor["paneZ"] == "250"
 checks["Vektorfall: Marker bleibt erhalten"] = vektor["marker"] == 1
 checks["Vektorfall: Dunkelfilter abgeschaltet"] = vektor["mapFilter"] == "none"
+
+# ── Paar zum gemeldeten Fehler ───────────────────────────────────────────
+# Die alte Pruefung an dieser Stelle las `pane.style.zIndex == "250"` — den
+# WUNSCH, nicht die Wirkung. HAs `.leaflet-pane { z-index: 0 !important }`
+# ueberschreibt ihn, und die Pruefung blieb gruen, waehrend die Kacheln die
+# Entitaeten verdeckten. Gemessen wird jetzt der wirksame Wert.
+_pe, _ps = paar["eigen"], paar["standard"]
+checks["Paar: eigene Vorlage zeigt beide Entitaeten"] = (
+    _pe["markerImDom"] == 2
+    and _pe["markerEntitaeten"] == ["person.lukas", "person.marie"]
+    and _pe["kachelnUeberMarkern"] is False
+)
+checks["Paar: Standardvorlage zeigt beide Entitaeten"] = (
+    _ps["markerImDom"] == 2
+    and _ps["markerEntitaeten"] == ["person.lukas", "person.marie"]
+    and _ps["kachelnUeberMarkern"] is False
+)
+# Ohne das waere das Paar wertlos: beide gruen, weil gar nichts passiert ist.
+checks["Paar: die beiden Faelle sind wirklich verschieden"] = (
+    _pe["kachelPane"] is not None and _ps["kachelPane"] is None
+)
+# HAs Regel greift in der Attrappe wirklich — sonst misst sie die alte,
+# zu freundliche Lage.
+checks["Paar: HAs z-index-Regel greift in der Attrappe"] = (
+    _pe["kachelPane"]["wirksamerZ"] == "0" and _pe["kachelPane"]["inlineZ"] == "250"
+)
+checks["Gegenprobe: Ebene am Ende verdeckt die Entitaeten"] = (
+    gegenprobe["vorher"]["kachelnUeberMarkern"] is False
+    and gegenprobe["nachher"]["kachelnUeberMarkern"] is True
+    and gegenprobe["nachher"]["markerImDom"] == 2
+)
 checks["eingebettetes Leaflet springt ein"] = (
     eingebettet["vorher"] == "1.9.4" and eingebettet["nachher"] == "1.9.4")
 checks["eingebettet: Ebene angelegt"] = eingebettet["ebeneAngelegt"] is True
@@ -628,6 +781,7 @@ report = {
     "leaflet": leafletVersion,
     "hell": hell, "dunkel": dunkel, "innerConfig": innen, "eigen": eigen,
     "unberuehrt": unberuehrt, "ohneRaster": ohneRaster, "vektor": vektor,
+    "paar": paar, "gegenprobe_stapel": gegenprobe,
     "eingebettet": eingebettet, "rueckfall": rueckfall,
     "schluessel": schluessel, "ohneSchluessel": ohneSchluessel,
     "ausHelfer": ausHelfer, "nachAenderung": nachAenderung,

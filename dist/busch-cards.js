@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.9.0";
+const CARD_VERSION = "0.9.1";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -3619,6 +3619,23 @@ class BuschMapCard extends HTMLElement {
           const pane = map.createPane(MAP_PANE);
           pane.style.zIndex = "250";
           pane.style.pointerEvents = "none";
+          // ABER: Home Assistant flacht ALLE Leaflet-Ebenen ein —
+          // `.leaflet-pane { z-index: 0 !important; }` (frontend,
+          // `src/components/map/ha-map.ts`, Zeile 958 im Stand 20260826.6 =
+          // HA 2026.9.1). Ein `!important` aus einem Stilblatt schlaegt die
+          // Zeile oben; unsere 250 gelten dort also NICHT. Alle Ebenen liegen
+          // dann auf 0 und stapeln sich einzig nach Dokumentreihenfolge —
+          // und `createPane` haengt neu ganz hinten an, hinter markerPane.
+          // Genau daran verschwanden die Entitaeten: die undurchsichtigen
+          // Kacheln lagen ueber den Markern (v0.9.0, gemeldet 09.09.2026).
+          // Deshalb wird die Ebene direkt hinter die Grundkacheln
+          // einsortiert. Das stimmt in BEIDEN Faellen: mit den 250 (ueber
+          // tilePane 200, unter overlayPane 400) und ohne sie, allein nach
+          // Reihenfolge.
+          const ueberlagerung = map.getPane("overlayPane");
+          if (ueberlagerung && ueberlagerung.parentNode === pane.parentNode) {
+            pane.parentNode.insertBefore(pane, ueberlagerung);
+          }
         }
         // Die Vektor-Grundkarte darunter abraeumen, wenn sie sich zu erkennen
         // gibt. Gelingt das nicht, deckt unsere undurchsichtige Rasterebene
