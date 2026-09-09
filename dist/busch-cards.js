@@ -15,7 +15,7 @@
  * hat. Diese Datei lädt deshalb keine Fremdbibliothek mehr.
  */
 
-const CARD_VERSION = "0.8.3";
+const CARD_VERSION = "0.9.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
