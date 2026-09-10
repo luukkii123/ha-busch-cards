@@ -16,7 +16,7 @@
  * hat.
  */
 
-const CARD_VERSION = "0.10.1";
+const CARD_VERSION = "0.11.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -5057,7 +5057,10 @@ class BuschDeviceCard extends HTMLElement {
       block.append(kopf, zeilen);
       this._liste.appendChild(block);
     }
-    if (!gruppen.length && this._config.labels.length) {
+    // Auch der reine AUSSCHLUSS kann die Liste leeren — am 10.09.2026 an
+    // echten Daten gesehen: Label `ignore` auf allen Entitaeten eines
+    // Zigbee-Schalters. Ohne diese Zeile blieb die Liste stumm leer.
+    if (!gruppen.length && (this._config.labels.length || this._config.labels_hide.length)) {
       const leer = document.createElement("div");
       leer.className = "dev-hinweis";
       leer.textContent = t.keineTreffer;

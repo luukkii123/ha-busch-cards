@@ -455,11 +455,12 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
-**Stand 10.09.2026, `CARD_VERSION` `0.10.1`** — alle **vier** Karten gegen die
+**Stand 10.09.2026, `CARD_VERSION` `0.11.0`** — alle **vier** Karten gegen die
 [UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). Veröffentlicht
 als `v0.9.0` (UI-Regeln), `v0.9.1` (Landkarten-Fehler, siehe unten) und
 `v0.10.0` (neue Gerätekarte `busch-device-card`) und `v0.10.1` (erster
-Live-Befund an der Gerätekarte, siehe unten).
+Live-Befund an der Gerätekarte, siehe unten) und `v0.11.0` (Dienstaufrufe mit
+Kontextvariablen, klappbare Gruppen, Label-Ausschluss).
 
 Die Gerätekarte ist in diesem Lauf neu hinzugekommen und mit denselben vier
 Belegen abgenommen worden: `node --check`, 206 Node-Tests, der statische
@@ -487,12 +488,13 @@ freundlicher als die Wirklichkeit.
 | Beleg | Umfang | Ergebnis |
 | --- | --- | --- |
 | `node --check dist/busch-cards.js` | vor jedem Container-Lauf | fehlerfrei |
-| `node --test tests/*.test.js` | 206 Prüfungen in 11 Dateien (seit 0.10.0 mit `geraet.test.js`, `geraet-editor.test.js`) | 206 grün, 0 rot |
+| `node --test tests/*.test.js` | 246 Prüfungen in 11 Dateien (seit 0.10.0 mit `geraet.test.js`, `geraet-editor.test.js`) | 246 grün, 0 rot |
 | `python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards` | Regel 3 (1–4) und Regel 4 (1) an der ausgelieferten Datei | 0 Verstöße, Exit 0 |
 | `docs/render/render-zeitplan.py` (Playwright) | Zeitplan-Karte: Regel 1 bei 320/480/960 px in hell und dunkel, dazu **beide Dialoge geöffnet**; Regel 2 an beiden Dialogen | 0 Verstöße, Exit 0 |
 | `docs/render/render-kalender.py` (Playwright) | Kalender-Karte, beide Ausprägungen: Regel 1 bei 320/480/960 px in hell und dunkel | 666 Textelemente geprüft, 0 Verstöße, Exit 0 |
 | `docs/render/mapcard.py` (Playwright) | Landkarte: 57 Prüfungen, darunter Regel 1 an der Umhüllung und am Fehlerkasten sowie das Paar aus Anwesenheit und Malreihenfolge der Entitäten | alle bestanden, Exit 0; derselbe Lauf gegen `v0.9.0` scheitert an genau diesem Paar |
-| `docs/render/render-geraet.py` (Playwright) | Gerätekarte, vier Ausprägungen (zugeklappt, aufgeklappt mit Label-Filter, Sensor-Gerät mit langen Namen, Fehlerfall): Regel 1 bei 320/480/960 px in hell und dunkel, dazu Verhalten (kein DOM-Umbau beim Zustandswechsel, Tippen/Halten, `device-page`, Gruppen klappen); Tile und Zeilen als Attrappe | 162 Textelemente geprüft, 0 Verstöße, Exit 0; Kalender und Zeitplan danach unverändert grün |
+| `docs/render/render-geraet.py` (Playwright) | Gerätekarte, vier Ausprägungen (zugeklappt, aufgeklappt mit Label-Filter, Sensor-Gerät mit langen Namen, Fehlerfall): Regel 1 bei 320/480/960 px in hell und dunkel, dazu Verhalten (kein DOM-Umbau beim Zustandswechsel, Tippen/Halten, `device-page`, Gruppen klappen); Tile und Zeilen als Attrappe | 0 Verstöße, Exit 0; Kalender und Zeitplan danach unverändert grün |
+| `docs/render/render-geraet.py`, Verhaltensteil (seit 0.11.0) | Kopfzeile antippen ruft den Dienst mit ersetztem Ziel und ersetzten Daten; eine Zeile antippen ruft ihn mit **ihrer** Entität; der Schalter einer Schalterzeile bleibt bedienbar und löst keinen eigenen Dienst aus; zugeklappt ist kein Bedienelement im DOM; jede Gruppe klappt | alle Sollwerte getroffen, Exit 0 |
 
 Was die Messung im Einzelnen ergab:
 
@@ -585,13 +587,14 @@ MIT — siehe [LICENSE](LICENSE).
 # `busch-device-card`
 
 Gib der Karte **irgendeine** Entität — sie sucht das Gerät dazu und zeigt
-Name, Hersteller, Modell und Bereich, darunter Home Assistants Tile-Karte mit
-den zur Entität passenden Bedienelementen, und darunter alle übrigen
-Entitäten des Geräts, gruppiert wie auf der Geräteseite: Steuerung, Sensoren,
-Konfiguration, Diagnose (die letzten beiden eingeklappt).
+Name, Hersteller, Modell und Bereich. **Zugeklappt bleibt es dabei.** Erst
+beim Aufklappen erscheinen Home Assistants Tile-Karte mit den zur Entität
+passenden Bedienelementen und darunter alle übrigen Entitäten des Geräts,
+gruppiert wie auf der Geräteseite: Steuerung, Sensoren, Konfiguration,
+Diagnose. Jede dieser Gruppen klappt für sich.
 
-![Aufgeklappt](docs/preview-device.png)
-![Mit Label-Filter und langer Überschrift](docs/preview-device-expanded.png)
+![Zugeklappt](docs/preview-device.png)
+![Aufgeklappt mit Label-Filter](docs/preview-device-expanded.png)
 
 *Die Bilder stammen aus dem Chromium-Nachweislauf (`hacs/docs/render/render-geraet.py`).
 Tile und Zeilen sind dort Attrappen mit Text — im echten Home Assistant stehen
@@ -600,11 +603,19 @@ an ihrer Stelle die Tile-Karte und die Entitätenzeilen von HA selbst.*
 ```yaml
 type: custom:busch-device-card
 entity: light.wohnzimmer_decke
-template: auto          # auto | light | climate | cover | fan | media | lock | switch | generic
-labels: []              # nur Entitäten mit einem dieser Labels
+template: auto                    # auto | light | climate | cover | fan | media | lock | switch | generic
+labels: []                        # nur Entitäten mit einem dieser Labels
+labels_hide: [ignore]             # Entitäten mit einem dieser Labels verbergen
+groups: [control, sensor, config, diagnostic]
+groups_open: [control]            # welche Gruppen offen starten
 start_expanded: false
-tap_action: expand      # expand | more-info | toggle | device-page | navigate | none
-hold_action: more-info
+tap_action:
+  action: perform-action
+  perform_action: label.add
+  target:
+    entity_id: "{{ entity }}"
+  data:
+    label_id: geprueft
 ```
 
 ## Optionen
@@ -614,12 +625,46 @@ hold_action: more-info
 | `entity` | — | Entität, über die das Gerät gefunden wird; zugleich das Bedienelement oben |
 | `title` | Gerätename | Überschrift |
 | `template` | `auto` | Bedienelemente der Tile-Karte: Licht → Helligkeit, Klima → Solltemperatur + Modi, Rollo → Auf/Zu + Position, Lüfter → Geschwindigkeit, Medien → Lautstärke, Schloss → Sperren, Schalter → Umschalten, Allgemein → nur Zustand. `auto` richtet sich nach der Domain der Entität |
-| `labels` | alle | zeigt unten nur Entitäten mit einem dieser Labels; das Bedienelement oben bleibt |
+| `labels` | alle | zeigt unten nur Entitäten mit einem dieser Labels |
+| `labels_hide` | keines | verbirgt Entitäten mit einem dieser Labels. **Schlägt `labels`** |
+| `groups` | alle vier | welche Gruppen überhaupt erscheinen |
+| `groups_open` | `[control]` | welche davon offen starten |
 | `show_subtitle` | `true` | Hersteller · Modell · Bereich unter dem Namen |
-| `show_config` / `show_diagnostic` | `true` | die eingeklappten Gruppen überhaupt anbieten |
-| `start_expanded` | `false` | Liste beim Laden offen |
-| `tap_action` / `hold_action` | `expand` / `more-info` | Tippen bzw. Halten auf der Kopfzeile; `device-page` öffnet HAs Geräteseite, `navigate` den Pfad aus `navigation_path` |
-| `navigation_path` | leer | Ziel für `navigate` |
+| `start_expanded` | `false` | Karte startet aufgeklappt |
+| `tap_action` / `hold_action` | Aufklappen / Details | Tippen und Halten auf der Kopfzeile |
+| `row_tap_action` / `row_hold_action` | Details / nichts | Tippen und Halten auf einer Entitätenzeile |
+
+## Aktionen
+
+Die vier Aktionsfelder nehmen **Home Assistants eigene Aktionsform**, dieselbe
+wie bei der Tile- und der Button-Karte: `more-info`, `toggle`, `navigate`,
+`url`, `perform-action`, `none`. Im Editor erscheint dafür HAs eigener
+Aktionseditor mit Dienstwähler, Ziel und Datenfeldern.
+
+Bei Kopfzeile und Halten kommen zwei eigene Werte dazu, die HA nicht kennt:
+`expand` klappt die Karte auf und zu, `device-page` öffnet die Geräteseite.
+Sie stehen im Editor in einer eigenen Auswahl über dem Aktionseditor.
+
+**Drei Platzhalter** werden in `target` und `data` ersetzt, beliebig tief:
+
+| Platzhalter | Wert |
+| --- | --- |
+| `{{ entity }}` | die angetippte Zeile, bei der Kopfzeile die Hauptentität |
+| `{{ device }}` | die Kennung des Geräts |
+| `{{ area }}` | die Kennung seines Bereichs, leer wenn keiner zugewiesen ist |
+
+Das ist **kein Jinja**. Nur diese drei Wörter werden ersetzt; alles andere
+bleibt wörtlich stehen, damit man im Dienstaufruf sieht, dass es nicht
+gegriffen hat. Lässt man bei `perform-action` das Ziel leer, füllt die Karte
+es mit der angetippten Entität.
+
+Eine Zeile antippen läuft über das Ereignis, das HAs Entitätenzeile ohnehin
+feuert — **Klicks werden nicht abgefangen**. Der Schalter einer Schalterzeile
+bleibt deshalb bedienbar.
+
+Nicht unterstützt sind `assist` (sein Dialog kommt über einen bundle-internen
+Import, an den eine Karte nicht herankommt) und `confirmation`; wer eine
+Rückfrage braucht, ruft ein Skript auf, das sie stellt.
 
 Bedienelement und Zeilen sind Home Assistants eigene Bausteine
 (`tile`-Karte, `entities`-Zeilen) — Formatierung, Einheiten und Klick auf
@@ -634,3 +679,7 @@ angezeigter Name **ist** der Gerätename. In der Liste stünde dann eine Zeile,
 die nur das Gerät wiederholt. Seit `0.10.1` setzt die Karte dort das Wort für
 die Domain ein, also „Firmware" statt „Keller Flurlicht". Gefunden wurde das
 nicht im Messlauf, sondern erst an einem echten Gerät.
+
+**Eine Konfiguration aus `0.10.x` bricht nicht.** Die Karte schreibt die alte
+Kurzform (`tap_action: expand`), ein `navigation_path` neben der Aktion und
+die Schalter `show_config` / `show_diagnostic` beim Laden auf die neue Form um.
