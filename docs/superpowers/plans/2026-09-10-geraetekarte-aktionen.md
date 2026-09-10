@@ -75,7 +75,7 @@ Darstellung im Playwright-Container mit `docs/render/regeln.py`.
   rein, `tap_action`/`hold_action` werden Objekte.
 - Entfällt: `DEV_AKTIONEN` (die alte Zeichenkettenliste).
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 An `tests/geraet.test.js` anhängen; oben im `ladeKarte`-Aufruf die Namen
 `DEV_GRUPPEN_WERTE`, `DEV_HA_AKTIONEN`, `DEV_ARTEN`, `devAktionNormalisieren`,
@@ -195,12 +195,12 @@ der alten Form stehen:
   mitziehen:** `devNormalisiereKonfig({ entity: "light.decke", groups: ["sensor"] })`
   und Erwartung `"sensor"`.
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `cd "/mnt/user/Data/Claude Projekte/hacs/busch-cards" && node --test tests/geraet.test.js`
 Erwartet: FAIL — `DEV_GRUPPEN_WERTE is not defined`.
 
-- [ ] **Schritt 3: Umsetzen**
+- [x] **Schritt 3: Umsetzen**
 
 In `dist/busch-cards.js` den Block `const DEV_STANDARD = { … };` und
 `const DEV_AKTIONEN = […];` **ersetzen** durch:
@@ -308,12 +308,12 @@ function devNormalisiereKonfig(config) {
 }
 ```
 
-- [ ] **Schritt 4: Prüfen, muss grün sein**
+- [x] **Schritt 4: Prüfen, muss grün sein**
 
 Run: `node --check dist/busch-cards.js && node --test tests/*.test.js`
 Erwartet: alle grün. `namensraum.test.js` bleibt grün.
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet.test.js dist/busch-cards.js
@@ -339,7 +339,7 @@ git commit -m "busch-device-card: Aktionen in HAs Objektform, Migration der Kurz
   `karte._zeigeDienstFehler(fehler)`; beide werden vor dem Aufruf auf
   `typeof … === "function"` geprüft, damit `devFuehreAus` auch ohne Karte läuft.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 Namen `devKontext`, `devPlatzhalterErsetzen`, `devZielFuellen`, `devFuehreAus`
 im `ladeKarte`-Aufruf ergänzen, dann anhängen:
@@ -490,11 +490,11 @@ test("navigate und url ohne Pfad tun nichts", () => {
 });
 ```
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet.test.js` — FAIL, `devKontext is not defined`.
 
-- [ ] **Schritt 3: Umsetzen**
+- [x] **Schritt 3: Umsetzen**
 
 Hinter `devArtVon` einfügen:
 
@@ -601,11 +601,11 @@ function devFuehreAus(karte, hass, aktion, kontext) {
 }
 ```
 
-- [ ] **Schritt 4: Prüfen**
+- [x] **Schritt 4: Prüfen**
 
 Run: `node --check dist/busch-cards.js && node --test tests/*.test.js`
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet.test.js dist/busch-cards.js
@@ -627,7 +627,7 @@ git commit -m "busch-device-card: Kontextvariablen, Zielfuellung und Aktionsausf
 - Erzeugt: `devGruppeOffen(konfig, gruppe) → boolean`.
 - Ändert: `devGruppieren` nutzt `devGruppenSichtbar` statt `show_config`/`show_diagnostic`.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 Namen `devGruppenSichtbar`, `devGruppeOffen` ergänzen, dann anhängen:
 
@@ -688,11 +688,11 @@ Den alten Test „show_config / show_diagnostic blenden ihre Gruppe ganz aus"
 löschen — er ist durch „groups steuert, welche Gruppen ueberhaupt erscheinen"
 ersetzt.
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet.test.js` — FAIL, `devGruppenSichtbar is not defined`.
 
-- [ ] **Schritt 3: Umsetzen**
+- [x] **Schritt 3: Umsetzen**
 
 `devLabelFilter` ersetzen:
 
@@ -746,11 +746,11 @@ und oben in der Funktion, vor der Schleife, ergänzen:
   const sichtbar = devGruppenSichtbar(konfig);
 ```
 
-- [ ] **Schritt 4: Prüfen**
+- [x] **Schritt 4: Prüfen**
 
 Run: `node --check dist/busch-cards.js && node --test tests/*.test.js`
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet.test.js dist/busch-cards.js
@@ -771,7 +771,7 @@ git commit -m "busch-device-card: Gruppenwahl ueber groups/groups_open, Label-Au
 - Ändert: `SCHEMA_BUSCH_DEVICE_CARD` — volles Literal mit fünfzehn Blättern.
 - Erzeugt: `devSchemaFuer(konfig) → schema` — gefilterte Kopie für den Editor.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 In `tests/geraet-editor.test.js` die Liste `OPTIONEN_DER_SPEC` ersetzen und
 `devSchemaFuer`, `DEV_ARTEN`, `DEV_HA_AKTIONEN`, `DEV_GRUPPEN_WERTE`,
@@ -875,11 +875,11 @@ for (const sprache of ["de", "en"]) {
 }
 ```
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet-editor.test.js` — FAIL, `devSchemaFuer is not defined`.
 
-- [ ] **Schritt 3: Schema ersetzen**
+- [x] **Schritt 3: Schema ersetzen**
 
 `SCHEMA_BUSCH_DEVICE_CARD` vollständig ersetzen:
 
@@ -997,7 +997,7 @@ function devSchemaFuer(konfig) {
 }
 ```
 
-- [ ] **Schritt 4: Wörterbuch ergänzen**
+- [x] **Schritt 4: Wörterbuch ergänzen**
 
 In `TEXTE_BUSCH_DEVICE_CARD.de.labels` die Einträge `show_config`,
 `show_diagnostic` und `navigation_path` **streichen** und ergänzen:
@@ -1091,7 +1091,7 @@ Dieselben Blöcke auf Englisch in `en`:
       dienstFehler: "Action failed: {fehler}",
 ```
 
-- [ ] **Schritt 5: Prüfen**
+- [x] **Schritt 5: Prüfen**
 
 Run:
 ```bash
@@ -1101,7 +1101,7 @@ python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards
 Erwartet: Tests grün. Der Regelprüfer meldet noch R3.3 für die Schlüssel, die
 die Karte erst in Aufgabe 5 liest — notieren, nicht beheben.
 
-- [ ] **Schritt 6: Commit**
+- [x] **Schritt 6: Commit**
 
 ```bash
 git add tests/geraet-editor.test.js dist/busch-cards.js
@@ -1120,7 +1120,7 @@ git commit -m "busch-device-card: Schema und Woerterbuch fuer Aktionen, Gruppen 
 - Consumes: alles aus Aufgabe 1 bis 4.
 - Erzeugt: `karte._umschalten()`, `karte._zeigeDienstFehler(fehler)`.
 
-- [ ] **Schritt 1: Stil ergänzen**
+- [x] **Schritt 1: Stil ergänzen**
 
 In `DEV_STIL` ergänzen (die bestehenden Regeln bleiben):
 
@@ -1141,7 +1141,7 @@ Und die Regel `.dev-gruppe-kopf { … cursor:default; }` auf `cursor:pointer`
 ändern, weil jetzt **jede** Gruppe klappbar ist; die Klasse `dev-klappbar`
 entfällt aus dem Stil.
 
-- [ ] **Schritt 2: Gerüst und Umschalten**
+- [x] **Schritt 2: Gerüst und Umschalten**
 
 In `_geruest()` hinter `this._hinweis` ergänzen:
 
@@ -1186,7 +1186,7 @@ Neue Methoden an der Klasse:
   }
 ```
 
-- [ ] **Schritt 3: Gesten der Kopfzeile auf `devFuehreAus` umstellen**
+- [x] **Schritt 3: Gesten der Kopfzeile auf `devFuehreAus` umstellen**
 
 In `_bindeKopf()` die drei Aufrufe von `this._aktion(...)` ersetzen:
 
@@ -1214,7 +1214,7 @@ In `_bindeKopf()` die drei Aufrufe von `this._aktion(...)` ersetzen:
 Die alte Methode `_aktion(name)` und die alte `_navigiere(pfad)` **löschen** —
 beides steckt jetzt in `devFuehreAus` und `devNavigiere`.
 
-- [ ] **Schritt 4: Zeilenhorcher im Gerüst**
+- [x] **Schritt 4: Zeilenhorcher im Gerüst**
 
 In `_geruest()`, nach dem `appendChild`, ergänzen:
 
@@ -1240,7 +1240,7 @@ In `_geruest()`, nach dem `appendChild`, ergänzen:
     });
 ```
 
-- [ ] **Schritt 5: Chips mit Ausschluss**
+- [x] **Schritt 5: Chips mit Ausschluss**
 
 `_zeichneChips()` ersetzen:
 
@@ -1267,7 +1267,7 @@ In `_geruest()`, nach dem `appendChild`, ergänzen:
   }
 ```
 
-- [ ] **Schritt 6: Filter, Gruppen und Zeilenrahmen in `_render` und `_baueBausteine`**
+- [x] **Schritt 6: Filter, Gruppen und Zeilenrahmen in `_render` und `_baueBausteine`**
 
 In `_render()` die Filterzeile ersetzen:
 
@@ -1359,7 +1359,7 @@ Neue Methode für das Halten auf einer Zeile:
   }
 ```
 
-- [ ] **Schritt 7: Zugeklappt heißt zugeklappt**
+- [x] **Schritt 7: Zugeklappt heißt zugeklappt**
 
 `_zeigeListe()` ersetzen:
 
@@ -1393,7 +1393,7 @@ setzen. Und `getCardSize` ersetzen:
     return { type: "custom:busch-device-card", entity: treffer, start_expanded: true };
 ```
 
-- [ ] **Schritt 8: Test für die Kartengröße anhängen**
+- [x] **Schritt 8: Test für die Kartengröße anhängen**
 
 An `tests/geraet.test.js`:
 
@@ -1410,7 +1410,7 @@ test("die Vorgabe von start_expanded bleibt aus", () => {
 });
 ```
 
-- [ ] **Schritt 9: Prüfen**
+- [x] **Schritt 9: Prüfen**
 
 Run:
 ```bash
@@ -1420,7 +1420,7 @@ python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards
 Erwartet: alles grün, der Regelprüfer **ohne** Befund. Bleibt einer, ist er zu
 beheben, nicht in die Ausnahmeliste zu schreiben.
 
-- [ ] **Schritt 10: Commit**
+- [x] **Schritt 10: Commit**
 
 ```bash
 git add tests/geraet.test.js dist/busch-cards.js
@@ -1438,7 +1438,7 @@ git commit -m "busch-device-card: zugeklappt zeigt nur das Geraet, Gruppen klapp
 **Schnittstellen:**
 - Consumes: `devSchemaFuer`, `devArtVon`, `devMigriereKonfig`, `DEV_STANDARD`.
 
-- [ ] **Schritt 1: Den fehlschlagenden Test anhängen**
+- [x] **Schritt 1: Den fehlschlagenden Test anhängen**
 
 Die beiden bestehenden Editor-Tests am Dateiende ersetzen durch:
 
@@ -1511,11 +1511,11 @@ test("eine gesetzte HA-Aktion bleibt erhalten, Vorgaben fallen heraus", () => {
 });
 ```
 
-- [ ] **Schritt 2: Test laufen lassen, muss fehlschlagen**
+- [x] **Schritt 2: Test laufen lassen, muss fehlschlagen**
 
 Run: `node --test tests/geraet-editor.test.js` — FAIL, `form.data.tap_kind` ist `undefined`.
 
-- [ ] **Schritt 3: Editor ersetzen**
+- [x] **Schritt 3: Editor ersetzen**
 
 ```js
 class BuschDeviceCardEditor extends HTMLElement {
@@ -1590,7 +1590,7 @@ class BuschDeviceCardEditor extends HTMLElement {
 }
 ```
 
-- [ ] **Schritt 4: Prüfen**
+- [x] **Schritt 4: Prüfen**
 
 Run:
 ```bash
@@ -1599,7 +1599,7 @@ python3 ../scripts/ui-regeln-pruefen.py --repo busch-cards
 ```
 Erwartet: alles grün, Regelprüfer ohne Befund.
 
-- [ ] **Schritt 5: Commit**
+- [x] **Schritt 5: Commit**
 
 ```bash
 git add tests/geraet-editor.test.js dist/busch-cards.js
@@ -1614,7 +1614,7 @@ git commit -m "busch-device-card: Editor mit Art-Auswahl und HAs Aktionseditor"
 - Ändern: `../docs/render/render-geraet.py`
 - Erzeugt: `../docs/render/geraet/report.json` und Bilder (nicht im Repo)
 
-- [ ] **Schritt 1: Attrappe erweitern**
+- [x] **Schritt 1: Attrappe erweitern**
 
 In der Helfer-Attrappe die Zeilen so bauen, dass sie sich wie HAs Zeilen
 verhalten — eine Namensfläche, die `hass-more-info` feuert, und bei einer
@@ -1668,7 +1668,7 @@ und in `createRowElement`:
     },
 ```
 
-- [ ] **Schritt 2: Karten der Seite auf die neuen Optionen bringen**
+- [x] **Schritt 2: Karten der Seite auf die neuen Optionen bringen**
 
 ```js
   window.__a = mk('karte-a', { entity: 'light.decke' });
@@ -1685,7 +1685,7 @@ und in `createRowElement`:
   window.__d = mk('karte-d', { entity: 'sensor.ohne_geraet' });
 ```
 
-- [ ] **Schritt 3: Auslesen und Verhalten erweitern**
+- [x] **Schritt 3: Auslesen und Verhalten erweitern**
 
 `AUSLESEN` um zwei Felder ergänzen:
 
@@ -1744,7 +1744,7 @@ und in Schritt 10 `document.querySelector('#karte-e .stub-toggle')` nehmen.
 (`for kennung in ("#karte-a", "#karte-b", "#karte-c", "#karte-d", "#karte-e")`)
 und in die Screenshot-Schleife (`for kennung in ("a","b","c","d","e")`).
 
-- [ ] **Schritt 4: Laufen lassen**
+- [x] **Schritt 4: Laufen lassen**
 
 ```bash
 docker run --rm \
@@ -1777,14 +1777,14 @@ Erwartet Exit 0. Danach `report.json` **lesen**, diese Sollwerte:
 Ein abweichender Wert ist ein Fehler der Karte oder der Attrappe — erst
 klären, welcher, dann beheben, dann **neu laufen lassen**.
 
-- [ ] **Schritt 5: Die Bilder wirklich ansehen**
+- [x] **Schritt 5: Die Bilder wirklich ansehen**
 
 `geraet-a.png` (zugeklappt, nur Kopfzeile), `geraet-b.png` (Chips mit
 durchgestrichener Marke), `geraet-e.png` (alle vier Gruppen offen) und je ein
 320-px-Bild hell und dunkel mit dem Read-Werkzeug öffnen. Ein grüner Bericht
 allein ist kein Beleg.
 
-- [ ] **Schritt 6: Kalender und Zeitplan gegenprüfen**
+- [x] **Schritt 6: Kalender und Zeitplan gegenprüfen**
 
 ```bash
 docker run --rm \
@@ -1799,7 +1799,7 @@ docker run --rm \
 Erwartet: beide Exit 0, `tageZeilen` 31 im laufenden Monat und 31 im Vormonat,
 `amPm` 0. Das ist der Schritt gegen die Namenskollision.
 
-- [ ] **Schritt 7: Commit**
+- [x] **Schritt 7: Commit**
 
 Vorher im `hacs`-Repo `git status` lesen — dort arbeitet eine zweite Sitzung.
 Nur die eine Datei vorlegen:
@@ -1817,7 +1817,7 @@ cd .. && git add docs/render/render-geraet.py \
 **Dateien:**
 - Ändern: `README.md`, `dist/busch-cards.js`, `../CLAUDE.md`, `../docs/stand.md`
 
-- [ ] **Schritt 1: Gegen echte Registerdaten laufen**
+- [x] **Schritt 1: Gegen echte Registerdaten laufen**
 
 Über den Home-Assistant-MCP-Server ein Gerät holen (`ha_get_device` mit einer
 Entität, dann `ha_get_entity` für dessen Entitäten), daraus ein `hass`-Objekt
@@ -1827,7 +1827,7 @@ Gruppen, Ausschlussfilter mit einem echt vergebenen Label, und ob
 `devZielFuellen` für eine echte Entität ein brauchbares Ziel liefert.
 Auffälligkeiten beheben, bevor getaggt wird.
 
-- [ ] **Schritt 2: README**
+- [x] **Schritt 2: README**
 
 Im Abschnitt `busch-device-card` die Optionstabelle auf die dreizehn
 Schlüssel bringen, die Aktionsform als YAML zeigen, die drei Platzhalter
@@ -1835,12 +1835,12 @@ nennen und das Verhalten beim Zuklappen beschreiben. Den Abschnitt „Geprüft"
 oben auf `0.11.0` und das heutige Datum setzen und die Nachweiszeile für
 `render-geraet.py` um Dienstaufrufe und Zeilenklicks ergänzen.
 
-- [ ] **Schritt 3: Version**
+- [x] **Schritt 3: Version**
 
 `CARD_VERSION` von `"0.10.1"` auf `"0.11.0"`.
 Run: `node --check dist/busch-cards.js && node --test tests/*.test.js`
 
-- [ ] **Schritt 4: Die vier Abnahme-Belege**
+- [x] **Schritt 4: Die vier Abnahme-Belege**
 
 ```bash
 cd .. && for f in busch-cards/dist/*.js; do node --check "$f" || exit 1; done
@@ -1850,7 +1850,7 @@ cd busch-cards
 Erwartet: fehlerfrei und `GESAMT 0 Verstöße`. Beleg 3 ist der Lauf aus
 Aufgabe 7, Beleg 4 sind README und `docs/stand.md`.
 
-- [ ] **Schritt 5: Commit, Push, Tag**
+- [x] **Schritt 5: Commit, Push, Tag**
 
 ```bash
 git add README.md dist/busch-cards.js
@@ -1865,7 +1865,7 @@ Danach warten, bis `Release` und `Validate` auf dem Tag **grün** sind
 `/mnt/user/appdata/claude-code/secrets/gh-token`), und prüfen, dass das
 Release `busch-cards.js` als Anhang trägt.
 
-- [ ] **Schritt 6: In HACS installieren und belegen**
+- [x] **Schritt 6: In HACS installieren und belegen**
 
 Über den MCP-Server: `ha_manage_hacs` mit `action: "update_information"`, dann
 mit `action: "download"` und `version: "v0.11.0"`. **Beleg:**
@@ -1878,14 +1878,14 @@ md5sum /tmp/live.js dist/busch-cards.js
 
 Beide Summen müssen gleich sein und die Version `0.11.0` lauten.
 
-- [ ] **Schritt 7: Übergabe fortschreiben**
+- [x] **Schritt 7: Übergabe fortschreiben**
 
 `../docs/stand.md` um einen Block für `0.11.0` ergänzen (Belege, was der Lauf
 gegen echte Daten ergab, und was **nicht** belegt ist), und in `../CLAUDE.md`
 die Versionstabelle auf `v0.11.0` sowie Punkt 7 unter „HIER WEITERMACHEN".
 Vorher `git status` im `hacs`-Repo lesen und nur die eigenen Dateien vorlegen.
 
-- [ ] **Schritt 8: Meldung**
+- [x] **Schritt 8: Meldung**
 
 ```bash
 "/mnt/user/Data/Claude Projekte/scripts/ha-notify.sh" \
