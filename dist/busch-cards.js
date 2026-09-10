@@ -3823,21 +3823,185 @@ window.customCards.push({
  * Gruppenköpfe. Namensraum: `dev` / `DEV_`.
  * ──────────────────────────────────────────────────────────────────────── */
 
+const DEV_GRUPPEN_WERTE = ["control", "sensor", "config", "diagnostic"];
+
+/** Die Aktionen, die Home Assistant selbst übersetzt. `assist` fehlt
+ *  bewusst — sein Dialog kommt über einen bundle-internen Import, an den
+ *  eine Karte nicht herankommt (Spec 0.11.0, Abschnitt 2). */
+const DEV_HA_AKTIONEN = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
+
+/** Die Art einer Kopfzeilen-Geste im Editor. `ha` heißt: HAs eigener
+ *  Aktionseditor entscheidet, was drinsteht. */
+const DEV_ARTEN = ["expand", "device-page", "ha"];
+
 const DEV_STANDARD = {
   title: "",
   template: "auto",
   labels: [],
+  labels_hide: [],
+  groups: ["control", "sensor", "config", "diagnostic"],
+  groups_open: ["control"],
   show_subtitle: true,
-  show_config: true,
-  show_diagnostic: true,
   start_expanded: false,
-  tap_action: "expand",
-  hold_action: "more-info",
-  navigation_path: "",
+  tap_action: { action: "expand" },
+  hold_action: { action: "more-info" },
+  row_tap_action: { action: "more-info" },
+  row_hold_action: { action: "none" },
 };
 
-/** Die Kopfzeilen-Aktionen aus Spec Abschnitt 6. */
-const DEV_AKTIONEN = ["expand", "more-info", "toggle", "device-page", "navigate", "none"];
+/**
+ * Eine Aktion in HAs Objektform bringen.
+ *
+ * `altPfad` ist das `navigation_path` aus einer Konfiguration vor `0.11.0`,
+ * wo der Pfad neben der Aktion stand statt in ihr.
+ */
+function devAktionNormalisieren(wert, altPfad) {
+  if (wert === undefined || wert === null) return undefined;
+  const a = typeof wert === "string" ? { action: wert } : { ...wert };
+  if (!a.action || typeof a.action !== "string") return undefined;
+  if (a.action === "call-service") {
+    a.action = "perform-action";
+    if (a.service && !a.perform_action) a.perform_action = a.service;
+    if (a.service_data && !a.data) a.data = a.service_data;
+    delete a.service;
+    delete a.service_data;
+  }
+  if (a.action === "navigate" && !a.navigation_path && altPfad) a.navigation_path = altPfad;
+  return a;
+}
+
+/**
+ * Eine Konfiguration aus `0.10.x` auf die Form von `0.11.0` bringen.
+ * **Idempotent** — ein zweiter Durchlauf ändert nichts mehr.
+ */
+function devMigriereKonfig(config) {
+  const k = { ...(config || {}) };
+  for (const feld of ["tap_action", "hold_action", "row_tap_action", "row_hold_action"]) {
+    const a = devAktionNormalisieren(k[feld], k.navigation_path);
+    if (a === undefined) delete k[feld];
+    else k[feld] = a;
+  }
+  delete k.navigation_path;
+  if (k.show_config !== undefined || k.show_diagnostic !== undefined) {
+    const vorhanden = Array.isArray(k.groups) ? k.groups : DEV_GRUPPEN_WERTE;
+    const weg = [];
+    if (k.show_config === false) weg.push("config");
+    if (k.show_diagnostic === false) weg.push("diagnostic");
+    k.groups = DEV_GRUPPEN_WERTE.filter((g) => vorhanden.includes(g) && !weg.includes(g));
+    delete k.show_config;
+    delete k.show_diagnostic;
+  }
+  return k;
+}
+
+/** Welche Art hat diese Aktion im Editor? */
+function devArtVon(aktion) {
+  const a = aktion && aktion.action;
+  return a === "expand" || a === "device-page" ? a : "ha";
+}
+
+/** Der Kontext, in dem eine Aktion läuft. */
+function devKontext(entityId, geraet, bereich) {
+  return {
+    entity: entityId || "",
+    device: (geraet && geraet.id) || "",
+    area: (bereich && (bereich.area_id || bereich.id)) || "",
+  };
+}
+
+/**
+ * Drei Platzhalter, rekursiv in jeder Zeichenkette ersetzt. **Kein Jinja.**
+ * Was nicht auf dieses Muster passt, bleibt wörtlich stehen — so sieht der
+ * Nutzer im Dienstaufruf, dass sein Ausdruck nicht gegriffen hat.
+ */
+function devPlatzhalterErsetzen(wert, kontext) {
+  if (typeof wert === "string") {
+    return wert.replace(/\{\{\s*(entity|device|area)\s*\}\}/g, (ganz, name) => {
+      const w = kontext[name];
+      return w === undefined || w === null ? ganz : String(w);
+    });
+  }
+  if (Array.isArray(wert)) return wert.map((x) => devPlatzhalterErsetzen(x, kontext));
+  if (wert && typeof wert === "object") {
+    const aus = {};
+    for (const schluessel of Object.keys(wert)) {
+      aus[schluessel] = devPlatzhalterErsetzen(wert[schluessel], kontext);
+    }
+    return aus;
+  }
+  return wert;
+}
+
+/** Ein leeres Ziel füllt sich mit der Entität des Kontexts. */
+function devZielFuellen(aktion, kontext) {
+  if (!aktion || aktion.action !== "perform-action") return aktion;
+  const ziel = aktion.target;
+  const leer = !ziel || (typeof ziel === "object" && Object.keys(ziel).length === 0);
+  if (!leer || !kontext.entity) return aktion;
+  return { ...aktion, target: { entity_id: kontext.entity } };
+}
+
+/** So navigiert Home Assistant selbst (`src/common/navigate.ts`). */
+function devNavigiere(pfad) {
+  history.pushState(null, "", pfad);
+  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+}
+
+/**
+ * Die einzige Stelle, die eine Aktion ausführt — für Kopfzeile und Zeilen.
+ * `karte` darf fehlen; dann entfallen die Wege, die sie brauchen.
+ */
+function devFuehreAus(karte, hass, aktion, kontext) {
+  const art = aktion && aktion.action;
+  if (!art || art === "none") return;
+
+  if (art === "expand") {
+    if (karte && typeof karte._umschalten === "function") karte._umschalten();
+    return;
+  }
+  if (art === "device-page") {
+    if (kontext.device) devNavigiere(`/config/devices/device/${kontext.device}`);
+    return;
+  }
+  if (art === "more-info") {
+    if (!kontext.entity || !karte) return;
+    karte.dispatchEvent(new CustomEvent("hass-more-info", {
+      detail: { entityId: kontext.entity }, bubbles: true, composed: true,
+    }));
+    return;
+  }
+  if (art === "toggle") {
+    if (kontext.entity && hass) hass.callService("homeassistant", "toggle", { entity_id: kontext.entity });
+    return;
+  }
+  if (art === "navigate") {
+    if (aktion.navigation_path) devNavigiere(aktion.navigation_path);
+    return;
+  }
+  if (art === "url") {
+    if (aktion.url_path && typeof window !== "undefined" && typeof window.open === "function") {
+      window.open(aktion.url_path, "_blank", "noreferrer");
+    }
+    return;
+  }
+  if (art === "perform-action") {
+    const voll = String(aktion.perform_action || "");
+    const punkt = voll.indexOf(".");
+    if (punkt <= 0 || punkt === voll.length - 1) {
+      console.warn(`busch-device-card: perform-action ohne gültigen Dienst: "${voll}"`);
+      return;
+    }
+    if (!hass || typeof hass.callService !== "function") return;
+    const gefuellt = devZielFuellen(aktion, kontext);
+    const daten = devPlatzhalterErsetzen(gefuellt.data || {}, kontext);
+    const ziel = gefuellt.target ? devPlatzhalterErsetzen(gefuellt.target, kontext) : undefined;
+    Promise.resolve()
+      .then(() => hass.callService(voll.slice(0, punkt), voll.slice(punkt + 1), daten, ziel))
+      .catch((fehler) => {
+        if (karte && typeof karte._zeigeDienstFehler === "function") karte._zeigeDienstFehler(fehler);
+      });
+  }
+}
 
 /**
  * Vorlage → Features der Tile-Karte (Spec Abschnitt 4). Die Typnamen stehen
@@ -3863,15 +4027,21 @@ const DEV_VORLAGEN = {
 };
 
 function devNormalisiereKonfig(config) {
-  const roh = config || {};
+  const roh = devMigriereKonfig(config);
   const k = { ...DEV_STANDARD, ...roh };
   k.entity = typeof roh.entity === "string" ? roh.entity : "";
-  if (typeof roh.labels === "string") k.labels = [roh.labels];
-  else if (Array.isArray(roh.labels)) k.labels = roh.labels.filter((l) => typeof l === "string");
-  else k.labels = [];
-  if (!DEV_AKTIONEN.includes(k.tap_action)) k.tap_action = DEV_STANDARD.tap_action;
-  if (!DEV_AKTIONEN.includes(k.hold_action)) k.hold_action = DEV_STANDARD.hold_action;
-  if (typeof k.navigation_path !== "string") k.navigation_path = "";
+  for (const feld of ["labels", "labels_hide"]) {
+    if (typeof roh[feld] === "string") k[feld] = [roh[feld]];
+    else if (Array.isArray(roh[feld])) k[feld] = roh[feld].filter((l) => typeof l === "string");
+    else k[feld] = [];
+  }
+  for (const feld of ["groups", "groups_open"]) {
+    const liste = Array.isArray(roh[feld]) ? roh[feld] : DEV_STANDARD[feld];
+    k[feld] = DEV_GRUPPEN_WERTE.filter((w) => liste.includes(w));
+  }
+  for (const feld of ["tap_action", "hold_action", "row_tap_action", "row_hold_action"]) {
+    k[feld] = devAktionNormalisieren(k[feld]) || { ...DEV_STANDARD[feld] };
+  }
   if (typeof k.title !== "string") k.title = "";
   return k;
 }
@@ -3949,9 +4119,33 @@ function devEntitaetenDesGeraets(hass, deviceId, hauptId) {
   return aus;
 }
 
-function devLabelFilter(eintraege, labels) {
-  if (!Array.isArray(labels) || labels.length === 0) return eintraege.slice();
-  return eintraege.filter((e) => Array.isArray(e.labels) && e.labels.some((l) => labels.includes(l)));
+/**
+ * Erst einschließen, dann ausschließen. **Ausschluss schlägt Einschluss** —
+ * ein Eintrag mit beiden Labels verschwindet (Spec 0.11.0, Abschnitt 8).
+ */
+function devLabelFilter(eintraege, labels, labelsHide) {
+  const ein = Array.isArray(labels) ? labels : [];
+  const aus = Array.isArray(labelsHide) ? labelsHide : [];
+  let liste = eintraege.slice();
+  if (ein.length) {
+    liste = liste.filter((e) => Array.isArray(e.labels) && e.labels.some((l) => ein.includes(l)));
+  }
+  if (aus.length) {
+    liste = liste.filter((e) => !(Array.isArray(e.labels) && e.labels.some((l) => aus.includes(l))));
+  }
+  return liste;
+}
+
+/** Welche Gruppen erscheinen, in fester Reihenfolge. */
+function devGruppenSichtbar(konfig) {
+  const g = Array.isArray(konfig.groups) ? konfig.groups : DEV_GRUPPEN_WERTE;
+  return DEV_GRUPPEN_WERTE.filter((w) => g.includes(w));
+}
+
+/** Startet diese Gruppe offen? */
+function devGruppeOffen(konfig, gruppe) {
+  const g = Array.isArray(konfig.groups_open) ? konfig.groups_open : [];
+  return g.includes(gruppe);
 }
 
 function devGruppe(eintrag) {
@@ -3995,9 +4189,9 @@ function devGruppieren(hass, eintraege, konfig) {
   const koerbe = { control: [], sensor: [], config: [], diagnostic: [] };
   for (const e of eintraege) koerbe[devGruppe(e)].push(e);
   const aus = [];
+  const sichtbar = devGruppenSichtbar(konfig);
   for (const gruppe of DEV_GRUPPEN) {
-    if (gruppe === "config" && !konfig.show_config) continue;
-    if (gruppe === "diagnostic" && !konfig.show_diagnostic) continue;
+    if (!sichtbar.includes(gruppe)) continue;
     const liste = koerbe[gruppe];
     if (!liste.length) continue;
     liste.sort((a, b) =>
@@ -4036,46 +4230,100 @@ const SCHEMA_BUSCH_DEVICE_CARD = [
     },
   },
   { name: "labels", selector: { label: { multiple: true } } },
+  { name: "labels_hide", selector: { label: { multiple: true } } },
+  {
+    name: "groups",
+    selector: {
+      select: {
+        multiple: true, mode: "list",
+        options: [
+          { value: "control" }, { value: "sensor" }, { value: "config" }, { value: "diagnostic" },
+        ],
+      },
+    },
+  },
+  {
+    name: "groups_open",
+    selector: {
+      select: {
+        multiple: true, mode: "list",
+        options: [
+          { value: "control" }, { value: "sensor" }, { value: "config" }, { value: "diagnostic" },
+        ],
+      },
+    },
+  },
   {
     type: "grid",
     schema: [
       { name: "show_subtitle", selector: { boolean: {} } },
       { name: "start_expanded", selector: { boolean: {} } },
-      { name: "show_config", selector: { boolean: {} } },
-      { name: "show_diagnostic", selector: { boolean: {} } },
     ],
   },
   {
-    type: "grid",
-    schema: [
-      {
-        name: "tap_action",
-        selector: {
-          select: {
-            mode: "dropdown",
-            options: [
-              { value: "expand" }, { value: "more-info" }, { value: "toggle" },
-              { value: "device-page" }, { value: "navigate" }, { value: "none" },
-            ],
-          },
-        },
+    name: "tap_kind",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [{ value: "expand" }, { value: "device-page" }, { value: "ha" }],
       },
-      {
-        name: "hold_action",
-        selector: {
-          select: {
-            mode: "dropdown",
-            options: [
-              { value: "expand" }, { value: "more-info" }, { value: "toggle" },
-              { value: "device-page" }, { value: "navigate" }, { value: "none" },
-            ],
-          },
-        },
-      },
-    ],
+    },
   },
-  { name: "navigation_path", selector: { text: {} } },
+  {
+    name: "tap_action",
+    selector: {
+      ui_action: {
+        actions: ["more-info", "toggle", "navigate", "url", "perform-action", "none"],
+      },
+    },
+  },
+  {
+    name: "hold_kind",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [{ value: "expand" }, { value: "device-page" }, { value: "ha" }],
+      },
+    },
+  },
+  {
+    name: "hold_action",
+    selector: {
+      ui_action: {
+        actions: ["more-info", "toggle", "navigate", "url", "perform-action", "none"],
+      },
+    },
+  },
+  {
+    name: "row_tap_action",
+    selector: {
+      ui_action: {
+        actions: ["more-info", "toggle", "navigate", "url", "perform-action", "none"],
+      },
+    },
+  },
+  {
+    name: "row_hold_action",
+    selector: {
+      ui_action: {
+        actions: ["more-info", "toggle", "navigate", "url", "perform-action", "none"],
+      },
+    },
+  },
 ];
+
+/**
+ * Die gefilterte Kopie für den Editor: HAs Aktionseditor erscheint nur, wenn
+ * die Art darüber `ha` ist. Das Literal oben bleibt vollständig, weil
+ * `scripts/ui-regeln-pruefen.py` es aus dem Quelltext liest und eine
+ * berechnete Schemafunktion nicht lesen könnte.
+ */
+function devSchemaFuer(konfig) {
+  const weg = [];
+  if (devArtVon(konfig && konfig.tap_action) !== "ha") weg.push("tap_action");
+  if (devArtVon(konfig && konfig.hold_action) !== "ha") weg.push("hold_action");
+  return SCHEMA_BUSCH_DEVICE_CARD.filter((e) => !weg.includes(e.name));
+}
 
 const TEXTE_BUSCH_DEVICE_CARD = {
   de: {
@@ -4086,26 +4334,34 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       title: "Überschrift",
       template: "Darstellung",
       labels: "Nur Entitäten mit Label",
+      labels_hide: "Entitäten mit Label verbergen",
+      groups: "Gruppen zeigen",
+      groups_open: "Gruppen offen starten",
       show_subtitle: "Untertitel zeigen",
       start_expanded: "Offen starten",
-      show_config: "Konfiguration zeigen",
-      show_diagnostic: "Diagnose zeigen",
-      tap_action: "Tippen auf die Kopfzeile",
-      hold_action: "Halten auf der Kopfzeile",
-      navigation_path: "Navigationsziel",
+      tap_kind: "Tippen auf die Kopfzeile",
+      hold_kind: "Halten auf der Kopfzeile",
+      tap_action: "Aktion beim Tippen",
+      hold_action: "Aktion beim Halten",
+      row_tap_action: "Tippen auf eine Zeile",
+      row_hold_action: "Halten auf einer Zeile",
     },
     helpers: {
       entity: "Irgendeine Entität des Geräts. Die Karte sucht daraus das Gerät und zeigt diese Entität oben als Bedienelement.",
       title: "Überschrift der Karte. Leer nimmt den Gerätenamen. Vorgabe: leer.",
       template: "Welche Bedienelemente oben stehen. Automatisch richtet sich nach der Art der Entität. Vorgabe: automatisch.",
       labels: "Zeigt unten nur Entitäten, die eines dieser Labels tragen. Die Entität oben bleibt immer. Vorgabe: alle.",
+      labels_hide: "Entitäten mit einem dieser Labels erscheinen nicht. Schlägt die Auswahl darüber. Vorgabe: keines.",
+      groups: "Welche Gruppen unter dem Bedienelement überhaupt erscheinen. Vorgabe: alle vier.",
+      groups_open: "Welche dieser Gruppen offen starten. Die übrigen sind zugeklappt und öffnen sich per Klick. Vorgabe: nur Steuerung.",
       show_subtitle: "Hersteller, Modell und Bereich unter dem Namen. Vorgabe an.",
-      start_expanded: "An zeigt die Entitätenliste sofort, aus erst nach dem Aufklappen. Vorgabe aus.",
-      show_config: "Die Gruppe Konfiguration überhaupt anbieten. Vorgabe an.",
-      show_diagnostic: "Die Gruppe Diagnose überhaupt anbieten. Vorgabe an.",
-      tap_action: "Was ein Tippen auf Name und Untertitel tut. Vorgabe: aufklappen.",
-      hold_action: "Was ein Halten auf Name und Untertitel tut. Vorgabe: Details öffnen.",
-      navigation_path: "Pfad im Dashboard, etwa /lovelace/geraete. Wirkt nur bei der Aktion Navigieren. Vorgabe: leer.",
+      start_expanded: "An zeigt Bedienelement und Entitäten sofort, aus erst nach dem Aufklappen. Vorgabe aus.",
+      tap_kind: "Aufklappen zeigt Bedienelement und Entitäten. Geräteseite öffnet die Seite von Home Assistant. Bei Aktion von Home Assistant erscheint darunter dessen eigener Editor. Vorgabe: Aufklappen.",
+      hold_kind: "Dasselbe für einen eine halbe Sekunde langen Griff. Vorgabe: Aktion von Home Assistant.",
+      tap_action: "Der Aktionseditor von Home Assistant. In Ziel und Daten setzt {{ entity }} die Hauptentität ein, {{ device }} das Gerät, {{ area }} den Bereich. Kein Jinja, nur diese drei. Vorgabe: Details öffnen.",
+      hold_action: "Derselbe Editor für das Halten. Dieselben drei Platzhalter. Vorgabe: Details öffnen.",
+      row_tap_action: "Was ein Tippen auf eine Entitätenzeile tut. {{ entity }} ist dann die angetippte Zeile. Ein leeres Ziel füllt sich mit ihr. Vorgabe: Details öffnen.",
+      row_hold_action: "Dasselbe für das Halten auf einer Zeile. Vorgabe: nichts.",
     },
     texte: {
       template_auto: "Automatisch",
@@ -4117,18 +4373,21 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       template_lock: "Schloss",
       template_switch: "Schalter",
       template_generic: "Allgemein",
-      tap_action_expand: "Aufklappen",
-      "tap_action_more-info": "Details öffnen",
-      tap_action_toggle: "Umschalten",
-      "tap_action_device-page": "Geräteseite öffnen",
-      tap_action_navigate: "Navigieren",
-      tap_action_none: "Nichts",
-      hold_action_expand: "Aufklappen",
-      "hold_action_more-info": "Details öffnen",
-      hold_action_toggle: "Umschalten",
-      "hold_action_device-page": "Geräteseite öffnen",
-      hold_action_navigate: "Navigieren",
-      hold_action_none: "Nichts",
+      tap_kind_expand: "Aufklappen",
+      "tap_kind_device-page": "Geräteseite öffnen",
+      tap_kind_ha: "Aktion von Home Assistant",
+      hold_kind_expand: "Aufklappen",
+      "hold_kind_device-page": "Geräteseite öffnen",
+      hold_kind_ha: "Aktion von Home Assistant",
+      groups_control: "Steuerung",
+      groups_sensor: "Sensoren",
+      groups_config: "Konfiguration",
+      groups_diagnostic: "Diagnose",
+      groups_open_control: "Steuerung",
+      groups_open_sensor: "Sensoren",
+      groups_open_config: "Konfiguration",
+      groups_open_diagnostic: "Diagnose",
+      dienstFehler: "Dienst fehlgeschlagen: {fehler}",
       gruppe_control: "Steuerung",
       gruppe_sensor: "Sensoren",
       gruppe_config: "Konfiguration",
@@ -4191,26 +4450,34 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       title: "Heading",
       template: "Layout",
       labels: "Only entities with label",
+      labels_hide: "Hide entities with label",
+      groups: "Show groups",
+      groups_open: "Groups open at start",
       show_subtitle: "Show subtitle",
       start_expanded: "Start expanded",
-      show_config: "Show configuration",
-      show_diagnostic: "Show diagnostic",
-      tap_action: "Tap on the header",
-      hold_action: "Hold on the header",
-      navigation_path: "Navigation target",
+      tap_kind: "Tap on the header",
+      hold_kind: "Hold on the header",
+      tap_action: "Action on tap",
+      hold_action: "Action on hold",
+      row_tap_action: "Tap on a row",
+      row_hold_action: "Hold on a row",
     },
     helpers: {
       entity: "Any entity of the device. The card finds the device from it and shows this entity as the control at the top.",
       title: "Heading of the card. Empty uses the device name. Default: empty.",
       template: "Which controls appear at the top. Automatic follows the kind of entity. Default: automatic.",
       labels: "Lists only entities carrying one of these labels below. The entity at the top always stays. Default: all.",
+      labels_hide: "Entities carrying one of these labels do not appear. Beats the selection above. Default: none.",
+      groups: "Which groups appear below the control at all. Default: all four.",
+      groups_open: "Which of those start open. The rest are collapsed and open on click. Default: controls only.",
       show_subtitle: "Manufacturer, model and area below the name. Default on.",
-      start_expanded: "On shows the entity list right away, off only after expanding. Default off.",
-      show_config: "Offer the configuration group at all. Default on.",
-      show_diagnostic: "Offer the diagnostic group at all. Default on.",
-      tap_action: "What a tap on name and subtitle does. Default: expand.",
-      hold_action: "What a hold on name and subtitle does. Default: open details.",
-      navigation_path: "Dashboard path such as /lovelace/devices. Only used by the navigate action. Default: empty.",
+      start_expanded: "On shows the control and the entities right away, off only after expanding. Default off.",
+      tap_kind: "Expand shows the control and the entities. Device page opens Home Assistant's own page. With Home Assistant action its editor appears below. Default: expand.",
+      hold_kind: "The same for a half-second press. Default: Home Assistant action.",
+      tap_action: "Home Assistant's action editor. In target and data, {{ entity }} inserts the main entity, {{ device }} the device, {{ area }} the area. No Jinja, just these three. Default: open details.",
+      hold_action: "The same editor for holding. The same three placeholders. Default: open details.",
+      row_tap_action: "What a tap on an entity row does. {{ entity }} is the tapped row then. An empty target fills itself with it. Default: open details.",
+      row_hold_action: "The same for holding a row. Default: nothing.",
     },
     texte: {
       template_auto: "Automatic",
@@ -4222,18 +4489,21 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       template_lock: "Lock",
       template_switch: "Switch",
       template_generic: "Generic",
-      tap_action_expand: "Expand",
-      "tap_action_more-info": "Open details",
-      tap_action_toggle: "Toggle",
-      "tap_action_device-page": "Open device page",
-      tap_action_navigate: "Navigate",
-      tap_action_none: "Nothing",
-      hold_action_expand: "Expand",
-      "hold_action_more-info": "Open details",
-      hold_action_toggle: "Toggle",
-      "hold_action_device-page": "Open device page",
-      hold_action_navigate: "Navigate",
-      hold_action_none: "Nothing",
+      tap_kind_expand: "Expand",
+      "tap_kind_device-page": "Open device page",
+      tap_kind_ha: "Home Assistant action",
+      hold_kind_expand: "Expand",
+      "hold_kind_device-page": "Open device page",
+      hold_kind_ha: "Home Assistant action",
+      groups_control: "Controls",
+      groups_sensor: "Sensors",
+      groups_config: "Configuration",
+      groups_diagnostic: "Diagnostic",
+      groups_open_control: "Controls",
+      groups_open_sensor: "Sensors",
+      groups_open_config: "Configuration",
+      groups_open_diagnostic: "Diagnostic",
+      dienstFehler: "Action failed: {fehler}",
       gruppe_control: "Controls",
       gruppe_sensor: "Sensors",
       gruppe_config: "Configuration",
@@ -4366,6 +4636,15 @@ const DEV_STIL = `
   .dev-chip-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   .dev-tile { padding:0 var(--ha-space-3, 12px) var(--ha-space-3, 12px); }
   .dev-tile:empty { display:none; }
+  /* Ohne !important bliebe das Bedienelement beim Zuklappen stehen — dieselbe
+     Absicherung wie bei .dev-liste. */
+  .dev-tile[hidden] { display:none !important; }
+  .dev-chip-aus { opacity:.55; }
+  .dev-chip-aus .dev-chip-text { text-decoration:line-through; }
+  .dev-zeile { display:block; }
+  .dev-dienstfehler { padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px);
+    color:var(--error-color); font-size:.85em; overflow-wrap:anywhere; }
+  .dev-dienstfehler[hidden] { display:none; }
   .dev-liste { border-top:1px solid var(--divider-color);
     padding:var(--ha-space-1, 4px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .dev-liste[hidden] { display:none; }
@@ -4373,8 +4652,7 @@ const DEV_STIL = `
     padding:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px);
     font-size:.78em; text-transform:uppercase; letter-spacing:.06em;
     color:var(--secondary-text-color); background:none; border:0; width:100%;
-    text-align:left; font-family:inherit; cursor:default; }
-  .dev-gruppe-kopf.dev-klappbar { cursor:pointer; }
+    text-align:left; font-family:inherit; cursor:pointer; }
   .dev-gruppe-kopf .dev-gruppe-text { overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; min-width:0; }
   .dev-gruppe-kopf .dev-gruppe-pfeil { width:18px; height:18px; flex:0 0 18px;
@@ -4401,13 +4679,15 @@ class BuschDeviceCard extends HTMLElement {
       ? entities
       : Object.keys((hass && hass.states) || {});
     const treffer = liste.find((id) => register[id] && register[id].device_id) || liste[0] || "";
-    return { type: "custom:busch-device-card", entity: treffer };
+    // Aufgeklappt, damit die Vorschau im Kartenwaehler etwas zeigt. Die
+    // VORGABE von start_expanded bleibt aus.
+    return { type: "custom:busch-device-card", entity: treffer, start_expanded: true };
   }
 
   setConfig(config) {
     this._config = devNormalisiereKonfig(config);
     this._offen = Boolean(this._config.start_expanded);
-    this._zu = { config: true, diagnostic: true };
+    this._zu = {};
     this._stempel = null;
     this._render();
   }
@@ -4425,7 +4705,7 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 3 + (this._offen ? this._zeilenZahl || 0 : 0);
+    return this._offen ? 3 + (this._zeilenZahl || 0) : 2;
   }
 
   getGridOptions() {
@@ -4478,10 +4758,91 @@ class BuschDeviceCard extends HTMLElement {
     this._hinweis = document.createElement("div");
     this._hinweis.className = "dev-hinweis";
     this._hinweis.hidden = true;
+    this._dienstFehler = document.createElement("div");
+    this._dienstFehler.className = "dev-dienstfehler";
+    this._dienstFehler.hidden = true;
 
-    this._karte.append(this._kopf, this._chips, this._tileBehaelter, this._liste, this._hinweis);
+    this._karte.append(this._kopf, this._chips, this._dienstFehler,
+                       this._tileBehaelter, this._liste, this._hinweis);
     this.appendChild(this._karte);
     this._bindeKopf();
+
+    // Zeilen antippen: HAs Zeilen feuern beim Tippen auf den Namensbereich
+    // `hass-more-info`. Genau das wird hier abgefangen — KEIN Klick-Abfangen,
+    // sonst waere der Schalter einer Schalterzeile unbedienbar.
+    // Eigene `more-info`-Ereignisse feuert die Karte an SICH; `_liste` ist ihr
+    // Kind, kein Vorfahre, also greift dieser Horcher dort nicht.
+    this._liste.addEventListener("hass-more-info", (ereignis) => {
+      const id = ereignis.detail && ereignis.detail.entityId;
+      if (!id) return;
+      if (this._haltVerbraucht) {
+        this._haltVerbraucht = false;
+        ereignis.stopPropagation();
+        return;
+      }
+      const aktion = this._config.row_tap_action;
+      if (!aktion || aktion.action === "more-info") return;
+      ereignis.stopPropagation();
+      devFuehreAus(this, this._hass, aktion, this._zeilenKontext(id));
+    });
+  }
+
+  /** Auf- und zuklappen. `devFuehreAus` ruft das fuer die Aktion `expand`. */
+  _umschalten() {
+    this._offen = !this._offen;
+    this._zeigeListe();
+  }
+
+  /** Ein fehlgeschlagener Dienstaufruf, zwei Sekunden sichtbar. */
+  _zeigeDienstFehler(fehler) {
+    if (!this._dienstFehler) return;
+    this._dienstFehler.textContent = buschFuellen(this._texte.dienstFehler, {
+      fehler: (fehler && fehler.message) || String(fehler),
+    });
+    this._dienstFehler.hidden = false;
+    if (this._fehlerUhr) clearTimeout(this._fehlerUhr);
+    this._fehlerUhr = setTimeout(() => { this._dienstFehler.hidden = true; }, 2000);
+  }
+
+  /** Der Kontext der Kopfzeile: die Hauptentitaet dieser Karte. */
+  _kopfKontext() {
+    return devKontext(this._config.entity,
+      this._auf && this._auf.geraet, this._auf && this._auf.bereich);
+  }
+
+  /** Der Kontext einer Zeile: die angetippte Entitaet, dasselbe Geraet. */
+  _zeilenKontext(entityId) {
+    return devKontext(entityId,
+      this._auf && this._auf.geraet, this._auf && this._auf.bereich);
+  }
+
+  /**
+   * Halten auf einer Zeile. Der Rahmen hoert nur zu: kein eigener
+   * Klick-Behandler, kein `pointer-events`, damit jedes Bedienelement der
+   * Zeile erreichbar bleibt. Loest das Halten aus, wird das danach folgende
+   * `hass-more-info` einmal geschluckt (`_haltVerbraucht`).
+   */
+  _bindeZeile(rahmen, entityId) {
+    let timer = null;
+    let start = null;
+    const abbrechen = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    rahmen.addEventListener("pointerdown", (e) => {
+      const aktion = this._config.row_hold_action;
+      if (!aktion || aktion.action === "none") return;
+      start = { x: e.clientX, y: e.clientY };
+      abbrechen();
+      timer = setTimeout(() => {
+        timer = null;
+        this._haltVerbraucht = true;
+        devFuehreAus(this, this._hass, aktion, this._zeilenKontext(entityId));
+      }, 500);
+    });
+    rahmen.addEventListener("pointermove", (e) => {
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) abbrechen();
+    });
+    rahmen.addEventListener("pointerup", () => { abbrechen(); start = null; });
+    rahmen.addEventListener("pointercancel", abbrechen);
+    rahmen.addEventListener("pointerleave", abbrechen);
   }
 
   /** Tippen/Halten wie in HA: 500 ms, Bewegung über 10 px bricht ab. */
@@ -4495,7 +4856,10 @@ class BuschDeviceCard extends HTMLElement {
       gehalten = false;
       start = { x: e.clientX, y: e.clientY };
       abbrechen();
-      timer = setTimeout(() => { timer = null; gehalten = true; this._aktion(this._config.hold_action); }, 500);
+      timer = setTimeout(() => {
+        timer = null; gehalten = true;
+        devFuehreAus(this, this._hass, this._config.hold_action, this._kopfKontext());
+      }, 500);
     });
     this._kopf.addEventListener("pointermove", (e) => {
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) abbrechen();
@@ -4504,17 +4868,22 @@ class BuschDeviceCard extends HTMLElement {
       if (e.target.closest(".dev-pfeil")) return;
       const warTimer = Boolean(timer);
       abbrechen();
-      if (!gehalten && warTimer) this._aktion(this._config.tap_action);
+      if (!gehalten && warTimer) {
+        devFuehreAus(this, this._hass, this._config.tap_action, this._kopfKontext());
+      }
       start = null;
     });
     this._kopf.addEventListener("pointercancel", abbrechen);
     this._kopf.addEventListener("pointerleave", abbrechen);
     // Der Pfeil klappt immer, unabhängig von tap_action (Spec Abschnitt 6).
-    this._pfeil.addEventListener("click", (e) => { e.stopPropagation(); this._aktion("expand"); });
+    this._pfeil.addEventListener("click", (e) => { e.stopPropagation(); this._umschalten(); });
     this._kopf.setAttribute("role", "button");
     this._kopf.tabIndex = 0;
     this._kopf.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this._aktion(this._config.tap_action); }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        devFuehreAus(this, this._hass, this._config.tap_action, this._kopfKontext());
+      }
     });
   }
 
@@ -4538,6 +4907,8 @@ class BuschDeviceCard extends HTMLElement {
       this._tileBehaelter.textContent = "";
       this._liste.textContent = "";
       this._liste.hidden = true;
+      this._tileBehaelter.hidden = true;
+      this._dienstFehler.hidden = true;
       this._karte.classList.remove("dev-offen");
       this._hinweis.textContent = buschFuellen(t[a.fehler], { entity: this._config.entity });
       this._hinweis.className = "dev-hinweis dev-fehler";
@@ -4548,7 +4919,7 @@ class BuschDeviceCard extends HTMLElement {
     this._auf = a;
     const vorlage = devVorlageWaehlen(this._config.template, this._config.entity);
     const alle = devEntitaetenDesGeraets(this._hass, a.geraet.id, this._config.entity);
-    const gefiltert = devLabelFilter(alle, this._config.labels);
+    const gefiltert = devLabelFilter(alle, this._config.labels, this._config.labels_hide);
     const gruppen = devGruppieren(this._hass, gefiltert, this._config);
     const stempel = devStrukturStempel(a.geraet.id, vorlage, gruppen, this._config);
     this._zeilenZahl = gruppen.reduce((n, g) => n + g.ids.length, 0);
@@ -4585,10 +4956,10 @@ class BuschDeviceCard extends HTMLElement {
   _zeichneChips() {
     if (!this._chips || !this._config) return;
     this._chips.textContent = "";
-    for (const id of this._config.labels) {
+    const male = (id, ausgeschlossen) => {
       const e = this._labels && this._labels.get(id);
       const chip = document.createElement("span");
-      chip.className = "dev-chip";
+      chip.className = ausgeschlossen ? "dev-chip dev-chip-aus" : "dev-chip";
       const farbe = devLabelFarbe(e);
       if (farbe) chip.style.setProperty("--dev-chip-farbe", farbe);
       const punkt = document.createElement("span");
@@ -4598,7 +4969,9 @@ class BuschDeviceCard extends HTMLElement {
       text.textContent = (e && e.name) || id;
       chip.append(punkt, text);
       this._chips.appendChild(chip);
-    }
+    };
+    for (const id of this._config.labels) male(id, false);
+    for (const id of this._config.labels_hide) male(id, true);
   }
 
   /** Tile und Zeilen von HA. Asynchron; eine veraltete Antwort (Stempel
@@ -4643,25 +5016,27 @@ class BuschDeviceCard extends HTMLElement {
       const block = document.createElement("div");
       block.className = "dev-gruppe";
       block.dataset.gruppe = g.gruppe;
-      const klappbar = g.gruppe === "config" || g.gruppe === "diagnostic";
-      const kopf = document.createElement(klappbar ? "button" : "div");
-      kopf.className = "dev-gruppe-kopf" + (klappbar ? " dev-klappbar" : "");
-      if (klappbar) {
-        kopf.type = "button";
-        const pfeil = document.createElement("ha-icon");
-        pfeil.className = "dev-gruppe-pfeil";
-        pfeil.setAttribute("icon", "mdi:chevron-down");
-        pfeil.icon = "mdi:chevron-down";
-        kopf.appendChild(pfeil);
-        if (this._zu[g.gruppe]) block.classList.add("dev-zu");
-        kopf.addEventListener("click", () => {
-          this._zu[g.gruppe] = !this._zu[g.gruppe];
-          block.classList.toggle("dev-zu", this._zu[g.gruppe]);
-        });
+      // Seit 0.11.0 ist JEDE Gruppe klappbar, nicht mehr nur Konfiguration
+      // und Diagnose; der Startzustand kommt aus `groups_open`.
+      const kopf = document.createElement("button");
+      kopf.className = "dev-gruppe-kopf";
+      kopf.type = "button";
+      const pfeil = document.createElement("ha-icon");
+      pfeil.className = "dev-gruppe-pfeil";
+      pfeil.setAttribute("icon", "mdi:chevron-down");
+      pfeil.icon = "mdi:chevron-down";
+      kopf.appendChild(pfeil);
+      if (this._zu[g.gruppe] === undefined) {
+        this._zu[g.gruppe] = !devGruppeOffen(this._config, g.gruppe);
       }
+      if (this._zu[g.gruppe]) block.classList.add("dev-zu");
+      kopf.addEventListener("click", () => {
+        this._zu[g.gruppe] = !this._zu[g.gruppe];
+        block.classList.toggle("dev-zu", this._zu[g.gruppe]);
+      });
       const text = document.createElement("span");
       text.className = "dev-gruppe-text";
-      text.textContent = klappbar ? `${t["gruppe_" + g.gruppe]} (${g.ids.length})` : t["gruppe_" + g.gruppe];
+      text.textContent = `${t["gruppe_" + g.gruppe]} (${g.ids.length})`;
       kopf.appendChild(text);
       const zeilen = document.createElement("div");
       zeilen.className = "dev-zeilen";
@@ -4670,8 +5045,13 @@ class BuschDeviceCard extends HTMLElement {
           const voll = devAnzeigename(this._hass, this._hass.entities[id]);
           const kurz = devKurzname(voll, geraeteName, devDomainName(t, id));
           const zeile = helfer.createRowElement({ entity: id, name: kurz });
+          const rahmen = document.createElement("div");
+          rahmen.className = "dev-zeile";
+          rahmen.dataset.entity = id;
+          rahmen.appendChild(zeile);
+          this._bindeZeile(rahmen, id);
           this._zeilen.push(zeile);
-          zeilen.appendChild(zeile);
+          zeilen.appendChild(rahmen);
         } catch (e) { /* eine kaputte Zeile reißt die anderen nicht mit */ }
       }
       block.append(kopf, zeilen);
@@ -4697,55 +5077,24 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   _zeigeListe() {
-    const hatListe = !this._helferFehlt
-      && ((this._zeilenZahl || 0) > 0 || this._config.labels.length > 0);
-    this._pfeil.hidden = !hatListe;
-    this._liste.hidden = !(this._offen && hatListe);
-    this._karte.classList.toggle("dev-offen", this._offen && hatListe);
+    // Zugeklappt bleiben nur Icon, Name, Untertitel und die Marken stehen —
+    // auch das Bedienelement verschwindet (Spec 0.11.0, Abschnitt 6).
+    const offen = Boolean(this._offen) && !this._helferFehlt;
+    this._pfeil.hidden = Boolean(this._helferFehlt);
+    this._tileBehaelter.hidden = !offen;
+    this._liste.hidden = !offen;
+    this._karte.classList.toggle("dev-offen", offen);
     const t = this._texte;
-    this._kopf.setAttribute("aria-expanded", String(this._offen && hatListe));
-    this._pfeil.setAttribute("title", this._offen ? t.zuklappen : t.aufklappen);
+    this._kopf.setAttribute("aria-expanded", String(offen));
+    this._pfeil.setAttribute("title", offen ? t.zuklappen : t.aufklappen);
   }
 
-  /* ── Aktionen (Spec Abschnitt 6) ─────────────────────────────────────── */
 
-  _aktion(name) {
-    if (!this._auf && name !== "none") return;
-    switch (name) {
-      case "expand":
-        this._offen = !this._offen;
-        this._zeigeListe();
-        break;
-      case "more-info":
-        this.dispatchEvent(new CustomEvent("hass-more-info", {
-          detail: { entityId: this._config.entity }, bubbles: true, composed: true,
-        }));
-        break;
-      case "toggle":
-        this._hass.callService("homeassistant", "toggle", { entity_id: this._config.entity });
-        break;
-      case "device-page":
-        this._navigiere(`/config/devices/device/${this._auf.geraet.id}`);
-        break;
-      case "navigate":
-        if (this._config.navigation_path) this._navigiere(this._config.navigation_path);
-        break;
-      default:
-        break;
-    }
-  }
-
-  /** So navigiert HA selbst (`src/common/navigate.ts`): pushState, dann
-   *  `location-changed` am `window`. */
-  _navigiere(pfad) {
-    history.pushState(null, "", pfad);
-    window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
-  }
 }
 
 class BuschDeviceCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = config || {};
+    this._config = devMigriereKonfig(config);
     this._render();
   }
 
@@ -4754,33 +5103,64 @@ class BuschDeviceCardEditor extends HTMLElement {
     this._render();
   }
 
+  /** Die Daten, die `ha-form` sieht: Konfiguration plus die zwei Arten. */
+  _daten() {
+    return {
+      ...DEV_STANDARD,
+      ...this._config,
+      tap_kind: devArtVon(this._config.tap_action || DEV_STANDARD.tap_action),
+      hold_kind: devArtVon(this._config.hold_action || DEV_STANDARD.hold_action),
+    };
+  }
+
   _render() {
     if (!this._hass || !this._config) return;
     if (!this._form) {
-      const texte = buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass);
+      this._texte = buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass);
       this._form = document.createElement("ha-form");
-      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_DEVICE_CARD, texte);
-      this._form.computeLabel = (s) => texte.labels[s.name] || s.name;
-      this._form.computeHelper = (s) => texte.helpers[s.name] || "";
+      this._form.computeLabel = (s) => this._texte.labels[s.name] || s.name;
+      this._form.computeHelper = (s) => this._texte.helpers[s.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
-        const neu = { ...this._config, ...event.detail.value };
-        // Vorgaben nicht ins YAML schreiben — so bleibt die Konfiguration
-        // so kurz wie das, was der Nutzer wirklich geändert hat.
-        for (const [k, v] of Object.entries(DEV_STANDARD)) {
-          if (neu[k] === v) delete neu[k];
-          else if (Array.isArray(v) && Array.isArray(neu[k]) && neu[k].length === 0) delete neu[k];
-        }
-        this._emit(neu);
+        this._uebernehmen(event.detail.value);
       });
       this.appendChild(this._form);
     }
     this._form.hass = this._hass;
-    this._form.data = { ...DEV_STANDARD, ...this._config };
+    // Gefiltert wird gegen die ZUSAMMENGEFUEHRTEN Daten, nicht gegen die rohe
+    // Konfiguration: Ohne gesetzten Wert steht dort gar keine Aktion, und die
+    // Vorgabe `expand` haette den HA-Editor faelschlich eingeblendet.
+    const daten = this._daten();
+    this._form.schema = buschSchemaMitTexten(devSchemaFuer(daten), this._texte);
+    this._form.data = daten;
+  }
+
+  /**
+   * Aus den Formulardaten wieder eine Konfiguration machen.
+   *
+   * Die beiden Art-Felder werden entfernt: `ha-form` reicht bei
+   * `value-changed` immer das ganze Datenobjekt zurück, und ungefiltert
+   * stünden sie im Dashboard-YAML.
+   */
+  _uebernehmen(werte) {
+    const neu = { ...this._config, ...werte };
+    for (const geste of ["tap", "hold"]) {
+      const art = werte[geste + "_kind"];
+      const feld = geste + "_action";
+      if (art === "expand" || art === "device-page") neu[feld] = { action: art };
+      else if (devArtVon(neu[feld]) !== "ha") neu[feld] = { action: "more-info" };
+      delete neu[geste + "_kind"];
+    }
+    // Vorgaben wandern nicht in die Konfiguration.
+    for (const [schluessel, vorgabe] of Object.entries(DEV_STANDARD)) {
+      if (JSON.stringify(neu[schluessel]) === JSON.stringify(vorgabe)) delete neu[schluessel];
+    }
+    this._emit(neu);
   }
 
   _emit(config) {
     this._config = config;
+    this._render();
     this.dispatchEvent(
       new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true })
     );

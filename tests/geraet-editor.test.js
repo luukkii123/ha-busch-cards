@@ -15,24 +15,33 @@ const {
   TEXTE_BUSCH_DEVICE_CARD,
   DEV_STANDARD,
   DEV_VORLAGEN,
-  DEV_AKTIONEN,
   devLabelsLaden,
   devLabelFarbe,
+  DEV_ARTEN,
+  DEV_HA_AKTIONEN,
+  DEV_GRUPPEN_WERTE,
+  devSchemaFuer,
 } = ladeKarte([
   "SCHEMA_BUSCH_DEVICE_CARD",
   "TEXTE_BUSCH_DEVICE_CARD",
   "DEV_STANDARD",
   "DEV_VORLAGEN",
-  "DEV_AKTIONEN",
   "devLabelsLaden",
   "devLabelFarbe",
+  "DEV_ARTEN",
+  "DEV_HA_AKTIONEN",
+  "DEV_GRUPPEN_WERTE",
+  "devSchemaFuer",
 ]);
 
 /** Spec Abschnitt 8, woertlich. */
 const OPTIONEN_DER_SPEC = [
-  "entity", "title", "template", "labels", "show_subtitle", "show_config",
-  "show_diagnostic", "start_expanded", "tap_action", "hold_action", "navigation_path",
+  "entity", "title", "template", "labels", "labels_hide", "groups", "groups_open",
+  "show_subtitle", "start_expanded", "tap_action", "hold_action",
+  "row_tap_action", "row_hold_action",
 ];
+/** Zwei Felder leben nur im Editor und landen in keiner Konfiguration. */
+const NUR_EDITOR = ["tap_kind", "hold_kind"];
 
 function schemaBlaetter(schema) {
   const aus = [];
@@ -43,9 +52,9 @@ function schemaBlaetter(schema) {
   return aus;
 }
 
-test("jede Option der Spec steht im Schema, und nichts darueber hinaus", () => {
+test("das Schema enthaelt jede Option der Spec plus die zwei Editorfelder", () => {
   const namen = schemaBlaetter(SCHEMA_BUSCH_DEVICE_CARD).map((b) => b.name).sort().join(",");
-  assert.strictEqual(namen, OPTIONEN_DER_SPEC.slice().sort().join(","));
+  assert.strictEqual(namen, OPTIONEN_DER_SPEC.concat(NUR_EDITOR).sort().join(","));
 });
 
 test("jedes Standardfeld hat ein Schemablatt", () => {
@@ -66,8 +75,45 @@ test("die Auswahlfelder bieten genau die Werte der Spec", () => {
   const blaetter = schemaBlaetter(SCHEMA_BUSCH_DEVICE_CARD);
   const werte = (name) => blaetter.find((b) => b.name === name).selector.select.options.map((o) => o.value);
   assert.strictEqual(werte("template").join(","), ["auto"].concat(Object.keys(DEV_VORLAGEN)).join(","));
-  assert.strictEqual(werte("tap_action").join(","), DEV_AKTIONEN.join(","));
-  assert.strictEqual(werte("hold_action").join(","), DEV_AKTIONEN.join(","));
+  assert.strictEqual(werte("tap_kind").join(","), DEV_ARTEN.join(","));
+  assert.strictEqual(werte("hold_kind").join(","), DEV_ARTEN.join(","));
+  assert.strictEqual(werte("groups").join(","), DEV_GRUPPEN_WERTE.join(","));
+  assert.strictEqual(werte("groups_open").join(","), DEV_GRUPPEN_WERTE.join(","));
+  for (const feld of ["groups", "groups_open"]) {
+    assert.strictEqual(blaetter.find((b) => b.name === feld).selector.select.multiple, true, feld);
+  }
+});
+
+test("die vier Aktionsfelder nutzen HAs eigenen Aktionseditor, ohne assist", () => {
+  const blaetter = schemaBlaetter(SCHEMA_BUSCH_DEVICE_CARD);
+  for (const feld of ["tap_action", "hold_action", "row_tap_action", "row_hold_action"]) {
+    const b = blaetter.find((x) => x.name === feld);
+    assert.ok(b.selector.ui_action, feld + " braucht den ui_action-Selektor");
+    assert.strictEqual(b.selector.ui_action.actions.join(","), DEV_HA_AKTIONEN.join(","), feld);
+    assert.ok(!b.selector.ui_action.actions.includes("assist"), feld + " darf assist nicht anbieten");
+  }
+});
+
+test("labels_hide ist ein Label-Selektor mit Mehrfachauswahl", () => {
+  const b = schemaBlaetter(SCHEMA_BUSCH_DEVICE_CARD).find((x) => x.name === "labels_hide");
+  assert.strictEqual(b.selector.label.multiple, true);
+});
+
+test("devSchemaFuer zeigt HAs Aktionseditor nur bei der Art ha", () => {
+  const namen = (k) => schemaBlaetter(devSchemaFuer(k)).map((b) => b.name);
+  const eigen = namen({ tap_action: { action: "expand" }, hold_action: { action: "device-page" } });
+  assert.ok(!eigen.includes("tap_action"), "bei expand kein HA-Editor");
+  assert.ok(!eigen.includes("hold_action"), "bei device-page kein HA-Editor");
+  assert.ok(eigen.includes("tap_kind") && eigen.includes("hold_kind"));
+  const ha = namen({ tap_action: { action: "perform-action" }, hold_action: { action: "more-info" } });
+  assert.ok(ha.includes("tap_action") && ha.includes("hold_action"));
+});
+
+test("devSchemaFuer laesst die Zeilenfelder stehen und aendert das Original nicht", () => {
+  const vorher = JSON.stringify(SCHEMA_BUSCH_DEVICE_CARD);
+  const namen = schemaBlaetter(devSchemaFuer({ tap_action: { action: "expand" } })).map((b) => b.name);
+  assert.ok(namen.includes("row_tap_action") && namen.includes("row_hold_action"));
+  assert.strictEqual(JSON.stringify(SCHEMA_BUSCH_DEVICE_CARD), vorher, "das Literal bleibt unberuehrt");
 });
 
 for (const sprache of ["de", "en"]) {
@@ -87,12 +133,17 @@ for (const sprache of ["de", "en"]) {
   test(`${sprache}: jeder Auswahlwert hat einen Text, jede Gruppe und jeder Fehler auch`, () => {
     const t = TEXTE_BUSCH_DEVICE_CARD[sprache].texte;
     for (const v of ["auto"].concat(Object.keys(DEV_VORLAGEN))) assert.ok(t[`template_${v}`], `template_${v}`);
-    for (const a of DEV_AKTIONEN) {
-      assert.ok(t[`tap_action_${a}`], `tap_action_${a}`);
-      assert.ok(t[`hold_action_${a}`], `hold_action_${a}`);
+    for (const a of DEV_ARTEN) {
+      assert.ok(t[`tap_kind_${a}`], `tap_kind_${a}`);
+      assert.ok(t[`hold_kind_${a}`], `hold_kind_${a}`);
     }
-    for (const g of ["control", "sensor", "config", "diagnostic"]) assert.ok(t[`gruppe_${g}`], `gruppe_${g}`);
-    for (const f of ["keineEntitaet", "altesHa", "nichtRegistriert", "keinGeraet", "helferFehlt", "laden", "keineTreffer"]) {
+    for (const g of DEV_GRUPPEN_WERTE) {
+      assert.ok(t[`groups_${g}`], `groups_${g}`);
+      assert.ok(t[`groups_open_${g}`], `groups_open_${g}`);
+      assert.ok(t[`gruppe_${g}`], `gruppe_${g}`);
+    }
+    for (const f of ["keineEntitaet", "altesHa", "nichtRegistriert", "keinGeraet",
+                     "helferFehlt", "laden", "keineTreffer", "dienstFehler"]) {
       assert.ok(t[f], f);
     }
   });
@@ -134,27 +185,30 @@ function domAttrappe() {
   return { createElement(tag) { const k = knoten(); k.tag = tag; return k; } };
 }
 
-test("der Editor gibt ha-form Schema, Daten mit Vorgaben, Label und Helper aus dem Woerterbuch", () => {
+test("der Editor gibt ha-form das gefilterte Schema und die Art als Datenfeld", () => {
   const dokument = domAttrappe();
-  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"], { document: dokument, CustomEvent: EreignisStub });
+  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"],
+    { document: dokument, CustomEvent: EreignisStub });
   const ed = new Editor();
   ed.appendChild = function (k) { this._angehaengt = k; };
-  ed.setConfig({ entity: "light.decke", template: "switch" });
+  ed.setConfig({ entity: "light.decke" });
   ed.hass = baueHass();
   const form = ed._form;
   assert.strictEqual(form.tag, "ha-form");
   assert.strictEqual(form.data.entity, "light.decke");
-  assert.strictEqual(form.data.template, "switch");
-  assert.strictEqual(form.data.tap_action, "expand");
-  assert.strictEqual(form.computeLabel({ name: "labels" }), "Nur Entitäten mit Label");
-  assert.ok(/Vorgabe/.test(form.computeHelper({ name: "template" })));
-  const template = form.schema.find((s) => s.name === "template");
-  assert.strictEqual(template.selector.select.options[1].label, "Licht");
+  assert.strictEqual(form.data.tap_kind, "expand", "aus der Vorgabe abgeleitet");
+  assert.strictEqual(form.data.hold_kind, "ha");
+  const namen = form.schema.flatMap((e) => (e.schema ? e.schema.map((x) => x.name) : [e.name]));
+  assert.ok(!namen.includes("tap_action"), "bei expand kein HA-Editor");
+  assert.ok(namen.includes("hold_action"), "bei ha schon");
+  assert.strictEqual(form.computeLabel({ name: "labels_hide" }), "Entitäten mit Label verbergen");
+  assert.ok(/Vorgabe/.test(form.computeHelper({ name: "groups" })));
 });
 
-test("value-changed: Vorgaben fallen aus der Konfiguration, gesetzte Werte bleiben", () => {
+test("die Art zu wechseln schreibt die Aktion um und setzt das Schema neu", () => {
   const dokument = domAttrappe();
-  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"], { document: dokument, CustomEvent: EreignisStub });
+  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"],
+    { document: dokument, CustomEvent: EreignisStub });
   const ed = new Editor();
   ed.appendChild = function () {};
   let gemeldet = null;
@@ -163,14 +217,41 @@ test("value-changed: Vorgaben fallen aus der Konfiguration, gesetzte Werte bleib
   ed.hass = baueHass();
   ed._form.on_value_changed({
     stopPropagation() {},
-    detail: { value: { entity: "light.decke", template: "auto", tap_action: "toggle", labels: [] } },
+    detail: { value: { ...ed._form.data, tap_kind: "ha" } },
   });
-  assert.strictEqual(gemeldet.type, "custom:busch-device-card");
-  assert.strictEqual(gemeldet.entity, "light.decke");
-  assert.strictEqual(gemeldet.tap_action, "toggle");
-  assert.strictEqual(gemeldet.template, undefined, "Vorgabe wandert nicht in die Konfiguration");
-  assert.strictEqual(gemeldet.labels, undefined, "leere Liste ist die Vorgabe");
+  assert.strictEqual(gemeldet.tap_action.action, "more-info", "die Art ha startet bei more-info");
+  assert.strictEqual(gemeldet.tap_kind, undefined, "die Art landet nie in der Konfiguration");
+  assert.strictEqual(gemeldet.hold_kind, undefined);
+  const namen = ed._form.schema.flatMap((e) => (e.schema ? e.schema.map((x) => x.name) : [e.name]));
+  assert.ok(namen.includes("tap_action"), "das Schema ist neu gesetzt");
 });
+
+test("eine gesetzte HA-Aktion bleibt erhalten, Vorgaben fallen heraus", () => {
+  const dokument = domAttrappe();
+  const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"],
+    { document: dokument, CustomEvent: EreignisStub });
+  const ed = new Editor();
+  ed.appendChild = function () {};
+  let gemeldet = null;
+  ed.dispatchEvent = (ev) => { gemeldet = ev.detail.config; };
+  ed.setConfig({ type: "custom:busch-device-card", entity: "light.decke" });
+  ed.hass = baueHass();
+  ed._form.on_value_changed({
+    stopPropagation() {},
+    detail: {
+      value: {
+        ...ed._form.data, tap_kind: "ha",
+        tap_action: { action: "perform-action", perform_action: "label.add" },
+        labels_hide: [], groups: ["control", "sensor", "config", "diagnostic"],
+      },
+    },
+  });
+  assert.strictEqual(gemeldet.tap_action.perform_action, "label.add");
+  assert.strictEqual(gemeldet.labels_hide, undefined, "leere Vorgabe faellt heraus");
+  assert.strictEqual(gemeldet.groups, undefined, "die Vorgabe aller vier Gruppen faellt heraus");
+  assert.strictEqual(gemeldet.hold_action, undefined, "unveraenderte Vorgabe faellt heraus");
+});
+
 
 test("beide Sprachen kennen dieselben Domainwoerter, keines leer", () => {
   const de = Object.keys(TEXTE_BUSCH_DEVICE_CARD.de.texte).filter((k) => k.startsWith("domain_"));

@@ -32,6 +32,18 @@ const {
   devDomainName,
   TEXTE_BUSCH_DEVICE_CARD,
   BuschDeviceCard,
+  DEV_GRUPPEN_WERTE,
+  DEV_HA_AKTIONEN,
+  DEV_ARTEN,
+  devAktionNormalisieren,
+  devMigriereKonfig,
+  devArtVon,
+  devGruppenSichtbar,
+  devGruppeOffen,
+  devKontext,
+  devPlatzhalterErsetzen,
+  devZielFuellen,
+  devFuehreAus,
 } = ladeKarte([
   "DEV_STANDARD",
   "DEV_VORLAGEN",
@@ -51,7 +63,24 @@ const {
   "devDomainName",
   "TEXTE_BUSCH_DEVICE_CARD",
   "BuschDeviceCard",
-]);
+  "DEV_GRUPPEN_WERTE",
+  "DEV_HA_AKTIONEN",
+  "DEV_ARTEN",
+  "devAktionNormalisieren",
+  "devMigriereKonfig",
+  "devArtVon",
+  "devGruppenSichtbar",
+  "devGruppeOffen",
+  "devKontext",
+  "devPlatzhalterErsetzen",
+  "devZielFuellen",
+  "devFuehreAus",
+], {
+  // `devFuehreAus` feuert `hass-more-info` als CustomEvent. Die Sandbox aus
+  // `laden.js` bringt keins mit — hier eine Attrappe, die Name und Nutzlast
+  // festhaelt, damit der Test sie lesen kann.
+  CustomEvent: class { constructor(name, init) { this.type = name; this.detail = init && init.detail; } },
+});
 
 /* ── Konfiguration ─────────────────────────────────────────────────────── */
 
@@ -62,22 +91,23 @@ test("die Vorgaben stimmen mit Spec Abschnitt 8 ueberein", () => {
   assert.strictEqual(k.template, "auto");
   assert.strictEqual(k.labels.length, 0);
   assert.strictEqual(k.show_subtitle, true);
-  assert.strictEqual(k.show_config, true);
-  assert.strictEqual(k.show_diagnostic, true);
+  assert.strictEqual(JSON.stringify(k.groups), '["control","sensor","config","diagnostic"]');
+  assert.strictEqual(JSON.stringify(k.groups_open), '["control"]');
   assert.strictEqual(k.start_expanded, false);
-  assert.strictEqual(k.tap_action, "expand");
-  assert.strictEqual(k.hold_action, "more-info");
-  assert.strictEqual(k.navigation_path, "");
+  assert.strictEqual(k.tap_action.action, "expand");
+  assert.strictEqual(k.hold_action.action, "more-info");
+  assert.strictEqual(k.row_tap_action.action, "more-info");
+  assert.strictEqual(k.row_hold_action.action, "none");
 });
 
 test("gesetzte Werte bleiben, labels wird immer eine Liste", () => {
   const k = devNormalisiereKonfig({
     entity: "light.decke", template: "switch", labels: "l_energie",
-    tap_action: "toggle", start_expanded: true,
+    tap_action: { action: "toggle" }, start_expanded: true,
   });
   assert.strictEqual(k.template, "switch");
   assert.strictEqual(JSON.stringify(k.labels), '["l_energie"]');
-  assert.strictEqual(k.tap_action, "toggle");
+  assert.strictEqual(k.tap_action.action, "toggle");
   assert.strictEqual(k.start_expanded, true);
 });
 
@@ -87,10 +117,13 @@ test("ohne Konfiguration: leere Entitaet, kein Absturz", () => {
   assert.strictEqual(Array.isArray(k.labels), true);
 });
 
-test("ein unbekannter Aktionswert faellt auf die Vorgabe zurueck", () => {
-  const k = devNormalisiereKonfig({ entity: "x.y", tap_action: "fliegen", hold_action: 7 });
-  assert.strictEqual(k.tap_action, DEV_STANDARD.tap_action);
-  assert.strictEqual(k.hold_action, DEV_STANDARD.hold_action);
+test("eine unbekannte Aktion bleibt stehen und tut spaeter nichts", () => {
+  // Seit 0.11.0 setzt die Normalisierung eine unbekannte Aktion NICHT mehr
+  // zurueck. `devFuehreAus` ignoriert sie schlicht (Spec 0.11.0, 3.3).
+  const k = devNormalisiereKonfig({ entity: "x.y", tap_action: { action: "fliegen" }, hold_action: 7 });
+  assert.strictEqual(k.tap_action.action, "fliegen");
+  assert.strictEqual(k.hold_action.action, DEV_STANDARD.hold_action.action,
+    "ein Wert, der gar keine Aktion ist, faellt auf die Vorgabe");
 });
 
 /* ── Vorlagen ──────────────────────────────────────────────────────────── */
@@ -226,10 +259,10 @@ test("vier Gruppen in fester Reihenfolge, leere fehlen, innen nach Name sortiert
   assert.strictEqual(gruppen[2].ids.join(","), "sensor.decke_rssi");
 });
 
-test("show_config / show_diagnostic blenden ihre Gruppe ganz aus", () => {
+test("groups steuert, welche Gruppen ueberhaupt erscheinen", () => {
   const h = baueHass();
   const alle = devEntitaetenDesGeraets(h, "d1", "light.decke");
-  const k = devNormalisiereKonfig({ entity: "light.decke", show_config: false, show_diagnostic: false });
+  const k = devNormalisiereKonfig({ entity: "light.decke", groups: ["sensor"] });
   assert.strictEqual(devGruppieren(h, alle, k).map((g) => g.gruppe).join(","), "sensor");
 });
 
@@ -302,4 +335,296 @@ test("die Firmware-Zeile des Geraets heisst nicht mehr wie das Geraet", () => {
   const voll = devAnzeigename(h, eintrag);
   assert.strictEqual(voll, "Wohnzimmer Deckenlampe", "die Attrappe bildet den echten Fall ab");
   assert.strictEqual(devKurzname(voll, "Wohnzimmer Deckenlampe", devDomainName(t, eintrag.entity_id)), "Firmware");
+});
+
+/* ── Aktionsform und Migration (Spec 0.11.0, Abschnitt 3) ──────────────── */
+
+test("eine Zeichenkette wird zur Objektform, ein Objekt bleibt", () => {
+  assert.strictEqual(devAktionNormalisieren("expand").action, "expand");
+  assert.strictEqual(devAktionNormalisieren({ action: "toggle" }).action, "toggle");
+  assert.strictEqual(devAktionNormalisieren(undefined), undefined);
+  assert.strictEqual(devAktionNormalisieren(null), undefined);
+  assert.strictEqual(devAktionNormalisieren({}), undefined, "ohne action ist es keine Aktion");
+});
+
+test("die alte call-service-Form wird zu perform-action", () => {
+  const a = devAktionNormalisieren({ action: "call-service", service: "light.turn_on", service_data: { x: 1 } });
+  assert.strictEqual(a.action, "perform-action");
+  assert.strictEqual(a.perform_action, "light.turn_on");
+  assert.strictEqual(a.service, undefined);
+  assert.strictEqual(JSON.stringify(a.data), '{"x":1}');
+  assert.strictEqual(a.service_data, undefined);
+});
+
+test("ein altes navigation_path wandert in die Navigationsaktion", () => {
+  const a = devAktionNormalisieren("navigate", "/lovelace/geraete");
+  assert.strictEqual(a.navigation_path, "/lovelace/geraete");
+  const b = devAktionNormalisieren({ action: "navigate", navigation_path: "/a" }, "/b");
+  assert.strictEqual(b.navigation_path, "/a");
+});
+
+test("devArtVon trennt eigene Arten von HAs Arten", () => {
+  assert.strictEqual(devArtVon({ action: "expand" }), "expand");
+  assert.strictEqual(devArtVon({ action: "device-page" }), "device-page");
+  assert.strictEqual(devArtVon({ action: "perform-action" }), "ha");
+  assert.strictEqual(devArtVon({ action: "more-info" }), "ha");
+  assert.strictEqual(devArtVon(undefined), "ha");
+  assert.strictEqual(JSON.stringify(DEV_ARTEN), '["expand","device-page","ha"]');
+});
+
+test("die Migration bildet jede Zeile der Spec-Tabelle ab", () => {
+  const alt = {
+    entity: "light.decke",
+    tap_action: "expand",
+    hold_action: "more-info",
+    navigation_path: "/lovelace/x",
+    show_config: false,
+    show_diagnostic: true,
+  };
+  const neu = devMigriereKonfig(alt);
+  assert.strictEqual(neu.tap_action.action, "expand");
+  assert.strictEqual(neu.hold_action.action, "more-info");
+  assert.strictEqual(neu.navigation_path, undefined, "der alte Schluessel verschwindet");
+  assert.strictEqual(neu.show_config, undefined);
+  assert.strictEqual(neu.show_diagnostic, undefined);
+  assert.strictEqual(JSON.stringify(neu.groups), '["control","sensor","diagnostic"]');
+});
+
+test("show_diagnostic false nimmt nur die Diagnose heraus", () => {
+  const neu = devMigriereKonfig({ entity: "x.y", show_diagnostic: false });
+  assert.strictEqual(JSON.stringify(neu.groups), '["control","sensor","config"]');
+});
+
+test("die Migration ist idempotent", () => {
+  const alt = { entity: "light.decke", tap_action: "navigate", navigation_path: "/x", show_config: false };
+  const einmal = devMigriereKonfig(alt);
+  const zweimal = devMigriereKonfig(einmal);
+  assert.strictEqual(JSON.stringify(zweimal), JSON.stringify(einmal));
+  assert.strictEqual(zweimal.tap_action.navigation_path, "/x");
+});
+
+test("eine Konfiguration ohne Altlasten bleibt unveraendert", () => {
+  const neu = { entity: "light.decke", groups: ["control"], tap_action: { action: "expand" } };
+  assert.strictEqual(JSON.stringify(devMigriereKonfig(neu)), JSON.stringify(neu));
+});
+
+test("die neuen Vorgaben stehen in DEV_STANDARD", () => {
+  assert.strictEqual(JSON.stringify(DEV_STANDARD.groups), '["control","sensor","config","diagnostic"]');
+  assert.strictEqual(JSON.stringify(DEV_STANDARD.groups_open), '["control"]');
+  assert.strictEqual(JSON.stringify(DEV_STANDARD.labels_hide), "[]");
+  assert.strictEqual(DEV_STANDARD.tap_action.action, "expand");
+  assert.strictEqual(DEV_STANDARD.hold_action.action, "more-info");
+  assert.strictEqual(DEV_STANDARD.row_tap_action.action, "more-info");
+  assert.strictEqual(DEV_STANDARD.row_hold_action.action, "none");
+  assert.strictEqual(DEV_STANDARD.show_config, undefined, "abgeloest durch groups");
+  assert.strictEqual(DEV_STANDARD.navigation_path, undefined, "steckt jetzt in der Aktion");
+  assert.strictEqual(JSON.stringify(DEV_HA_AKTIONEN),
+    '["more-info","toggle","navigate","url","perform-action","none"]');
+  assert.strictEqual(JSON.stringify(DEV_GRUPPEN_WERTE),
+    '["control","sensor","config","diagnostic"]');
+});
+
+/* ── Negativfilter und Gruppen (Spec 0.11.0, Abschnitte 7 und 8) ───────── */
+
+test("labels_hide entfernt Eintraege, Ausschluss schlaegt Einschluss", () => {
+  const alle = devEntitaetenDesGeraets(baueHass(), "d1", "light.decke");
+  // sensor.decke_energie traegt beide Labels, sensor.decke_leistung nur l_energie.
+  const nurEnergie = devLabelFilter(alle, [], ["l_wichtig"]).map((e) => e.entity_id);
+  assert.ok(!nurEnergie.includes("sensor.decke_energie"), "der Eintrag mit l_wichtig faellt weg");
+  assert.ok(nurEnergie.includes("sensor.decke_leistung"));
+  const beides = devLabelFilter(alle, ["l_energie"], ["l_wichtig"]).map((e) => e.entity_id).sort();
+  assert.strictEqual(beides.join(","), "sensor.decke_leistung",
+    "erst einschliessen, dann ausschliessen — der Eintrag mit beiden verschwindet");
+});
+
+test("beide Listen leer laesst alles stehen", () => {
+  const alle = devEntitaetenDesGeraets(baueHass(), "d1", "light.decke");
+  assert.strictEqual(devLabelFilter(alle, [], []).length, alle.length);
+  assert.strictEqual(devLabelFilter(alle, undefined, undefined).length, alle.length);
+});
+
+test("devGruppenSichtbar haelt die feste Reihenfolge ein", () => {
+  assert.strictEqual(JSON.stringify(devGruppenSichtbar({ groups: ["diagnostic", "control"] })),
+    '["control","diagnostic"]');
+  assert.strictEqual(JSON.stringify(devGruppenSichtbar({ groups: [] })), "[]");
+  assert.strictEqual(JSON.stringify(devGruppenSichtbar({})),
+    '["control","sensor","config","diagnostic"]', "ohne Angabe alle vier");
+});
+
+test("devGruppeOffen liest groups_open", () => {
+  assert.strictEqual(devGruppeOffen({ groups_open: ["control", "sensor"] }, "sensor"), true);
+  assert.strictEqual(devGruppeOffen({ groups_open: ["control"] }, "sensor"), false);
+  assert.strictEqual(devGruppeOffen({}, "control"), false);
+});
+
+test("groups leer ergibt gar keine Gruppe", () => {
+  const h = baueHass();
+  const alle = devEntitaetenDesGeraets(h, "d1", "light.decke");
+  const leer = devNormalisiereKonfig({ entity: "light.decke", groups: [] });
+  assert.strictEqual(devGruppieren(h, alle, leer).length, 0);
+});
+
+test("ein groups_open-Wert ausserhalb von groups stoert nicht", () => {
+  const k = devNormalisiereKonfig({ entity: "light.decke", groups: ["sensor"], groups_open: ["config"] });
+  assert.strictEqual(JSON.stringify(k.groups), '["sensor"]');
+  assert.strictEqual(devGruppeOffen(k, "config"), true, "der Wert bleibt stehen");
+  const h = baueHass();
+  const gruppen = devGruppieren(h, devEntitaetenDesGeraets(h, "d1", "light.decke"), k);
+  assert.strictEqual(gruppen.map((g) => g.gruppe).join(","), "sensor",
+    "gezeichnet wird nur, was in groups steht");
+});
+
+/* ── Kontext und Platzhalter (Spec 0.11.0, Abschnitt 4) ────────────────── */
+
+const KONTEXT = { entity: "sensor.a", device: "d1", area: "wohnzimmer" };
+
+test("devKontext liest Entitaet, Geraet und Bereich", () => {
+  const k = devKontext("sensor.a", { id: "d1" }, { area_id: "wohnzimmer" });
+  assert.strictEqual(k.entity, "sensor.a");
+  assert.strictEqual(k.device, "d1");
+  assert.strictEqual(k.area, "wohnzimmer");
+  const ohne = devKontext("", null, null);
+  assert.strictEqual(ohne.entity, "");
+  assert.strictEqual(ohne.device, "");
+  assert.strictEqual(ohne.area, "");
+});
+
+test("die drei Platzhalter werden ersetzt, mit und ohne Leerzeichen", () => {
+  assert.strictEqual(devPlatzhalterErsetzen("{{ entity }}", KONTEXT), "sensor.a");
+  assert.strictEqual(devPlatzhalterErsetzen("{{entity}}", KONTEXT), "sensor.a");
+  assert.strictEqual(devPlatzhalterErsetzen("{{ device }}", KONTEXT), "d1");
+  assert.strictEqual(devPlatzhalterErsetzen("{{ area }}", KONTEXT), "wohnzimmer");
+  assert.strictEqual(devPlatzhalterErsetzen("vor {{ entity }} nach", KONTEXT), "vor sensor.a nach");
+});
+
+test("Platzhalter greifen in der Tiefe, durch Objekte und Listen", () => {
+  const ein = { a: { b: ["{{ entity }}", { c: "{{ device }}" }] }, d: 7, e: true, f: null };
+  const aus = devPlatzhalterErsetzen(ein, KONTEXT);
+  assert.strictEqual(JSON.stringify(aus), '{"a":{"b":["sensor.a",{"c":"d1"}]},"d":7,"e":true,"f":null}');
+  assert.strictEqual(ein.a.b[0], "{{ entity }}", "die Vorlage bleibt unberuehrt");
+});
+
+test("ein unbekannter Ausdruck bleibt woertlich stehen", () => {
+  assert.strictEqual(devPlatzhalterErsetzen("{{ state }}", KONTEXT), "{{ state }}");
+  assert.strictEqual(devPlatzhalterErsetzen("{{ entity | upper }}", KONTEXT), "{{ entity | upper }}");
+});
+
+test("ein leerer Bereich ergibt eine leere Zeichenkette, keinen Platzhalter", () => {
+  assert.strictEqual(devPlatzhalterErsetzen("x{{ area }}y", { entity: "a", device: "b", area: "" }), "xy");
+});
+
+test("ein leeres Ziel fuellt sich mit der Entitaet des Kontexts", () => {
+  const a = devZielFuellen({ action: "perform-action", perform_action: "x.y" }, KONTEXT);
+  assert.strictEqual(JSON.stringify(a.target), '{"entity_id":"sensor.a"}');
+  const b = devZielFuellen({ action: "perform-action", perform_action: "x.y", target: {} }, KONTEXT);
+  assert.strictEqual(JSON.stringify(b.target), '{"entity_id":"sensor.a"}');
+});
+
+test("ein gesetztes Ziel bleibt unangetastet, auch eine fremde Entitaet", () => {
+  const a = devZielFuellen(
+    { action: "perform-action", perform_action: "x.y", target: { entity_id: "light.fremd" } }, KONTEXT);
+  assert.strictEqual(JSON.stringify(a.target), '{"entity_id":"light.fremd"}');
+  const b = devZielFuellen({ action: "toggle" }, KONTEXT);
+  assert.strictEqual(b.target, undefined, "nur perform-action bekommt ein Ziel");
+});
+
+/* ── Ausfuehrung (Spec 0.11.0, Abschnitt 3.3) ──────────────────────────── */
+
+/** Eine Karten-Attrappe, die nur mitschreibt. */
+function karteAttrappe() {
+  return {
+    umschaltungen: 0, ereignisse: [], fehler: [],
+    _umschalten() { this.umschaltungen += 1; },
+    _zeigeDienstFehler(f) { this.fehler.push(String(f)); },
+    dispatchEvent(ev) { this.ereignisse.push(ev); },
+  };
+}
+
+/** Eine hass-Attrappe, die Dienstaufrufe mitschreibt. */
+function hassAttrappe(werfen) {
+  return {
+    aufrufe: [],
+    callService(domain, dienst, daten, ziel) {
+      this.aufrufe.push({ domain, dienst, daten, ziel });
+      return werfen ? Promise.reject(new Error("Dienst kaputt")) : Promise.resolve();
+    },
+  };
+}
+
+test("perform-action ruft den Dienst mit ersetztem Ziel und ersetzten Daten", async () => {
+  const karte = karteAttrappe();
+  const hass = hassAttrappe(false);
+  devFuehreAus(karte, hass, {
+    action: "perform-action", perform_action: "label.add",
+    target: { entity_id: "{{ entity }}" }, data: { label_id: "geprueft", geraet: "{{ device }}" },
+  }, KONTEXT);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(hass.aufrufe.length, 1);
+  assert.strictEqual(hass.aufrufe[0].domain, "label");
+  assert.strictEqual(hass.aufrufe[0].dienst, "add");
+  assert.strictEqual(JSON.stringify(hass.aufrufe[0].ziel), '{"entity_id":"sensor.a"}');
+  assert.strictEqual(JSON.stringify(hass.aufrufe[0].daten), '{"label_id":"geprueft","geraet":"d1"}');
+});
+
+test("perform-action ohne Ziel nimmt die Entitaet des Kontexts", async () => {
+  const hass = hassAttrappe(false);
+  devFuehreAus(karteAttrappe(), hass, { action: "perform-action", perform_action: "homeassistant.turn_on" }, KONTEXT);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(JSON.stringify(hass.aufrufe[0].ziel), '{"entity_id":"sensor.a"}');
+});
+
+test("ein Dienst ohne Punkt ruft nichts auf", async () => {
+  const hass = hassAttrappe(false);
+  for (const wert of [undefined, "", "licht", ".turn_on", "light."]) {
+    devFuehreAus(karteAttrappe(), hass, { action: "perform-action", perform_action: wert }, KONTEXT);
+  }
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(hass.aufrufe.length, 0);
+});
+
+test("ein fehlgeschlagener Dienstaufruf landet bei der Karte, nicht im Nichts", async () => {
+  const karte = karteAttrappe();
+  devFuehreAus(karte, hassAttrappe(true), { action: "perform-action", perform_action: "x.y" }, KONTEXT);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(karte.fehler.length, 1);
+  assert.ok(/Dienst kaputt/.test(karte.fehler[0]));
+});
+
+test("toggle, more-info, expand und none tun genau eines", async () => {
+  const karte = karteAttrappe();
+  const hass = hassAttrappe(false);
+  devFuehreAus(karte, hass, { action: "toggle" }, KONTEXT);
+  assert.strictEqual(hass.aufrufe[0].domain, "homeassistant");
+  assert.strictEqual(hass.aufrufe[0].dienst, "toggle");
+  assert.strictEqual(JSON.stringify(hass.aufrufe[0].daten), '{"entity_id":"sensor.a"}');
+  devFuehreAus(karte, hass, { action: "more-info" }, KONTEXT);
+  assert.strictEqual(karte.ereignisse.length, 1);
+  assert.strictEqual(karte.ereignisse[0].detail.entityId, "sensor.a");
+  devFuehreAus(karte, hass, { action: "expand" }, KONTEXT);
+  assert.strictEqual(karte.umschaltungen, 1);
+  devFuehreAus(karte, hass, { action: "none" }, KONTEXT);
+  devFuehreAus(karte, hass, { action: "gibtsnicht" }, KONTEXT);
+  devFuehreAus(karte, hass, undefined, KONTEXT);
+  assert.strictEqual(hass.aufrufe.length, 1, "keine weiteren Dienstaufrufe");
+  assert.strictEqual(karte.ereignisse.length, 1);
+  assert.strictEqual(karte.umschaltungen, 1);
+});
+
+test("navigate und url ohne Pfad tun nichts", () => {
+  const karte = karteAttrappe();
+  const hass = hassAttrappe(false);
+  devFuehreAus(karte, hass, { action: "navigate" }, KONTEXT);
+  devFuehreAus(karte, hass, { action: "url" }, KONTEXT);
+  assert.strictEqual(hass.aufrufe.length, 0);
+});
+
+test("getStubConfig startet aufgeklappt, damit die Vorschau etwas zeigt", () => {
+  const stub = BuschDeviceCard.getStubConfig(baueHass(), ["light.decke"]);
+  assert.strictEqual(stub.start_expanded, true);
+  assert.strictEqual(stub.entity, "light.decke");
+});
+
+test("die Vorgabe von start_expanded bleibt aus", () => {
+  assert.strictEqual(DEV_STANDARD.start_expanded, false);
+  assert.strictEqual(devNormalisiereKonfig({ entity: "light.decke" }).start_expanded, false);
 });
