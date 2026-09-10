@@ -628,3 +628,16 @@ test("die Vorgabe von start_expanded bleibt aus", () => {
   assert.strictEqual(DEV_STANDARD.start_expanded, false);
   assert.strictEqual(devNormalisiereKonfig({ entity: "light.decke" }).start_expanded, false);
 });
+
+test("auch ein reiner Ausschluss kann die Liste leeren", () => {
+  // Befund vom 10.09.2026 an echten Daten: Label `ignore` auf allen
+  // Entitaeten eines Zigbee-Schalters filtert alles weg.
+  const h = baueHass();
+  const alle = devEntitaetenDesGeraets(h, "d1", "light.decke");
+  const k = devNormalisiereKonfig({ entity: "light.decke", labels_hide: ["l_energie", "l_wichtig"] });
+  const uebrig = devLabelFilter(alle, k.labels, k.labels_hide).map((e) => e.entity_id).sort();
+  assert.ok(!uebrig.includes("sensor.decke_energie"));
+  assert.ok(!uebrig.includes("sensor.decke_leistung"));
+  assert.strictEqual(k.labels.length, 0, "ohne Einschlussliste");
+  assert.ok(k.labels_hide.length > 0, "nur die Ausschlussliste ist gesetzt");
+});
