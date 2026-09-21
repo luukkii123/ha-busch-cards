@@ -4,11 +4,10 @@
 [![Release](https://img.shields.io/github/v/release/luukkii123/ha-busch-cards)](https://github.com/luukkii123/ha-busch-cards/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-**Sieben Lovelace-Karten im Entwicklungsstand:** Zeitplan, Landkarte,
+**Sieben Lovelace-Karten:** Zeitplan, Landkarte,
 Kalender, Geräteübersicht, dynamische Entity-Auswahl und zwei Unraid-Karten.
-Die neuen Smart-/Unraid-Karten sind unten als noch nicht veröffentlichter
-Plattform-Entwicklungsstand dokumentiert. Unraid-Steuerung benötigt die
-zugehörige `unraid_ssh`-Integration.
+Smart-/Unraid-Karten und der gemeinsame Core sind ab Version 0.12.0 enthalten.
+Unraid-Steuerung benötigt die zugehörige `unraid_ssh`-Integration.
 
 | Karte | Wofür |
 | --- | --- |
@@ -459,6 +458,14 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**21.09.2026 – 0.12.0:** 413 Node-Tests einschließlich Originalvergleich gegen
+auto-entities 1.16.1, Syntax/Namespace und statische UI-Prüfung grün.
+Browsermatrizen: Smart 6, Unraid 24, bestehende Gerätekarte 54 Fälle bei
+320/480/960 px in hell/dunkel ohne Befunde. Native HA-Editoren und Jinja-
+Subscription zusätzlich im angemeldeten HA-Frontend geprüft. Serviceaktionen
+in den Tests sind Attrappen, keine produktiven Containerneustarts.
+
+
 **Stand 10.09.2026, `CARD_VERSION` `0.11.0`** — alle **vier** Karten gegen die
 [UI-Regeln](../docs/ui-regeln.md) (verbindlich seit 09.09.2026). Veröffentlicht
 als `v0.9.0` (UI-Regeln), `v0.9.1` (Landkarten-Fehler, siehe unten) und
@@ -688,9 +695,9 @@ nicht im Messlauf, sondern erst an einem echten Gerät.
 Kurzform (`tap_action: expand`), ein `navigation_path` neben der Aktion und
 die Schalter `show_config` / `show_diagnostic` beim Laden auf die neue Form um.
 
-# Smart Entities und Unraid (Plattform-Entwicklungsstand)
+# Smart Entities und Unraid (ab 0.12.0)
 
-Diese Erweiterungen sind im Entwicklungszweig implementiert. Sie verwenden
+Diese Erweiterungen verwenden
 zusammen mit der Gerätekarte einen Core innerhalb dieses Repositories.
 Andere HACS-Kartenpakete bleiben unabhängig. Keine Dashboardmigration erfolgt
 beim Laden der Ressource.
