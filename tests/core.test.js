@@ -51,7 +51,7 @@ test('two resource evaluations share the core without duplicate element registra
  const vm=require('node:vm');const {quelle}=require('./laden');const registered=new Map();const ctx={console:{info(){},warn(){}},HTMLElement:class{},window:{customCards:[]},customElements:{get:n=>registered.get(n),define:(n,c)=>{if(registered.has(n))throw Error('duplicate '+n);registered.set(n,c);}}};vm.createContext(ctx);
  vm.runInContext('(function(){'+quelle()+';globalThis.first=ensureBuschCore(1);})()',ctx);
  vm.runInContext('(function(){'+quelle()+';globalThis.second=ensureBuschCore(1);})()',ctx);
- assert.equal(ctx.first,ctx.second);assert.equal(ctx.window.customCards.length,4);
+ assert.equal(ctx.first,ctx.second);assert.equal(new Set(ctx.window.customCards.map(c=>c.type)).size,ctx.window.customCards.length);
 });
 test('registry events during a request queue a fresh snapshot',async()=>{
  const c=fresh(),h=baueHass();c.attach(h);await c.ready;const pending=[];let calls=0;
@@ -81,3 +81,4 @@ test('reconnect replaces an in-flight state snapshot and rejects its late answer
  pending[1]([{entity_id:'light.decke',state:'new',attributes:{}}]);await current;
  pending[0]([{entity_id:'light.decke',state:'old',attributes:{}}]);await old;assert.equal(c.getEntity('light.decke').state,'new');c.dispose();
 });
+test('device watchers batch relevant stream updates and ignore unrelated devices',async()=>{const c=fresh(),h=baueHass();c.seed(h);let calls=0;const off=c.watchDevice('d1',()=>calls++);c.updateState('sensor.anderes',{...h.states['sensor.anderes'],state:'9'});await Promise.resolve();assert.equal(calls,0);c.updateState('light.decke',{...h.states['light.decke'],state:'off'});c.updateState('sensor.decke_leistung',{...h.states['sensor.decke_leistung'],state:'8'});await Promise.resolve();assert.equal(calls,1);off();c.updateState('light.decke',h.states['light.decke']);await Promise.resolve();assert.equal(calls,1);c.dispose();});

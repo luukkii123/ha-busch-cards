@@ -49,7 +49,7 @@ class BuschRegistryCache {
 }
 class BuschEntityIndex {
   constructor() {
-    this.entities = new Map(); this.devices = new Map(); this.areas = new Map(); this.floors = new Map(); this.labels = new Map(); this.registry = new Map(); this.states = new Map();
+    this.entities = new Map(); this.devices = new Map(); this.areas = new Map(); this.floors = new Map(); this.labels = new Map(); this.registry = new Map(); this.states = new Map(); this.order = new Map(); this.nextOrder = 0;
     this.indices = Object.fromEntries(["domain", "state", "integration", "config_entry", "device", "area", "floor", "label", "manufacturer", "model", "entity_category"].map(key => [key, new Map()]));
     this.deviceIndices = { via_device_id: new Map(), config_entry_id: new Map() };
   }
@@ -57,7 +57,7 @@ class BuschEntityIndex {
     return { domain: [info.domain], state: [info.state], integration: [info.platform], config_entry: [info.config_entry_id], device: [info.device_id], area: [info.area_id], floor: [info.floor_id], label: info.labels, manufacturer: [info.manufacturer], model: [info.model], entity_category: [info.entity_category] };
   }
   update(id, state) {
-    if (state) this.states.set(id, state); else this.states.delete(id);
+    if (state) { if (!this.order.has(id)) this.order.set(id, this.nextOrder++); this.states.set(id, state); } else { this.states.delete(id); this.order.delete(id); }
     const old = this.entities.get(id);
     if (old) for (const [field, keys] of Object.entries(this.keys(old))) for (const key of keys) buschCoreSet(this.indices[field], key, id, false);
     const entry = this.registry.get(id);
@@ -73,6 +73,7 @@ class BuschEntityIndex {
     return { id, old, next };
   }
   rebuild() {
+    this.order = new Map([...this.states.keys()].map((id, i) => [id, i])); this.nextOrder = this.order.size;
     this.entities.clear(); for (const map of Object.values(this.indices)) map.clear();
     for (const map of Object.values(this.deviceIndices)) map.clear();
     for (const device of this.devices.values()) {
@@ -124,7 +125,7 @@ function buschCompileRule(rule) {
       const field = BUSCH_QUERY_FIELDS[key];
       const fn = info => key === 'label' ? info.labels.some(label => buschCoreMatch(label, value)) : buschCoreMatch(info[field], value) || (key === 'integration' && buschCoreMatch(info.config_entry_id, value));
       tests.push(fn); if (key !== 'state') guards.push(fn);
-      if (typeof value === 'string' && !/[*/<>=!]/.test(value)) lookups.push([key, value]);
+      if (typeof value === 'string' && !value.startsWith('$$') && !/[*/<>=!]/.test(value)) lookups.push([key, value]);
     } else throw new Error('Unsupported query rule: ' + key);
   }
   return { test: (info, now) => !!info?.stateObject && tests.length > 0 && tests.every(fn => fn(info, now)), guard: info => !!info && guards.every(fn => fn(info)), lookups, timeRules };
@@ -155,6 +156,7 @@ class BuschQueryEngine {
   }
   matches(query, info, now) { return query.include.some(rule => rule.test(info, now)) && !query.exclude.some(rule => rule.test(info, now)); }
   calculate(query, ids) {
+    if (query.smart) return query.smart.calculate(query, ids);
     const start = performance.now(), now = Date.now(); query.metrics.calculations++; this.core.metrics.queriesRecalculated++;
     if (!ids) { query.members.clear(); query.deadlines.clear(); ids = new Set(query.include.flatMap(rule => [...this.candidates(rule)])); }
     query.metrics.candidates = ids.size ?? ids.length;
@@ -182,6 +184,7 @@ class BuschQueryEngine {
   }
   changed({ id, old, next }) {
     for (const query of this.cache.values()) {
+      if (query.smart) { query.smart.changed(query, {id,old,next}); continue; }
       if (query.include.some(rule => rule.guard(old) || rule.guard(next))) this.calculate(query, [id]); else this.core.metrics.queriesSkipped++;
     }
     this.schedule();
@@ -193,9 +196,10 @@ class BuschQueryEngine {
     query = this.cache.get(query.key);
     query.subscribers.add(fn);
     try { fn(query.result); } catch (error) { console.warn('Busch Core subscriber failed', error?.name); }
+    query.smart?.startTemplate(query);
     this.schedule();
     let active = true;
-    return () => { if (!active) return; active = false; query.subscribers.delete(fn); if (!query.subscribers.size) this.cache.delete(query.key); this.schedule(); };
+    return () => { if (!active) return; active = false; query.subscribers.delete(fn); if (!query.subscribers.size) { query.smart?.stop(query); this.cache.delete(query.key); } this.schedule(); };
   }
   schedule() {
     let deadline = Infinity;
@@ -208,7 +212,7 @@ class BuschQueryEngine {
       this.schedule();
     }, Math.min(2147483647, Math.max(1, deadline - Date.now())));
   }
-  stop() { if (this.timer !== null) clearTimeout(this.timer); this.timer = null; }
+  stop() { for (const query of this.cache.values()) query.smart?.stop(query); if (this.timer !== null) clearTimeout(this.timer); this.timer = null; }
 }
 class BuschCardsCore {
   constructor() {
@@ -221,7 +225,7 @@ class BuschCardsCore {
         for (const listener of this._listeners) { try { listener(); } catch (error) { console.warn("Busch Core registry listener failed", error?.name); } }
       }); }
     });
-    this._listeners = new Set(); this.lastErrors = new Map(); this.unsubscribers = []; this.generation = 0; this.users = 0;
+    this._listeners = new Set(); this._deviceListeners = new Map(); this._dirtyDevices = new Set(); this.lastErrors = new Map(); this.unsubscribers = []; this.generation = 0; this.users = 0;
     this.ready = Promise.resolve(); this.engine = new BuschQueryEngine(this);
   }
   get entities() { return this.index.entities; }
@@ -242,13 +246,15 @@ class BuschCardsCore {
     if (!hass) return;
     const identity = hass.connection || hass;
     if (this.connection === identity) {
-      this.hass = hass; this.registry.hass = hass;
+      const languageChanged = this._language !== buschCoreKey(hass.locale || hass.language);
+      this.hass = hass; this.registry.hass = hass; this._language = buschCoreKey(hass.locale || hass.language);
+      if (languageChanged) this.engine.refresh();
       if (!this.streaming && [hass.entities, hass.devices, hass.areas, hass.floors].some((value, index) => value !== this._display[index])) this.seed(hass);
       // Without a stream, compare state references once for the shared runtime.
       if (!this.streaming && this._states !== hass.states) this.syncStates(hass.states || {});
       return;
     }
-    this.dispose(); this.index.labels = new Map(); this.lastErrors.clear(); this.connection = identity; this.hass = hass; this.registry.hass = hass; this.seed(hass);
+    this.dispose(); this.index.labels = new Map(); this.lastErrors.clear(); this.connection = identity; this.hass = hass; this.registry.hass = hass; this._language = buschCoreKey(hass.locale || hass.language); this.seed(hass);
     const generation = this.generation;
     const connection = hass.connection;
     let stateReady = Promise.resolve();
@@ -309,7 +315,22 @@ class BuschCardsCore {
     for (const id of ids) if (this.index.states.get(id) !== states[id]) this.updateState(id, states[id]);
     this._states = states;
   }
-  updateState(id, state) { this.metrics.stateUpdates++; const change = this.index.update(id, state); this.engine?.changed(change); }
+  updateState(id, state) {
+    this.metrics.stateUpdates++; const change = this.index.update(id, state); this.engine?.changed(change);
+    for (const device of [change.old?.device_id, change.next?.device_id]) if (device && this._deviceListeners.has(device)) this._dirtyDevices.add(device);
+    if (this._dirtyDevices.size && !this._deviceNotifyQueued) {
+      this._deviceNotifyQueued = true;
+      Promise.resolve().then(() => {
+        this._deviceNotifyQueued = false; const ids = [...this._dirtyDevices]; this._dirtyDevices.clear();
+        for (const device of ids) for (const listener of this._deviceListeners.get(device) || []) { try { listener(); } catch {} }
+      });
+    }
+  }
+  watchDevice(deviceId, callback) {
+    if (!this._deviceListeners.has(deviceId)) this._deviceListeners.set(deviceId,new Set());
+    const listeners = this._deviceListeners.get(deviceId); listeners.add(callback);
+    return () => { listeners.delete(callback); if (!listeners.size && this._deviceListeners.get(deviceId) === listeners) this._deviceListeners.delete(deviceId); };
+  }
   refreshRegistries(names = Object.keys(BUSCH_REGISTRY_IDS), afterPending = false) {
     const generation = this.generation;
     this._refreshing ||= new Map(); this._queuedRefresh ||= new Set();
@@ -320,7 +341,7 @@ class BuschCardsCore {
       }
       if (this.registry.promises.has(name)) this.registry.invalidate(name);
       const pending = this.registry.load(name).catch(error => {
-        if (generation === this.generation) this.lastErrors.set(name, error);
+        if (generation === this.generation) { this.lastErrors.set(name, error); for (const listener of this._listeners) { try { listener(); } catch {} } }
         return null;
       }).finally(() => {
         if (generation !== this.generation || this._refreshing.get(name) !== pending) return;
@@ -338,12 +359,13 @@ class BuschCardsCore {
   watch(callback) { this._listeners.add(callback); return () => this._listeners.delete(callback); }
   retain(hass) { this.attach(hass); this.users++; let released = false; return () => { if (released) return; released = true; if (--this.users <= 0) this.dispose(); }; }
   query(spec) { return this.engine.query(spec); }
+  smartQuery(spec) { this.smart ||= new BuschSmartQueries(this); return this.smart.query(spec); }
   subscribe(query, callback) { return this.engine.subscribe(query, callback); }
   debugSnapshot() { return { ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
   dispose() {
     this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
     this.streaming = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set(); this._snapshotPromise = null; this._stateBuffer = null;
-    if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this.engine?.stop();
+    if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this._dirtyDevices.clear(); this.engine?.stop();
   }
 }
 function ensureBuschCore(requiredApiVersion = 1) {
@@ -352,6 +374,303 @@ function ensureBuschCore(requiredApiVersion = 1) {
   const core = globalThis[BUSCH_CORE_KEY] || (globalThis[BUSCH_CORE_KEY] = new BuschCardsCore());
   if (Number(String(core.apiVersion).split(".")[0]) !== major) throw new Error("Busch Cards Core API mismatch / inkompatible API-Version.");
   return core;
+}
+
+// auto-entities 1.16.1 compatibility semantics, adapted for Busch's shared index.
+// Upstream: https://github.com/thomasloven/lovelace-auto-entities
+// Attribution and MIT permission notice follow this compatibility section.
+function buschSmartMatch(value, pattern, now = Date.now()) {
+  const checks = [];
+  if (typeof pattern === 'string') {
+    if (pattern.startsWith('$$')) { pattern = pattern.slice(2); value = JSON.stringify(value); }
+    if ((pattern.startsWith('/') && pattern.endsWith('/')) || pattern.includes('*')) {
+      if (!pattern.startsWith('/')) pattern = '/^' + pattern.replace(/\*/g, '.*') + '$/';
+      const regex = new RegExp(pattern.slice(1, -1));
+      checks.push(v => typeof v === 'string' && regex.test(v));
+    }
+    const age = /([mhd])\s+ago\s*$/i.exec(pattern);
+    if (age) {
+      pattern = pattern.replace(age[0], '');
+      value = (now - new Date(value).getTime()) / 60000 / (age[1] === 'h' ? 60 : age[1] === 'd' ? 1440 : 1);
+    }
+    // Deliberately independent: upstream's overlapping != / ! comparisons
+    // and unescaped glob punctuation are part of the imported config contract.
+    const ops = {'<=':(a,b)=>a<=b,'>=':(a,b)=>a>=b,'==':(a,b)=>a===b,'!=':(a,b)=>a!==b,'<':(a,b)=>a<b,'>':(a,b)=>a>b,'!':(a,b)=>a!==b,'=':(a,b)=>a===b};
+    for (const [op, test] of Object.entries(ops)) if (pattern.startsWith(op)) {
+      const limit = parseFloat(pattern.slice(op.length)); checks.push(v => test(parseFloat(v), limit));
+    }
+  }
+  return value !== undefined && (value === pattern || checks.some(fn => fn(value)));
+}
+function buschSmartContext(core, id) {
+  const info = core.entities.get(id), entity = info?.registry;
+  const state = core.index.states.get(id);
+  const device = core.devices.get(entity?.device_id);
+  const area = core.areas.get(entity?.area_id) || core.areas.get(device?.area_id);
+  const floor = core.floors.get(area?.floor_id);
+  return {info, entity, state, device, area, floor};
+}
+function buschSmartPath(value, path, valueOutput = false) {
+  if (valueOutput && value && Object.hasOwn(value, String(path))) return value[String(path)];
+  return String(path).split(valueOutput ? /[.:]/ : ':').reduce((obj, key) => obj?.[key], value);
+}
+function buschSmartFilter(core, rule, id, now = Date.now()) {
+  if (typeof id !== 'string') id = id?.entity;
+  const {entity, state, device, area, floor} = buschSmartContext(core, id);
+  if (!state) return false;
+  const entries = Object.entries(rule).map(([key,value]) => [key.trim().split(' ')[0].trim(),value]).filter(([key]) => !['type','options','sort'].includes(key));
+  if (!entries.length) return false;
+  return entries.every(([key,value]) => {
+    const match = v => buschSmartMatch(v,value,now);
+    switch (key) {
+      case 'domain': return match(id.split('.')[0]);
+      case 'entity_id': return match(id);
+      case 'state': return match(state.state) || match(core.hass.formatEntityState(state));
+      case 'name': return match(state.attributes?.friendly_name);
+      case 'group': return !!core.index.states.get(value)?.attributes?.entity_id?.includes(id);
+      case 'attributes': return Object.entries(value).every(([k,v]) => buschSmartMatch(buschSmartPath(state.attributes,k.split(' ')[0]),v,now));
+      case 'not': return !buschSmartFilter(core,value,id,now);
+      case 'and': return value.every(v => buschSmartFilter(core,v,id,now));
+      case 'or': return value.some(v => buschSmartFilter(core,v,id,now));
+      case 'device': return !!device && (match(device.id) || match(device.name_by_user) || match(device.name));
+      case 'device_manufacturer': return !!device && match(device.manufacturer);
+      case 'device_model': return !!device && match(device.model);
+      case 'area': return !!entity && !!area && (match(area.name) || match(area.area_id));
+      case 'floor': return !!entity && !!floor && (match(floor.name) || match(floor.floor_id));
+      case 'level': return !!entity && !!floor && match(floor.level);
+      case 'entity_category': return !!entity && match(entity.entity_category);
+      case 'hidden_by': return !!entity && match(entity.hidden_by);
+      case 'integration': return !!entity && (match(entity.platform) || match(entity.config_entry_id));
+      case 'label': {
+        if (!entity?.labels) return false;
+        const labelMatch = label => match(label) || match(core.labels.get(label)?.name);
+        return entity.labels.some(labelMatch) || !!device && device.labels.some(labelMatch);
+      }
+      case 'last_changed': case 'last_updated': case 'last_triggered':
+        return buschSmartMatch(key === 'last_triggered' ? state.attributes.last_triggered : state[key], /([mhd])\s+ago\s*$/i.test(value) ? value : value + 'm ago',now);
+      default: return false;
+    }
+  });
+}
+function buschSmartCompare(a,b,sort) {
+  const [lt,gt] = sort.reverse ? [1,-1] : [-1,1];
+  if (sort.ignore_case) { a=a?.toLowerCase?.()??a; b=b?.toLowerCase?.()??b; }
+  if (sort.numeric && !(isNaN(parseFloat(a)) && isNaN(parseFloat(b)))) {
+    a=isNaN(parseFloat(a))?undefined:parseFloat(a); b=isNaN(parseFloat(b))?undefined:parseFloat(b);
+  }
+  if (a===undefined && b===undefined) return 0;
+  if (a===undefined) return gt;
+  if (b===undefined) return lt;
+  if (sort.numeric) return a===b?0:a<b?lt:gt;
+  if (sort.ip) {
+    const aa=a.split('.'),bb=b.split('.');
+    return (sort.reverse?-1:1) * ([0,1,2,3].map(i=>buschSmartCompare(aa[i],bb[i],{numeric:true})).find(v=>v!==0)||0);
+  }
+  return (sort.reverse?-1:1)*String(a).localeCompare(String(b),undefined,sort);
+}
+function buschSmartSort(core, rows, sort) {
+  const methods = ['none','domain','entity_id','friendly_name','name','device','area','state','attribute','last_changed','last_updated','last_triggered'];
+  if (!sort?.method || !methods.includes(sort.method)) return rows;
+  const method = {...sort};
+  if (['last_changed','last_updated','last_triggered'].includes(method.method)) method.numeric=true;
+  const prepare = row => {
+    const {state,device,area}=buschSmartContext(core,row.entity);
+    switch(method.method) {
+      case 'none': return 0;
+      case 'domain': return state?.entity_id?.split('.')[0];
+      case 'entity_id': return state?.entity_id;
+      case 'friendly_name': case 'name': return state?.attributes?.friendly_name || state?.entity_id?.split('.')[1];
+      case 'device': return device?.name_by_user??device?.name;
+      case 'area': return area?.name;
+      case 'state': return state?.state;
+      case 'attribute': return method.attribute?.split(':').reduce((v,k)=>v?.[k],state?.attributes);
+      default: { const value=method.method==='last_triggered'?state?.attributes?.last_triggered:state?.[method.method]; return value?new Date(value).getTime():undefined; }
+    }
+  };
+  return rows.map(row=>({row,key:prepare(row)})).sort((a,b)=>buschSmartCompare(a.key,b.key,method)).map(x=>x.row);
+}
+function buschSmartPage(rows, sort) {
+  if (!sort?.count && !sort?.first) return rows;
+  const first=sort.first??0;return rows.slice(first,first+(sort.count??Infinity));
+}
+function buschSmartProcess(core, row, id) {
+  const {entity,device,area,state}=buschSmartContext(core,id);
+  let text=JSON.stringify(row).replace(/this.entity_id/g,id);
+  if (row.eval_js === true) {
+    const evaluate=new Function('entity_id','entity','device','area','state','"use strict"; return (String.raw`'+text+'`);');
+    try { text=evaluate(id,entity?.name_by_user??entity?.name,device?.name_by_user??device?.name,area?.name_by_user??area?.name,state); }
+    catch(error) { return {error:error.message}; }
+  }
+  return JSON.parse(text);
+}
+function buschSmartValueKey(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array:['+value.map(buschSmartValueKey).join(',')+']';
+  if (typeof value === 'object') return 'object:{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+buschSmartValueKey(value[k])).join(',')+'}';
+  return typeof value+':'+JSON.stringify(value);
+}
+function buschSmartUnique(rows, unique) {
+  if (!unique) return rows;
+  const seen=new Set();return rows.filter(row=>{const key=unique==='entity'?row.entity:buschSmartValueKey(row);if(seen.has(key))return false;seen.add(key);return true;});
+}
+function buschSmartResult(core, config, templateRows = [], matchedIncludes = null) {
+  const format=row=>!row?null:typeof row==='string'?{entity:row.trim()}:row;
+  const contexts=new Map();
+  let rows=[...(config.entities||[]),...(templateRows||[])].map(format).filter(Boolean);
+  for (const [index,rule] of (config.filter?.include||[]).entries()) {
+    if (rule.type!==undefined) { rows.push(rule);continue; }
+    const ids=matchedIncludes?.[index]??[...core.index.states.keys()].filter(id=>buschSmartFilter(core,rule,id));
+    const add=buschSmartPage(buschSmartSort(core,Array.from(ids,id=>({entity:id})),rule.sort),rule.sort);
+    rows.push(...add.map(row=>{const processed=buschSmartProcess(core,{...row,...rule.options},row.entity);contexts.set(processed,row.entity);return processed;}));
+  }
+  rows=rows.filter(row=>!(config.filter?.exclude||[]).some(rule=>buschSmartFilter(core,rule,row.entity)));
+  if (!config.value) return buschSmartPage(buschSmartUnique(buschSmartSort(core,config.unique_values?buschSmartUnique(rows,true):rows,config.sort),config.unique),config.sort);
+  rows=buschSmartUnique(rows,config.unique);
+  const seen=new Set(), projected=[];
+  for (const row of rows) {
+    const sourceId=contexts.get(row)??row.entity;
+    const {entity,state}=buschSmartContext(core,sourceId);
+    const type=config.value.type||'entity_id';
+    let value=type==='entity_id'?sourceId:type==='device_id'?entity?.device_id:buschSmartPath(state?.attributes,config.value.attribute??config.value.path??'',true);
+    if (value===undefined || value===null) {
+      if (config.value.missing!=='null' && config.value.missing!==null) continue;
+      value=null;
+    }
+    const key=buschSmartValueKey(value);
+    if(config.unique_values && seen.has(key))continue;
+    seen.add(key);projected.push({entity:sourceId,value});
+  }
+  return buschSmartPage(buschSmartSort(core,projected,config.sort),config.sort).map(row=>row.value);
+}
+
+/*
+MIT License
+
+Copyright (c) 2019 Thomas Lovén
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+function buschSmartSnapshot(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map(buschSmartSnapshot));
+  if (value && typeof value === 'object') return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,item])=>[key,buschSmartSnapshot(item)])));
+  return value;
+}
+/* Smart Entities: shared incremental membership and final projection. */
+function buschSmartPlan(rule) {
+  const constraints = [], groups = new Set(), times = [];
+  const walk = (node, safe = true) => {
+    if (!node || typeof node !== 'object') return;
+    for (const [raw, value] of Object.entries(node)) {
+      const key = raw.trim().split(' ')[0];
+      if (key === 'group') groups.add(value);
+      if (key === 'and') { for (const child of value) walk(child, safe); }
+      if (key === 'or') { for (const child of value) walk(child, false); }
+      if (key === 'not') walk(value, false);
+      if (safe && ['domain', 'integration', 'entity_id'].includes(key) && typeof value === 'string' && !value.startsWith('$$') && !/[*/<>=!]/.test(value)) constraints.push([key, value]);
+      const time = (path, pattern) => {
+        const text=String(pattern),match=text.match(/([mhd])\s+ago\s*$/i);
+        const amount=match?parseFloat(text.slice(0,match.index).replace(/^\s*[<>=!]+/,'')):NaN;
+        if (Number.isFinite(amount)) times.push({path,duration:amount*(match[1]==='h'?3600000:match[1]==='d'?86400000:60000)});
+      };
+      if (['last_changed','last_updated','last_triggered'].includes(key)) time(key === 'last_triggered' ? ['attributes',key] : [key], /[mhd]\s+ago\s*$/i.test(value) ? value : value + 'm ago');
+      if (['state','entity_id','name'].includes(key)) time(key === 'name' ? ['attributes','friendly_name'] : [key], value);
+      if (key === 'attributes') for (const [attr, pattern] of Object.entries(value || {})) time(['attributes',...attr.split(' ')[0].split(':')], pattern);
+    }
+  };
+  walk(rule);
+  return { constraints, groups, times, guard: info => !!info && constraints.every(([key,value]) => key === 'entity_id' ? info.entity_id === value : key === 'domain' ? info.domain === value : info.registry?.platform === value || info.registry?.config_entry_id === value) };
+}
+class BuschSmartQueries {
+  constructor(core) { this.core = core; }
+  query(config) {
+    const copy = JSON.parse(JSON.stringify(config)), cacheSpec = {...copy};
+    if (!copy.filter?.template) for (const key of ['type','card','card_param','else','show_empty','debug']) delete cacheSpec[key];
+    const key = 'smart:' + buschCoreKey(cacheSpec), engine = this.core.engine;
+    if (engine.cache.has(key)) return engine.cache.get(key);
+    const include = copy.filter?.include || [];
+    const query = { key, spec: copy, smart: this, javascript:(copy.filter?.include||[]).some(rule=>rule.options?.eval_js===true), include: include.map(buschSmartPlan), extraPlans:(copy.filter?.exclude||[]).map(buschSmartPlan), matched:include.map(()=>new Set()), subscribers:new Set(), result:Object.freeze([]), nextDeadline:Infinity, deadlines:new Map(), metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}, templateRows:[], templateGeneration:0 };
+    engine.cache.set(key,query); this.calculate(query); engine.evict(); return query;
+  }
+  candidates(plan) { return this.core.engine.candidates({lookups:plan.constraints}); }
+  changed(query, change) {
+    const id = change.id;
+    if (query.javascript || [...query.include,...query.extraPlans].some(p=>p.groups.has(id))) return this.calculate(query);
+    const statics = [...(query.spec.entities||[]),...query.templateRows];
+    if (query.include.some(p=>p.guard(change.old)||p.guard(change.next)) || statics.some(row=>(typeof row==='string'?row.trim():row?.entity)===id)) this.calculate(query,[id]);
+    else this.core.metrics.queriesSkipped++;
+  }
+  calculate(query, ids) {
+    try { return this.compute(query, ids); } catch (error) { query.error=error; this.notify(query); }
+  }
+  compute(query, ids) {
+    const start=performance.now(),now=Date.now(); query.metrics.calculations++;this.core.metrics.queriesRecalculated++;
+    let touched=new Set();
+    for (const [index,rule] of (query.spec.filter?.include||[]).entries()) {
+      if (rule.type !== undefined) continue;
+      const plan=query.include[index], candidates=ids || this.candidates(plan);
+      if (!ids) query.matched[index].clear();
+      for (const id of candidates) {
+        if (!plan.guard(this.core.getEntity(id))) { query.matched[index].delete(id);continue; }
+        touched.add(id);query.metrics.evaluated++;
+        if (buschSmartFilter(this.core,rule,id,now)) query.matched[index].add(id);else query.matched[index].delete(id);
+      }
+    }
+    if (!ids) query.deadlines.clear();
+    // Plan every possible age boundary, including excluded and currently absent matches.
+    const timed=[...query.include,...query.extraPlans].filter(p=>p.times.length);
+    for(const id of ids || new Set([...touched,...[...(query.spec.entities||[]),...query.templateRows].map(e=>typeof e==='string'?e.trim():e.entity)])) {
+      let deadline=Infinity;const info=this.core.getEntity(id);
+      for(const plan of timed) if(plan.guard(info)) for(const time of plan.times) {
+        const stamp=time.path.reduce((v,k)=>v?.[k],info?.stateObject), boundary=new Date(stamp).getTime()+time.duration;
+        for(const at of [boundary,boundary+1]) if(at>now) deadline=Math.min(deadline,at);
+      }
+      if(Number.isFinite(deadline))query.deadlines.set(id,deadline);else query.deadlines.delete(id);
+    }
+    query.nextDeadline=Infinity;for(const at of query.deadlines.values())query.nextDeadline=Math.min(query.nextDeadline,at);
+    query.metrics.candidates=touched.size;
+    try {
+      const result=buschSmartResult(this.core,query.spec,query.templateRows,query.matched.map(set=>[...set].sort((a,b)=>this.core.index.order.get(a)-this.core.index.order.get(b))));
+      const signature=buschCoreKey(result);
+      if(signature!==query.signature || query.error){query.signature=signature;query.result=buschSmartSnapshot(result);query.error=query.templateError||null;this.notify(query);}
+    }catch(error){query.error=error;this.notify(query);}
+    query.metrics.executionMs=performance.now()-start;
+    if(query.subscribers.size)this.startTemplate(query);
+  }
+  notify(query){this.core.metrics.resultChanges++;for(const fn of query.subscribers){try{fn(query.result);}catch(error){console.warn('Busch Smart subscriber failed',error?.name);}}}
+  startTemplate(query){
+    const template=query.spec.filter?.template;
+    if(!template || query.templateActive || !/\{[{%#]/.test(template))return;
+    query.templateActive=true;const generation=++query.templateGeneration;
+    const connection=this.core.hass?.connection;
+    if(typeof connection?.subscribeMessage!=='function'){query.error=query.templateError=new Error('template_unavailable');this.notify(query);return;}
+    Promise.resolve().then(()=>connection.subscribeMessage(message=>{
+      if(generation!==query.templateGeneration)return;
+      if(message.error){query.error=query.templateError=new Error('template_error');this.notify(query);return;}
+      query.templateError=null;const raw=message.result;query.templateRows=typeof raw==='string'?raw.split(/[\s,]+/).filter(Boolean):Array.isArray(raw)?raw:[];
+      if(query.templateQueued)return;query.templateQueued=true;
+      Promise.resolve().then(()=>{query.templateQueued=false;if(generation!==query.templateGeneration)return;this.calculate(query);this.core.engine.schedule();});
+    },{type:'render_template',template,variables:{config:query.spec},strict:true})).then(off=>{
+      if(generation!==query.templateGeneration)off();else query.templateOff=off;
+    }).catch(()=>{if(generation===query.templateGeneration){query.error=query.templateError=new Error('template_error');this.notify(query);}});
+  }
+  stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
 const CARD_VERSION = "0.11.0";
@@ -5552,3 +5871,356 @@ window.customCards.some(card => card.type === "busch-device-card") || window.cus
   preview: true,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
+const BUSCH_SMART_RULES = ['domain','state','entity_id','name','group','area','floor','level','device','label','device_manufacturer','device_model','integration','hidden_by','attributes','last_changed','last_updated','last_triggered','entity_category','not','or','and','options','type','sort'];
+function buschSmartConfig(config) {
+  if(!config || (!config.entities&&!config.filter))throw new Error('filter / entities');
+  const copy=JSON.parse(JSON.stringify(config));
+  for(const rule of [...(copy.filter?.include||[]),...(copy.filter?.exclude||[])]) for(const key of Object.keys(rule)) if(rule.type===undefined&&!BUSCH_SMART_RULES.includes(key.trim().split(' ')[0]))throw new Error('Unknown rule: '+key);
+  if(copy.value&&!['entity_id','device_id','attribute'].includes(copy.value.type))throw new Error('value.type');
+  return {...copy,type:'custom:busch-smart-entities'};
+}
+function buschSmartCardConfig(config,result){return JSON.parse(JSON.stringify({type:'entities',[config.card_param||'entities']:result,...config.card}));}
+const TEXTE_BUSCH_SMART_ENTITIES = {
+ de:{is:'ist',operator:'Operator',name:'Busch Smart Entities',description:'Entitäten gemeinsam filtern und eine beliebige Zielkarte befüllen.',loading:'Entitäten und Register werden geladen.',error:'Die Abfrage konnte nicht ausgeführt werden.',registry:'Registerdaten konnten nicht vollständig geladen werden. Bitte Rechte und Verbindung prüfen.',javascript:'JavaScript-Abfrage · Optimierung begrenzt',template:'Template-Abfrage · Optimierung begrenzt',declarative:'Deklarative Abfrage',target:'Zielkarte',static:'Statische Entities',include:'Include-Filter',exclude:'Exclude-Filter',templateSection:'Template',sortSection:'Sortierung',display:'Anzeige',advanced:'Erweitert',output:'Ergebnisausgabe',add:'Hinzufügen',remove:'Entfernen',rule:'Regel',and:'UND',or:'ODER',not:'NICHT',field:'Feld',value:'Wert',kind:'Typ',property:'Eigenschaft',string:'Text',number:'Zahl',boolean:'Ja/Nein',object:'Objekt',array:'Liste',null:'Leerwert',import:'Auto-Entities-Konfiguration übernehmen',importHelp:'Konfiguration als JSON einfügen. Alle Felder bleiben erhalten; nur der Kartentyp wird ersetzt.',invalid:'Ungültige Konfiguration.',json:'Erweiterte Kartenkonfiguration',preview:'Ergebnisvorschau',valueHelp:'Ohne Wertausgabe bleiben Entity-Zeilen erhalten. Device-IDs und Attribute benötigen eine Zielkarte, die diese Werte akzeptiert. Eindeutige Werte werden vor globaler Begrenzung gebildet.',filterHelp:'Regeln innerhalb eines Filters sind UND-verknüpft. Weitere Include-Filter fügen Treffer hinzu. Vorgabe: keine Filter.',labels:{entities:'Statische Entities',filter:'Filter',value:'Ergebnisausgabe',sort:'Sortierung',else:'Alternative Karte',card_type:'Kartentyp',card_param:'Zielparameter',template:'Jinja-Template',show_empty:'Leere Karte anzeigen',unique:'Eindeutige Entity-Zeilen',debug:'Debug anzeigen',value_type:'Ausgabe',attribute:'Attributpfad',missing:'Fehlende Werte',unique_values:'Nur eindeutige Werte',method:'Sortieren nach',reverse:'Absteigend',ignore_case:'Großschreibung ignorieren',numeric:'Numerisch',ip:'IP-Adressen',sort_attribute:'Sortierattribut',first:'Erster Treffer',count:'Anzahl'},helpers:{entities:'Feste Entities vor dynamischen Treffern. Vorgabe: keine.',filter:'Rekursive Include-/Exclude-Regeln. Vorgabe: keine.',value:'Werte aus Treffern extrahieren. Vorgabe: Entity-Zeilen.',sort:'Globale Sortierung und Begrenzung. Vorgabe: unverändert.',else:'Karte für leere Ergebnisse. Vorgabe: keine.',card_type:'Zielkarte wählen. Vorgabe: Entities.',card_param:'Parameter der Zielkarte, der Treffer erhält. Vorgabe: entities.',template:'Home Assistant berechnet das Template. Vorgabe: kein Template.',show_empty:'Leere Ergebnisse anzeigen. Vorgabe: ein.',unique:'Ganze Zeilen oder nur Entity-IDs vergleichen. Vorgabe: aus.',debug:'Abfragezähler und Laufzeit anzeigen. Vorgabe: aus.',value_type:'Entity-Zeilen oder extrahierte Werte ausgeben. Vorgabe: Entity-Zeilen.',attribute:'Freier verschachtelter Attributpfad, etwa network.details.interface. Vorgabe: leer.',missing:'Fehlende Zuordnung überspringen oder null ausgeben. Vorgabe: überspringen.',unique_values:'Tatsächlich ausgegebene Werte deduplizieren. Vorgabe: aus.',method:'Globale Reihenfolge vor Begrenzung. Vorgabe: unverändert.',reverse:'Sortierreihenfolge umkehren. Vorgabe: aus.',ignore_case:'Text ohne Groß-/Kleinschreibung vergleichen. Vorgabe: aus.',numeric:'Zahlen statt Text vergleichen. Vorgabe: aus.',ip:'IP-Adressen numerisch vergleichen. Vorgabe: aus.',sort_attribute:'Attribut für die Sortierung. Vorgabe: leer.',first:'Anfang bei null zählen. Vorgabe: 0.',count:'Maximale Trefferzahl. Leer lässt alle Treffer zu.'}},
+ en:{is:'is',operator:'Operator',name:'Busch Smart Entities',description:'Share entity queries and populate any target card.',loading:'Loading entities and registries.',error:'The query could not be evaluated.',registry:'Registry data could not be loaded completely. Check permissions and connection.',javascript:'JavaScript query · limited optimization',template:'Template query · limited optimization',declarative:'Declarative query',target:'Target card',static:'Static entities',include:'Include filters',exclude:'Exclude filters',templateSection:'Template',sortSection:'Sorting',display:'Display',advanced:'Advanced',output:'Result output',add:'Add',remove:'Remove',rule:'Rule',and:'AND',or:'OR',not:'NOT',field:'Field',value:'Value',kind:'Type',property:'Property',string:'Text',number:'Number',boolean:'Boolean',object:'Object',array:'List',null:'Null',import:'Import auto-entities configuration',importHelp:'Paste configuration as JSON. All fields are preserved; only the card type changes.',invalid:'Invalid configuration.',json:'Advanced card configuration',preview:'Result preview',valueHelp:'Without value output, entity rows are preserved. Device IDs and attributes require a target card that accepts these values. Unique values are calculated before global pagination.',filterHelp:'Rules within a filter use AND. Additional include filters add matches. Default: no filters.',labels:{entities:'Static entities',filter:'Filters',value:'Result output',sort:'Sorting',else:'Alternative card',card_type:'Card type',card_param:'Target parameter',template:'Jinja template',show_empty:'Show empty card',unique:'Unique entity rows',debug:'Show debug',value_type:'Output',attribute:'Attribute path',missing:'Missing values',unique_values:'Unique values only',method:'Sort by',reverse:'Descending',ignore_case:'Ignore case',numeric:'Numeric',ip:'IP addresses',sort_attribute:'Sort attribute',first:'First match',count:'Count'},helpers:{entities:'Fixed entities before dynamic matches. Default: none.',filter:'Recursive include/exclude rules. Default: none.',value:'Extract values from matches. Default: entity rows.',sort:'Global sorting and pagination. Default: unchanged.',else:'Card for empty results. Default: none.',card_type:'Choose the target card. Default: Entities.',card_param:'Target parameter receiving the results. Default: entities.',template:'Home Assistant evaluates the template. Default: no template.',show_empty:'Display empty results. Default: on.',unique:'Compare complete rows or entity IDs only. Default: off.',debug:'Show query counters and execution time. Default: off.',value_type:'Output entity rows or extracted values. Default: entity rows.',attribute:'Free nested attribute path, for example network.details.interface. Default: empty.',missing:'Skip missing values or output null. Default: skip.',unique_values:'Deduplicate the actual output values. Default: off.',method:'Global order before pagination. Default: unchanged.',reverse:'Reverse sort order. Default: off.',ignore_case:'Compare text without case. Default: off.',numeric:'Compare numbers instead of text. Default: off.',ip:'Compare IP addresses numerically. Default: off.',sort_attribute:'Attribute used for sorting. Default: empty.',first:'Zero-based start offset. Default: 0.',count:'Maximum results. Empty allows all results.'}}
+};
+Object.assign(TEXTE_BUSCH_SMART_ENTITIES.de, {
+ texte:{unique_false:'Aus',unique_true:'Ganze Zeilen',unique_entity:'Entity-ID',value_type_rows:'Entity-Zeilen',value_type_entity_id:'Entity-ID',value_type_device_id:'Geräte-ID',value_type_attribute:'Attribut',missing_skip:'Überspringen',missing_null:'Leerwert (null)',method_none:'Unverändert',method_domain:'Domain',method_entity_id:'Entity-ID',method_name:'Name',method_device:'Gerät',method_area:'Bereich',method_state:'Zustand',method_attribute:'Attribut',method_last_changed:'Letzte Zustandsänderung',method_last_updated:'Letzte Aktualisierung',method_last_triggered:'Letzte Auslösung',card_type_entities:'Entitäten',card_type_grid:'Raster',card_type_glance:'Übersicht',card_type_map:'Karte', 'card_type_vertical-stack':'Vertikaler Stapel'},
+ rules:{domain:'Domain',state:'Zustand',entity_id:'Entity-ID',name:'Name',group:'Gruppe',area:'Bereich',floor:'Etage',level:'Stockwerk',device:'Gerät',label:'Label',device_manufacturer:'Hersteller',device_model:'Modell',integration:'Integration',hidden_by:'Verborgen durch',attributes:'Attribute',last_changed:'Letzte Zustandsänderung',last_updated:'Letzte Aktualisierung',last_triggered:'Letzte Auslösung',entity_category:'Entity-Kategorie',not:'NICHT',or:'ODER',and:'UND',options:'Zeilenoptionen',type:'Zeilentyp',sort:'Lokale Sortierung'}
+});
+Object.assign(TEXTE_BUSCH_SMART_ENTITIES.en, {rules:{domain:'Domain',state:'State',entity_id:'Entity ID',name:'Name',group:'Group',area:'Area',floor:'Floor',level:'Level',device:'Device',label:'Label',device_manufacturer:'Manufacturer',device_model:'Model',integration:'Integration',hidden_by:'Hidden by',attributes:'Attributes',last_changed:'Last changed',last_updated:'Last updated',last_triggered:'Last triggered',entity_category:'Entity category',not:'NOT',or:'OR',and:'AND',options:'Row options',type:'Row type',sort:'Local sorting'}});
+const BUSCH_SMART_EDITOR_CSS = `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:var(--primary-color)}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}`;
+function buschSmartElement(tag,text){const element=document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
+function buschSmartButton(text,action){const b=buschSmartElement('button',text);b.type='button';b.addEventListener('click',action);return b;}
+function buschSmartSelect(options,value,onchange,label){const select=buschSmartElement('select');select.setAttribute('aria-label',label);for(const [v,text]of options){const o=buschSmartElement('option',text);o.value=v;select.append(o);}select.value=String(value);select.addEventListener('change',()=>onchange(select.value));return select;}
+/* Recursive typed object editor: no YAML and no required source-code editing. */
+function buschSmartObject(parent,value,change,t,label=t.value){
+  const node=buschSmartElement('div');node.className='node';parent.append(node);
+  const kind=Array.isArray(value)?'array':value===null?'null':typeof value;
+  const row=buschSmartElement('div');row.className='row';node.append(row);
+  row.append(buschSmartElement('span',label),buschSmartSelect(['string','number','boolean','object','array','null'].map(k=>[k,t[k]]),kind,k=>change({string:'',number:0,boolean:false,object:{},array:[],null:null}[k]),t.kind));
+  if(kind==='object'||kind==='array'){
+    for(const [key,item]of Object.entries(value)){
+      const wrap=buschSmartElement('div');node.append(wrap);const controls=buschSmartElement('div');controls.className='row';wrap.append(controls);
+      if(kind==='object'){const name=buschSmartElement('input');name.value=key;name.setAttribute('aria-label',t.property);name.addEventListener('change',()=>{if(name.value===key||Object.hasOwn(value,name.value))return;const next={...value};delete next[key];Object.defineProperty(next,name.value,{value:item,enumerable:true,writable:true,configurable:true});change(next);});controls.append(name);}
+      controls.append(buschSmartButton(t.remove,()=>{const next=kind==='array'?[...value]:{...value};if(kind==='array')next.splice(Number(key),1);else delete next[key];change(next);}));
+      buschSmartObject(wrap,item,v=>{const next=kind==='array'?[...value]:{...value};Object.defineProperty(next,key,{value:v,enumerable:true,writable:true,configurable:true});change(next);},t,kind==='array'?String(Number(key)+1):key);
+    }
+    node.append(buschSmartButton(t.add,()=>{if(kind==='array')change([...value,'']);else{let n=1;while(Object.hasOwn(value,'field_'+n))n++;change({...value,['field_'+n]:''});}}));
+  }else if(kind==='boolean') row.append(buschSmartSelect([['true','true'],['false','false']],value,v=>change(v==='true'),t.value));
+  else if(kind!=='null'){const input=buschSmartElement('input');input.type=kind==='number'?'number':'text';input.value=value??'';input.setAttribute('aria-label',t.value);input.addEventListener('change',()=>change(kind==='number'?Number(input.value):input.value));row.append(input);}
+}
+function buschSmartFilterBuilder(parent,rule,change,t){
+  const node=buschSmartElement('div');node.className='node';parent.append(node);
+  for(const [raw,value] of Object.entries(rule)){
+    const key=raw.trim().split(' ')[0],wrap=buschSmartElement('div');node.append(wrap);const row=buschSmartElement('div');row.className='row';wrap.append(row);
+    row.append(buschSmartSelect(BUSCH_SMART_RULES.map(k=>[k,t.rules?.[k]||k]),key,next=>{const copy={...rule};delete copy[raw];let name=next,n=1;while(Object.hasOwn(copy,name))name=next+' '+n++;copy[name]=['and','or'].includes(next)?[{}]:next==='not'||['attributes','options','sort'].includes(next)?{}:'';change(copy);},t.field),buschSmartButton(t.remove,()=>{const copy={...rule};delete copy[raw];change(copy);}));
+    const replace=v=>change({...rule,[raw]:v});
+    if(key==='and'||key==='or'){
+      value.forEach((child,i)=>{const container=buschSmartElement('div');wrap.append(container);buschSmartFilterBuilder(container,child,v=>replace(value.map((item,j)=>j===i?v:item)),t);container.append(buschSmartButton(t.remove,()=>replace(value.filter((_,j)=>j!==i))));});
+      wrap.append(buschSmartButton(t.add,()=>replace([...value,{}])));
+    }else if(key==='not')buschSmartFilterBuilder(wrap,value,replace,t);
+    else if(typeof value==='string' && !['options','sort','attributes'].includes(key)) {
+      const parsed=value.match(/^(<=|>=|==|!=|<|>|!|=)\s*(.*)$/), operator=parsed?.[1]||'is';
+      const operatorSelect=buschSmartSelect([['is',t.is],...['<','<=','>','>=','=','==','!=','!'].map(op=>[op,op])],operator,op=>replace(op==='is'?input.value:op+' '+input.value),t.operator);
+      const input=buschSmartElement('input');input.value=parsed?parsed[2]:value;input.setAttribute('aria-label',t.value);input.addEventListener('change',()=>replace(operatorSelect.value==='is'?input.value:operatorSelect.value+' '+input.value));row.append(operatorSelect,input);
+    } else buschSmartObject(wrap,value,replace,t,t.value);
+  }
+  node.append(buschSmartButton(t.add+' · '+t.rule,()=>{let name='domain',i=1;while(Object.hasOwn(rule,name))name='domain '+i++;change({...rule,[name]:'sensor'});}));
+}
+class BuschSmartEntities extends HTMLElement {
+  static getConfigElement(){return document.createElement('busch-smart-entities-editor');}
+  static getStubConfig(){return {filter:{include:[{domain:'sensor'}]},card:{type:'entities'}};}
+  getCardSize(){return this._child?.getCardSize?.()||1;}
+  getGridOptions(){return {columns:12,rows:'auto'};}
+  setConfig(config){this._config=buschSmartConfig(config);this._unsubscribe?.();this._unsubscribe=null;this._signature=null;this._generation=(this._generation||0)+1;this._connect();}
+  set hass(hass){this._hass=hass;this._connect();if(this._child)this._child.hass=hass;}
+  connectedCallback(){this._connect();}
+  disconnectedCallback(){this._generation=(this._generation||0)+1;this._unsubscribe?.();this._unsubscribe=null;this._unwatch?.();this._unwatch=null;this._release?.();this._release=null;}
+  _connect(){
+    if(!this._hass||!this._config)return;
+    this._core=ensureBuschCore(1);
+    if(!this._release){this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._update(this._query?.result||[]));}else this._core.attach(this._hass);
+    if(!this._unsubscribe){this._query=this._core.smartQuery(this._config);this._unsubscribe=this._core.subscribe(this._query,rows=>this._update(rows));}
+  }
+  _message(text){this._generation=(this._generation||0)+1;if(this.hidden){this.hidden=false;this.dispatchEvent(new Event('card-visibility-changed',{bubbles:true}));}if(!this.shadowRoot)this.attachShadow({mode:'open'});const card=buschSmartElement('ha-card'),p=buschSmartElement('p',text);p.style.padding='var(--ha-space-4,16px)';p.style.overflowWrap='anywhere';card.append(p);this.shadowRoot.replaceChildren(card);this._child=null;this._signature=null;}
+  async _update(rows){
+    if(!this._query)return;const generation=++this._generation;const t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);
+    if(this._query.error){this._message(t.error+' '+(this._query.spec.filter?.template?t.template:''));return;}
+    if(this._core.lastErrors.size){this._message(t.registry);return;}
+    const empty=!rows.length||rows.every(row=>['section','divider'].includes(row?.type));
+    const target=empty&&this._config.else?this._config.else:buschSmartCardConfig(this._config,rows);
+    const visible=!empty||this._config.show_empty!==false||!!this._config.else;
+    if(this.hidden===visible){this.hidden=!visible;this.dispatchEvent(new Event('card-visibility-changed',{bubbles:true}));}
+    const signature=buschCoreKey(target);if(signature===this._signature){this._debug();return;}
+    try{
+      const helpers=await window.loadCardHelpers();if(generation!==this._generation)return;
+      if(!this.shadowRoot)this.attachShadow({mode:'open'});
+      if(this._child&&this._childType===target.type)this._child.setConfig(target);else{
+        const child=await helpers.createCardElement(target);if(generation!==this._generation)return;
+        this._child=child;this._childType=target.type;this.shadowRoot.replaceChildren(child);
+      }
+      this._child.hass=this._hass;this._signature=signature;this._renders=(this._renders||0)+1;this._debug();
+    }catch(error){if(generation===this._generation)this._message(t.error);}
+  }
+  _debug(){
+    if(!this.shadowRoot||!this._config.debug)return;let output=this.shadowRoot.querySelector('[data-debug]');if(!output){output=buschSmartElement('pre');output.dataset.debug='';output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;color:var(--secondary-text-color);font-size:var(--ha-font-size-s,12px)';this.shadowRoot.append(output);}
+    const t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);output.textContent=JSON.stringify({query:this._config.filter?.template?t.template:this._query.javascript?t.javascript:t.declarative,...this._query.metrics,result:this._query.result.length,targetConfigurations:this._renders,core:this._core.debugSnapshot()},null,2);
+  }
+}
+const SCHEMA_BUSCH_SMART_ENTITIES = [
+ {name:'filter',selector:{object:{}}},{name:'value',selector:{object:{}}},{name:'sort',selector:{object:{}}},{name:'else',selector:{object:{}}},
+ {name:'entities',selector:{entity:{multiple:true}}},
+ {name:'card_type',selector:{select:{custom_value:true,options:['entities','grid','glance','map','vertical-stack','custom:apexcharts-card','custom:bubble-card'].map(value=>({value,label:value}))}}},
+ {name:'card_param',selector:{text:{}}},{name:'template',selector:{text:{multiline:true}}},
+ {name:'show_empty',selector:{boolean:{}}},{name:'unique',selector:{select:{options:[{value:'false',label:'Off'},{value:'true',label:'Rows'},{value:'entity',label:'Entity'}]}}},
+ {name:'debug',selector:{boolean:{}}},{name:'value_type',selector:{select:{options:[{value:'rows',label:'Entity rows'},{value:'entity_id',label:'Entity ID'},{value:'device_id',label:'Device ID'},{value:'attribute',label:'Attribute'}]}}},
+ {name:'attribute',selector:{text:{}}},{name:'missing',selector:{select:{options:[{value:'skip',label:'Skip'},{value:'null',label:'Null'}]}}},{name:'unique_values',selector:{boolean:{}}},
+ {name:'method',selector:{select:{options:['none','domain','entity_id','name','device','area','state','attribute','last_changed','last_updated','last_triggered'].map(value=>({value,label:value}))}}},
+ {name:'reverse',selector:{boolean:{}}},{name:'ignore_case',selector:{boolean:{}}},{name:'numeric',selector:{boolean:{}}},{name:'ip',selector:{boolean:{}}},{name:'sort_attribute',selector:{text:{}}},{name:'first',selector:{number:{min:0,mode:'box'}}},{name:'count',selector:{number:{min:0,mode:'box'}}}
+];
+class BuschSmartEntitiesEditor extends HTMLElement {
+  setConfig(config){const next=JSON.parse(JSON.stringify(config||BuschSmartEntities.getStubConfig()));if(buschCoreKey(next)===buschCoreKey(this._config))return;this._config=next;this._render();}
+  set hass(hass){const changed=buschSprache(this._hass)!==buschSprache(hass);this._hass=hass;if(!this.shadowRoot||changed)this._render();else for(const form of this.shadowRoot.querySelectorAll('ha-form,hui-entities-card-editor'))form.hass=hass;}
+  _emit(config,render=true){const next=JSON.parse(JSON.stringify(config));for(const key of Object.keys(this._config))delete this._config[key];Object.assign(this._config,next);this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:next},bubbles:true,composed:true}));if(render)this._render();}
+  _section(title){const details=buschSmartElement('details');details.append(buschSmartElement('summary',title));const body=buschSmartElement('div');body.className='body';details.append(body);this.shadowRoot.append(details);return body;}
+  _form(parent,names,data,change){const t=this._t,form=buschSmartElement('ha-form');form.computeLabel=s=>t.labels[s.name]||s.name;form.computeHelper=s=>t.helpers[s.name]||'';form.hass=this._hass;form.schema=buschSchemaMitTexten(SCHEMA_BUSCH_SMART_ENTITIES.filter(f=>names.includes(f.name)),t);
+    if(names.includes('attribute')) {
+      const attrs=new Set();const walk=(obj,prefix='',depth=0)=>{if(depth>4||!obj||typeof obj!=='object')return;for(const [key,value]of Object.entries(obj)){const path=prefix?prefix+'.'+key:key;attrs.add(path);if(attrs.size<300)walk(value,path,depth+1);}};
+      for(const state of Object.values(this._hass.states||{})){walk(state.attributes);if(attrs.size>=300)break;}
+      form.schema=form.schema.map(f=>f.name==='attribute'?{...f,selector:{select:{custom_value:true,options:[...attrs].sort().map(value=>({value,label:value}))}}}:f);
+    }form.data=data;form.computeLabel=s=>t.labels[s.name]||s.name;form.computeHelper=s=>t.helpers[s.name]||'';form.addEventListener('value-changed',event=>{event.stopPropagation();change(event.detail.value);});parent.append(form);return form;}
+  _render(){
+    if(!this._hass||!this._config)return;if(!this.shadowRoot)this.attachShadow({mode:'open'});this._t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);const t=this._t,c=this._config;
+    const open=[...this.shadowRoot.querySelectorAll('details')].map(e=>e.open);this.shadowRoot.replaceChildren(buschSmartElement('style',BUSCH_SMART_EDITOR_CSS));
+    const target=this._section(t.target);this._form(target,['card_type','card_param'],{card_type:c.card?.type||'entities',card_param:c.card_param||'entities'},v=>this._emit({...c,card:{...c.card,type:v.card_type},card_param:v.card_param}));
+    const embedded=buschSmartElement('div');target.append(embedded);this._targetEditor(embedded,c.card||{type:'entities'});
+    const advancedTarget=buschSmartElement('details');advancedTarget.append(buschSmartElement('summary',t.json));target.append(advancedTarget);buschSmartObject(advancedTarget,c.card||{type:'entities'},v=>this._emit({...c,card:v}),t);
+    const staticSection=this._section(t.static);
+    this._form(staticSection,['entities'],{entities:(c.entities||[]).filter(e=>typeof e==='string')},v=>this._emit({...c,entities:[...(v.entities||[]),...(c.entities||[]).filter(e=>typeof e!=='string')]}));
+    buschSmartObject(staticSection,c.entities||[],v=>this._emit({...c,entities:v}),t);
+    for(const name of ['include','exclude']){const body=this._section(t[name]);body.append(buschSmartElement('p',t.filterHelp));const rules=c.filter?.[name]||[];rules.forEach((rule,i)=>{const wrap=buschSmartElement('div');body.append(wrap);buschSmartFilterBuilder(wrap,rule,v=>this._emit({...c,filter:{...c.filter,[name]:rules.map((r,j)=>i===j?v:r)}}),t);wrap.append(buschSmartButton(t.remove,()=>this._emit({...c,filter:{...c.filter,[name]:rules.filter((_,j)=>i!==j)}})));});body.append(buschSmartButton(t.add,()=>this._emit({...c,filter:{...c.filter,[name]:[...rules,{domain:'sensor'}]}})));}
+    this._form(this._section(t.templateSection),['template'],{template:c.filter?.template||''},v=>this._emit({...c,filter:{...c.filter,template:v.template}},false));
+    const output=this._section(t.output);output.append(buschSmartElement('p',t.valueHelp));const outputNames=['value_type','missing','unique_values'];if(c.value?.type==='attribute')outputNames.splice(1,0,'attribute');
+    this._form(output,outputNames,{value_type:c.value?.type||'rows',attribute:c.value?.attribute||'',missing:c.value?.missing||'skip',unique_values:!!c.unique_values},v=>{const next={...c,unique_values:v.unique_values};if(v.value_type==='rows')delete next.value;else next.value={type:v.value_type,...(v.value_type==='attribute'?{attribute:v.attribute}:{}),missing:v.missing};this._emit(next);});
+    const sortNames=['method','reverse','ignore_case','numeric','ip','sort_attribute','first','count'];this._form(this._section(t.sortSection),sortNames,{method:'none',first:0,...c.sort,sort_attribute:c.sort?.attribute||''},v=>{const sort={...v};sort.attribute=sort.sort_attribute;delete sort.sort_attribute;if(sort.method==='none')delete sort.method;this._emit({...c,sort},false);});
+    const display=this._section(t.display);this._form(display,['show_empty','unique','debug'],{show_empty:c.show_empty!==false,unique:String(c.unique||false),debug:!!c.debug},v=>this._emit({...c,show_empty:v.show_empty,unique:v.unique==='true'?true:v.unique==='false'?false:v.unique,debug:v.debug},false));buschSmartObject(display,c.else||null,v=>{const next={...c};if(v===null)delete next.else;else next.else=v;this._emit(next);},t,'else');
+    buschSmartObject(this._section(t.advanced),c,v=>this._emit(buschSmartConfig(v)),t);
+    const importer=this._section(t.import);importer.append(buschSmartElement('p',t.importHelp));const input=buschSmartElement('textarea');input.setAttribute('aria-label',t.import);importer.append(input);const error=buschSmartElement('p');importer.append(buschSmartButton(t.import,()=>{try{this._emit(buschSmartConfig(JSON.parse(input.value)));}catch(e){error.textContent=t.invalid;}}),error);
+    [...this.shadowRoot.querySelectorAll('details')].forEach((e,i)=>e.open=open[i]??i===0);
+  }
+  async _targetEditor(host,config){try{const helpers=await window.loadCardHelpers();const card=await helpers.createCardElement({...config,entities:config.entities||[]});if(!host.isConnected||!card.constructor.getConfigElement)return;const editor=await card.constructor.getConfigElement();if(!host.isConnected)return;editor.hass=this._hass;editor.setConfig({...config,entities:config.entities||[]});editor.addEventListener('config-changed',event=>{event.stopPropagation();const target={...event.detail.config};if(!Object.hasOwn(config,'entities')&&Array.isArray(target.entities)&&!target.entities.length)delete target.entities;this._emit({...this._config,card:target},false);});host.append(editor);}catch(error){/* The typed object editor remains available. */}}
+}
+if (!customElements.get?.("busch-smart-entities")) customElements.define("busch-smart-entities", BuschSmartEntities);
+if (!customElements.get?.("busch-smart-entities-editor")) customElements.define("busch-smart-entities-editor", BuschSmartEntitiesEditor);
+if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))window.customCards.push({type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+/* Unraid cards: joins are exclusively backend metadata + registry scope. */
+const BUSCH_UNRAID_DEFAULTS = { title: '', config_entry_id: '', device_id: '', container_key: '', switch_entity: '', update_entity: '', layout: 'detailed', show_status: true, show_controls: true, show_containers: true, show_updates: true, state_filter: 'all', sort: 'name', show_restart: true, confirm_stop: true, confirm_restart: true, start_expanded: true };
+const TEXTE_BUSCH_UNRAID_STACK_CARD = {
+ de: {
+  labels: {title:'Titel',config_entry_id:'Unraid-Instanz',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
+  helpers: {title:'Eigener Kartentitel; Vorgabe ist der Gerätename.',config_entry_id:'Begrenzt die Auswahl auf diese Unraid-Instanz; Vorgabe sind alle Instanzen.',device_id:'Wählt ein Unraid-Gerät; Vorgabe ist das erste passende Gerät.',container_key:'Wählt einen Container anhand seiner Backendkennung; Vorgabe ist der einzige Container, sonst bitte auswählen.',switch_entity:'Ordnet bei älterem Backend einen Schalter ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',update_entity:'Ordnet bei älterem Backend das passende Update ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',layout:'Bestimmt den Umfang der Angaben; Vorgabe ist ausführlich.',show_status:'Zeigt Zustand und laufende Container; Vorgabe ist ein.',show_controls:'Zeigt verfügbare Start- und Stoppaktionen; Vorgabe ist ein.',show_containers:'Zeigt die Containerliste des Stacks; Vorgabe ist ein.',show_updates:'Zeigt zugeordnete verfügbare Updates; Vorgabe ist ein.',state_filter:'Zeigt alle, laufende oder gestoppte Container; Vorgabe ist alle.',sort:'Sortiert Container nach Name oder Zustand; Vorgabe ist Name.',show_restart:'Zeigt ausschließlich native Neustartaktionen; ohne Backendunterstützung nicht verfügbar. Vorgabe ist ein.',confirm_stop:'Fragt vor dem Stoppen nach; Vorgabe ist ein.',confirm_restart:'Fragt vor dem Neustart nach; Vorgabe ist ein.',start_expanded:'Öffnet die Containerliste beim Laden; Vorgabe ist ein.'},
+  texte:{layout_compact:'Kompakt',layout_detailed:'Ausführlich',state_filter_all:'Alle',state_filter_running:'Laufend',state_filter_stopped:'Gestoppt',sort_name:'Name',sort_state:'Zustand'},
+  stack:'Unraid-Stack',container:'Unraid-Container',stack_description:'Steuert einen Unraid-Compose-Stack und seine Container.',container_description:'Zeigt und steuert einen Unraid-Container.',empty:'Kein passendes Unraid-Gerät gefunden.',metadata:'Keine eindeutige Zuordnung verfügbar. Backend aktualisieren oder einen Schalter im Editor auswählen.',choose:'Bitte einen Container im Editor auswählen.',none:'Keine Container für diesen Filter.',start:'Starten',stop:'Stoppen',restart:'Neu starten',details:'Details',update:'Update',running:'Läuft',stopped:'Gestoppt',partial:'Teilweise gestartet',unavailable:'Nicht verfügbar',unknown:'Unbekannt',paused:'Pausiert',standalone:'Eigenständiger Container',expand:'Container aufklappen',collapse:'Container zuklappen',running_count:'{running} von {total} laufen',confirm_stop:'„{name}“ stoppen?',confirm_restart:'„{name}“ neu starten?',failed:'Aktion fehlgeschlagen. Bitte Zustand und Berechtigungen prüfen.',restart_missing:'Native Neustartfunktion fehlt. Dafür ist das aktualisierte Unraid-Backend erforderlich. Vorgabe ist ein.'
+ },
+ en: {
+  labels: {title:'Title',config_entry_id:'Unraid instance',device_id:'Device',container_key:'Container',switch_entity:'Assign switch',update_entity:'Assign update',layout:'Layout',show_status:'Show status',show_controls:'Show controls',show_containers:'Show containers',show_updates:'Show updates',state_filter:'Filter containers',sort:'Sort order',show_restart:'Show restart',confirm_stop:'Confirm stop',confirm_restart:'Confirm restart',start_expanded:'Start expanded'},
+  helpers: {title:'Custom card title; defaults to the device name.',config_entry_id:'Limits selection to this Unraid instance; defaults to all instances.',device_id:'Selects an Unraid device; defaults to the first matching device.',container_key:'Selects a container using its backend identity; defaults to the only container, otherwise select one.',switch_entity:'Explicitly assigns a switch on older backends; defaults to automatic matching.',update_entity:'Explicitly assigns the matching update on older backends; defaults to automatic matching.',layout:'Controls the amount of detail; defaults to detailed.',show_status:'Shows state and running count; enabled by default.',show_controls:'Shows available start and stop actions; enabled by default.',show_containers:'Shows the stack container list; enabled by default.',show_updates:'Shows matching available updates; enabled by default.',state_filter:'Shows all, running or stopped containers; defaults to all.',sort:'Sorts containers by name or state; defaults to name.',show_restart:'Shows native restart actions only; unavailable without backend support. Enabled by default.',confirm_stop:'Asks before stopping; enabled by default.',confirm_restart:'Asks before restarting; enabled by default.',start_expanded:'Expands the container list when loaded; enabled by default.'},
+  texte:{layout_compact:'Compact',layout_detailed:'Detailed',state_filter_all:'All',state_filter_running:'Running',state_filter_stopped:'Stopped',sort_name:'Name',sort_state:'State'},
+  stack:'Unraid stack',container:'Unraid container',stack_description:'Controls an Unraid Compose stack and its containers.',container_description:'Displays and controls an Unraid container.',empty:'No matching Unraid device found.',metadata:'No unambiguous mapping available. Update the backend or select a switch in the editor.',choose:'Select a container in the editor.',none:'No containers match this filter.',start:'Start',stop:'Stop',restart:'Restart',details:'Details',update:'Update',running:'Running',stopped:'Stopped',partial:'Partially running',unavailable:'Unavailable',unknown:'Unknown',paused:'Paused',standalone:'Standalone container',expand:'Expand containers',collapse:'Collapse containers',running_count:'{running} of {total} running',confirm_stop:'Stop “{name}”?',confirm_restart:'Restart “{name}”?',failed:'Action failed. Check the current state and permissions.',restart_missing:'Native restart is unavailable. The updated Unraid backend is required. Enabled by default.'
+ }
+};
+const TEXTE_BUSCH_UNRAID_CONTAINER_CARD = {
+ de: {
+  labels: {title:'Titel',config_entry_id:'Unraid-Instanz',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
+  helpers: {title:'Eigener Kartentitel; Vorgabe ist der Gerätename.',config_entry_id:'Begrenzt die Auswahl auf diese Unraid-Instanz; Vorgabe sind alle Instanzen.',device_id:'Wählt ein Unraid-Gerät; Vorgabe ist das erste passende Gerät.',container_key:'Wählt einen Container anhand seiner Backendkennung; Vorgabe ist der einzige Container, sonst bitte auswählen.',switch_entity:'Ordnet bei älterem Backend einen Schalter ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',update_entity:'Ordnet bei älterem Backend das passende Update ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',layout:'Bestimmt den Umfang der Angaben; Vorgabe ist ausführlich.',show_status:'Zeigt Zustand und laufende Container; Vorgabe ist ein.',show_controls:'Zeigt verfügbare Start- und Stoppaktionen; Vorgabe ist ein.',show_containers:'Zeigt die Containerliste des Stacks; Vorgabe ist ein.',show_updates:'Zeigt zugeordnete verfügbare Updates; Vorgabe ist ein.',state_filter:'Zeigt alle, laufende oder gestoppte Container; Vorgabe ist alle.',sort:'Sortiert Container nach Name oder Zustand; Vorgabe ist Name.',show_restart:'Zeigt ausschließlich native Neustartaktionen; ohne Backendunterstützung nicht verfügbar. Vorgabe ist ein.',confirm_stop:'Fragt vor dem Stoppen nach; Vorgabe ist ein.',confirm_restart:'Fragt vor dem Neustart nach; Vorgabe ist ein.',start_expanded:'Öffnet die Containerliste beim Laden; Vorgabe ist ein.'},
+  texte:{layout_compact:'Kompakt',layout_detailed:'Ausführlich',state_filter_all:'Alle',state_filter_running:'Laufend',state_filter_stopped:'Gestoppt',sort_name:'Name',sort_state:'Zustand'},
+  stack:'Unraid-Stack',container:'Unraid-Container',stack_description:'Steuert einen Unraid-Compose-Stack und seine Container.',container_description:'Zeigt und steuert einen Unraid-Container.',empty:'Kein passendes Unraid-Gerät gefunden.',metadata:'Keine eindeutige Zuordnung verfügbar. Backend aktualisieren oder einen Schalter im Editor auswählen.',choose:'Bitte einen Container im Editor auswählen.',none:'Keine Container für diesen Filter.',start:'Starten',stop:'Stoppen',restart:'Neu starten',details:'Details',update:'Update',running:'Läuft',stopped:'Gestoppt',partial:'Teilweise gestartet',unavailable:'Nicht verfügbar',unknown:'Unbekannt',paused:'Pausiert',standalone:'Eigenständiger Container',expand:'Container aufklappen',collapse:'Container zuklappen',running_count:'{running} von {total} laufen',confirm_stop:'„{name}“ stoppen?',confirm_restart:'„{name}“ neu starten?',failed:'Aktion fehlgeschlagen. Bitte Zustand und Berechtigungen prüfen.',restart_missing:'Native Neustartfunktion fehlt. Dafür ist das aktualisierte Unraid-Backend erforderlich. Vorgabe ist ein.'
+ },
+ en: {
+  labels: {title:'Title',config_entry_id:'Unraid instance',device_id:'Device',container_key:'Container',switch_entity:'Assign switch',update_entity:'Assign update',layout:'Layout',show_status:'Show status',show_controls:'Show controls',show_containers:'Show containers',show_updates:'Show updates',state_filter:'Filter containers',sort:'Sort order',show_restart:'Show restart',confirm_stop:'Confirm stop',confirm_restart:'Confirm restart',start_expanded:'Start expanded'},
+  helpers: {title:'Custom card title; defaults to the device name.',config_entry_id:'Limits selection to this Unraid instance; defaults to all instances.',device_id:'Selects an Unraid device; defaults to the first matching device.',container_key:'Selects a container using its backend identity; defaults to the only container, otherwise select one.',switch_entity:'Explicitly assigns a switch on older backends; defaults to automatic matching.',update_entity:'Explicitly assigns the matching update on older backends; defaults to automatic matching.',layout:'Controls the amount of detail; defaults to detailed.',show_status:'Shows state and running count; enabled by default.',show_controls:'Shows available start and stop actions; enabled by default.',show_containers:'Shows the stack container list; enabled by default.',show_updates:'Shows matching available updates; enabled by default.',state_filter:'Shows all, running or stopped containers; defaults to all.',sort:'Sorts containers by name or state; defaults to name.',show_restart:'Shows native restart actions only; unavailable without backend support. Enabled by default.',confirm_stop:'Asks before stopping; enabled by default.',confirm_restart:'Asks before restarting; enabled by default.',start_expanded:'Expands the container list when loaded; enabled by default.'},
+  texte:{layout_compact:'Compact',layout_detailed:'Detailed',state_filter_all:'All',state_filter_running:'Running',state_filter_stopped:'Stopped',sort_name:'Name',sort_state:'State'},
+  stack:'Unraid stack',container:'Unraid container',stack_description:'Controls an Unraid Compose stack and its containers.',container_description:'Displays and controls an Unraid container.',empty:'No matching Unraid device found.',metadata:'No unambiguous mapping available. Update the backend or select a switch in the editor.',choose:'Select a container in the editor.',none:'No containers match this filter.',start:'Start',stop:'Stop',restart:'Restart',details:'Details',update:'Update',running:'Running',stopped:'Stopped',partial:'Partially running',unavailable:'Unavailable',unknown:'Unknown',paused:'Paused',standalone:'Standalone container',expand:'Expand containers',collapse:'Collapse containers',running_count:'{running} of {total} running',confirm_stop:'Stop “{name}”?',confirm_restart:'Restart “{name}”?',failed:'Action failed. Check the current state and permissions.',restart_missing:'Native restart is unavailable. The updated Unraid backend is required. Enabled by default.'
+ }
+};
+const BUSCH_UNRAID_TEXT = TEXTE_BUSCH_UNRAID_STACK_CARD;
+function buschUnraidDevices(core,kind,entry) {
+ if(!core) return [];
+ return [...core.devices.values()].filter(d=>(kind==='stack'?d.model==='Compose stack':['Compose stack','Docker container'].includes(d.model))&&(!entry||(d.config_entries||[]).includes(entry))&&core.getDeviceEntities(d.id).some(e=>e.platform==='unraid_ssh'&&(!entry||e.config_entry_id===entry))).sort((a,b)=>String(a.name_by_user||a.name||a.id).localeCompare(String(b.name_by_user||b.name||b.id)));
+}
+function buschUnraidAvailable(entity){return !!entity&&!['unavailable','unknown',undefined].includes(entity.state);}
+function buschUnraidStatus(entity){if(!entity||entity.state==='unavailable')return 'unavailable';if(entity.state==='on')return 'running';if(entity.state==='off')return 'stopped';return 'unknown';}
+function buschUnraidLegacy(entries){
+ return entries.map(e=>{
+  if(e.attributes.kind&&e.attributes.role)return e;
+  const entry=e.config_entry_id,uid=e.registry?.unique_id;
+  if(e.platform!=='unraid_ssh'||!entry||!e.device_id||typeof uid!=='string')return e;
+  const prefix=e.domain==='switch'?entry+'_container_':e.domain==='update'?entry+'_update_':null;
+  if(prefix&&uid.startsWith(prefix)&&uid.length>prefix.length){
+   const name=uid.slice(prefix.length),modern=entries.filter(other=>other.config_entry_id===entry&&other.device_id===e.device_id&&other.platform==='unraid_ssh'&&other.attributes.kind==='container'&&other.attributes.role==='control'&&other.attributes.container_name===name&&other.attributes.container_key);
+   const keys=[...new Set(modern.map(other=>other.attributes.container_key))];
+   if(keys.length>1)return e;
+   return {...e,attributes:{...e.attributes,kind:'container',role:e.domain==='switch'?'control':'update',config_entry_id:entry,container_key:keys[0]||'legacy:'+name,container_name:name,identity_status:'legacy'}};
+  }
+  const stackPrefix=entry+'_stack_';
+  if(e.domain==='switch'&&uid.startsWith(stackPrefix)&&uid.length>stackPrefix.length)return {...e,attributes:{...e.attributes,kind:'stack',role:'control',config_entry_id:entry,stack_key:uid.slice(stackPrefix.length),identity_status:'legacy'}};
+  return e;
+ });
+}
+function buschUnraidModel(core,config,kind) {
+ const devices=buschUnraidDevices(core,kind,config.config_entry_id),device=config.device_id?devices.find(d=>d.id===config.device_id):devices[0];
+ const model={device:device||null,containers:[],selected:null,switch:null,restart:null,status:'unknown',running:0,total:0};
+ if(!device)return model;
+ const entries=buschUnraidLegacy(core.getDeviceEntities(device.id).filter(e=>e.platform==='unraid_ssh'&&(!config.config_entry_id||e.config_entry_id===config.config_entry_id)&&!e.registry?.disabled_by));
+ const unique=rows=>rows.length===1?rows[0]:null;
+ const explicit=(id,domain)=>unique(entries.filter(e=>e.entity_id===id&&e.domain===domain));
+ const controls=entries.filter(e=>e.domain==='switch'&&e.attributes.kind==='container'&&e.attributes.role==='control'&&e.attributes.container_key);
+ const keys=new Set(controls.map(e=>e.config_entry_id+'\0'+e.attributes.container_key));
+ for(const key of keys){const candidates=controls.filter(e=>e.config_entry_id+'\0'+e.attributes.container_key===key),sw=unique(candidates);if(!sw)continue;
+  const a=sw.attributes,related=entries.filter(e=>e.config_entry_id===sw.config_entry_id&&e.attributes.kind==='container'&&e.attributes.container_key===a.container_key);
+  model.containers.push({key:a.container_key,name:a.container_name||sw.attributes.friendly_name||sw.entity_id,stack:a.stack_name||a.stack_key||(device.model==='Compose stack'?(device.name_by_user||device.name):null),image:a.image||'',switch:sw,restart:unique(related.filter(e=>e.domain==='button'&&e.attributes.role==='restart')),update:unique(related.filter(e=>e.domain==='update'&&e.attributes.role==='update')),status:a.container_state==='paused'?'paused':buschUnraidStatus(sw)});
+ }
+ const stack=unique(entries.filter(e=>e.domain==='switch'&&e.attributes.kind==='stack'&&e.attributes.role==='control'&&e.attributes.stack_key));
+ model.switch=stack||explicit(config.switch_entity,'switch');
+ model.restart=stack?unique(entries.filter(e=>e.domain==='button'&&e.attributes.role==='restart'&&e.attributes.kind==='stack'&&e.config_entry_id===stack.config_entry_id&&e.attributes.stack_key===stack.attributes.stack_key)):null;
+ model.running=model.containers.filter(c=>c.status==='running').length;model.total=model.containers.length;
+ const reportedRunning=stack?.attributes.running_containers,reportedTotal=stack?.attributes.total_containers;
+ if(Number.isFinite(reportedRunning)&&Number.isFinite(reportedTotal)){model.running=reportedRunning;model.total=reportedTotal;}
+ model.status=model.total?(model.running===model.total?'running':model.running===0?'stopped':'partial'):buschUnraidStatus(model.switch);
+ if(!(Number.isFinite(reportedRunning)&&Number.isFinite(reportedTotal))&&model.containers.some(c=>['unavailable','unknown'].includes(c.status)))model.status=model.containers.some(c=>c.status==='unavailable')?'unavailable':'unknown';
+ if(model.switch?.state==='unavailable')model.status='unavailable';
+ if(kind==='container'){
+  model.selected=config.container_key?model.containers.find(c=>c.key===config.container_key)||null:model.containers.length===1?model.containers[0]:null;
+  if(!model.selected&&config.switch_entity){const sw=explicit(config.switch_entity,'switch');if(sw)model.selected={key:sw.entity_id,name:sw.attributes.friendly_name||device.name||sw.entity_id,switch:sw,restart:null,update:explicit(config.update_entity,'update'),status:buschUnraidStatus(sw),stack:device.model==='Compose stack'?(device.name_by_user||device.name):null};}
+ }
+ if(kind==='container'&&model.selected&&config.update_entity)model.selected={...model.selected,update:explicit(config.update_entity,'update')};
+ model.containers.sort((a,b)=>config.sort==='state'?a.status.localeCompare(b.status)||a.name.localeCompare(b.name):a.name.localeCompare(b.name));
+ return model;
+}
+const SCHEMA_BUSCH_UNRAID_STACK_CARD = [
+ {name: "title", "selector": {"text": {}}},
+ {name: "config_entry_id", "selector": {"config_entry": {"integration": "unraid_ssh"}}},
+ {name: "device_id", "selector": {"select": {"options": []}}},
+ {name: "switch_entity", "selector": {"entity": {"filter": {"integration": "unraid_ssh", "domain": "switch"}}}},
+ {name: "layout", "selector": {"select": {"options": [{"value": "compact"}, {"value": "detailed"}]}}},
+ {name: "show_status", "selector": {"boolean": {}}},
+ {name: "show_controls", "selector": {"boolean": {}}},
+ {name: "show_updates", "selector": {"boolean": {}}},
+ {name: "show_containers", "selector": {"boolean": {}}},
+ {name: "state_filter", "selector": {"select": {"options": [{"value": "all"}, {"value": "running"}, {"value": "stopped"}]}}},
+ {name: "sort", "selector": {"select": {"options": [{"value": "name"}, {"value": "state"}]}}},
+ {name: "start_expanded", "selector": {"boolean": {}}},
+ {name: "show_restart", "selector": {"boolean": {}}},
+ {name: "confirm_stop", "selector": {"boolean": {}}},
+ {name: "confirm_restart", "selector": {"boolean": {}}}
+];
+const SCHEMA_BUSCH_UNRAID_CONTAINER_CARD = [
+ {name: "title", "selector": {"text": {}}},
+ {name: "config_entry_id", "selector": {"config_entry": {"integration": "unraid_ssh"}}},
+ {name: "device_id", "selector": {"select": {"options": []}}},
+ {name: "container_key", "selector": {"select": {"options": []}}},
+ {name: "switch_entity", "selector": {"entity": {"filter": {"integration": "unraid_ssh", "domain": "switch"}}}},
+ {name: "update_entity", "selector": {"entity": {"filter": {"integration": "unraid_ssh", "domain": "update"}}}},
+ {name: "layout", "selector": {"select": {"options": [{"value": "compact"}, {"value": "detailed"}]}}},
+ {name: "show_status", "selector": {"boolean": {}}},
+ {name: "show_controls", "selector": {"boolean": {}}},
+ {name: "show_updates", "selector": {"boolean": {}}},
+ {name: "show_restart", "selector": {"boolean": {}}},
+ {name: "confirm_stop", "selector": {"boolean": {}}},
+ {name: "confirm_restart", "selector": {"boolean": {}}}
+];
+function buschUnraidSchema(core,config,kind){
+ const model=buschUnraidModel(core,config,kind),base=kind==='stack'?SCHEMA_BUSCH_UNRAID_STACK_CARD:SCHEMA_BUSCH_UNRAID_CONTAINER_CARD;
+ return base.map(field=>{
+  if(field.name==='device_id')return {...field,selector:{select:{options:buschUnraidDevices(core,kind,config.config_entry_id).map(d=>({value:d.id,label:d.name_by_user||d.name||d.id}))}}};
+  if(field.name==='container_key')return {...field,selector:{select:{options:model.containers.map(c=>({value:c.key,label:c.name}))}}};
+  if(field.name==='switch_entity'||field.name==='update_entity')return {...field,selector:{entity:{filter:{integration:'unraid_ssh',domain:field.name==='switch_entity'?'switch':'update',...(model.device?{device_id:model.device.id}:{})}}}};
+  if(field.name==='show_restart')return {...field,disabled:kind==='stack'?!model.restart&&!model.containers.some(c=>c.restart):!model.selected?.restart};
+  return field;
+ });
+}
+const BUSCH_UNRAID_STYLE = `
+:host{display:block;min-width:0;color:var(--primary-text-color);--unraid-space:var(--ha-space-4,16px);--unraid-small:var(--ha-space-2,8px)}
+*{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--unraid-space);font-family:inherit;color:var(--primary-text-color);background:var(--card-background-color)}
+h2,.name{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500)}
+p,.state,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}
+.state,.detail{color:var(--secondary-text-color)}.header,.row{display:grid;gap:var(--unraid-small)}.header{margin-bottom:var(--unraid-space)}
+.rows{display:grid;gap:var(--unraid-space);margin-top:var(--unraid-space)}.row .name{font-size:var(--ha-font-size-m,14px)}
+.actions{display:flex;flex-wrap:wrap;gap:var(--unraid-small)}button{font:inherit;color:var(--primary-color);background:transparent;border:0;border-radius:var(--ha-card-border-radius,12px);padding:var(--unraid-small);cursor:pointer;overflow-wrap:anywhere;max-width:100%}button:disabled{color:var(--disabled-text-color);cursor:default}button:focus-visible{outline:1px solid var(--primary-color)}.danger{color:var(--error-color)}.message{margin-top:var(--unraid-space)}.error{color:var(--error-color)}.compact .detail{display:none}
+`;
+function buschUnraidNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+class BuschUnraidBaseCard extends HTMLElement {
+ constructor(){super();this.attachShadow({mode:'open'});this._config={...BUSCH_UNRAID_DEFAULTS};this._expanded=true;this._generation=0;}
+ setConfig(config){this._config={...BUSCH_UNRAID_DEFAULTS,...config};this._expanded=this._config.start_expanded;this._error=null;this._generation++;this._render();}
+ set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
+ get hass(){return this._hass;}
+ connectedCallback(){this._connect();this._render();}
+ disconnectedCallback(){this._release?.();this._unwatch?.();this._unwatchDevice?.();this._unwatchDevice=null;this._watchDeviceId=null;this._release=this._unwatch=null;this._generation++;}
+ _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
+ getCardSize(){return this._kind==='stack'&&this._expanded?4:2;}
+ getGridOptions(){return {columns:12,min_columns:3,rows:this.getCardSize()*2,min_rows:2};}
+ _button(parent,text,action,disabled=false,destructive=false){const button=buschUnraidNode('button',text,destructive?'danger':'');button.type='button';button.disabled=disabled;button.addEventListener('click',action);parent.appendChild(button);return button;}
+ _actions(parent,row,t){const actions=buschUnraidNode('div',undefined,'actions');
+  if(this._config.show_controls&&row.switch){const running=row.status==='running'||row.status==='partial'||row.switch.state==='on';this._button(actions,running?t.stop:t.start,()=>this._action(running?'stop':'start',row),this._busy||!buschUnraidAvailable(row.switch),running);}
+  if(this._config.show_controls&&this._config.show_restart&&row.restart)this._button(actions,t.restart,()=>this._action('restart',row),this._busy||row.restart.state==='unavailable',true);
+  if(row.switch)this._button(actions,t.details,()=>this._action('details',row));
+  if(this._config.show_updates&&row.update?.state==='on')this._button(actions,t.update,()=>this._action('update',row));
+  if(actions.childNodes.length)parent.appendChild(actions);
+ }
+ async _action(action,row){
+  const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);
+  if(action==='details'||action==='update'){const entity=action==='update'?row.update:row.switch;if(entity)this.dispatchEvent(new CustomEvent('hass-more-info',{detail:{entityId:entity.entity_id},bubbles:true,composed:true}));return;}
+  if(this._busy)return;const entity=action==='restart'?row.restart:row.switch;
+  if(!entity||entity.state==='unavailable'||(action!=='restart'&&!buschUnraidAvailable(entity)))return;
+  if((action==='stop'&&this._config.confirm_stop)||(action==='restart'&&this._config.confirm_restart))if(!window.confirm(t['confirm_'+action].replace('{name}',row.name||'')))return;
+  const generation=this._generation;this._busy=true;this._error=null;this._render();
+  try{await this._hass.callService(action==='restart'?'button':'switch',action==='restart'?'press':action==='start'?'turn_on':'turn_off',{entity_id:entity.entity_id});}
+  catch{if(generation===this._generation)this._error=t.failed;}
+  finally{this._busy=false;this._render();}
+ }
+ _render(){if(!this.shadowRoot||!this._config)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass),m=buschUnraidModel(this._core,this._config,this._kind);if(this.isConnected&&this._watchDeviceId!==m.device?.id){this._unwatchDevice?.();this._watchDeviceId=m.device?.id;this._unwatchDevice=this._watchDeviceId?this._core.watchDevice?.(this._watchDeviceId,()=>this._render()):null;}const signature=JSON.stringify([this._config,m,this._expanded,!!this._busy,this._error,t]);if(signature===this._renderSignature)return;this._renderSignature=signature;const card=buschUnraidNode('ha-card'),style=buschUnraidNode('style',BUSCH_UNRAID_STYLE);card.className=this._config.layout;
+  const header=buschUnraidNode('div',undefined,'header'),title=this._config.title||m.device?.name_by_user||m.device?.name||t[this._kind];header.appendChild(buschUnraidNode('h2',title));card.appendChild(header);
+  const message=text=>card.appendChild(buschUnraidNode('p',text,'message'));
+  if(!m.device)message(t.empty);
+  else if(this._kind==='container'){
+   const row=m.selected;if(!row)message(m.containers.length?t.choose:t.metadata);else{if(!this._config.title)header.firstChild.textContent=row.name;if(this._config.show_status)header.appendChild(buschUnraidNode('p',t[row.status]||t.unknown,'state'));header.appendChild(buschUnraidNode('p',row.stack||t.standalone,'detail'));if(row.image)header.appendChild(buschUnraidNode('p',row.image,'detail'));this._actions(header,row,t);}
+  }else{
+   if(this._config.show_status){header.appendChild(buschUnraidNode('p',t[m.status]||t.unknown,'state'));header.appendChild(buschUnraidNode('p',t.running_count.replace('{running}',m.running).replace('{total}',m.total),'state'));}
+   this._actions(header,{...m,name:title},t);if(!m.switch&&!m.containers.length)message(t.metadata);
+   if(this._config.show_containers&&m.containers.length){const expand=this._button(header,this._expanded?t.collapse:t.expand,()=>{this._expanded=!this._expanded;this._render();});expand.setAttribute('aria-expanded',String(this._expanded));
+    if(this._expanded){const rows=buschUnraidNode('div',undefined,'rows'),visible=m.containers.filter(c=>this._config.state_filter==='all'||c.status===this._config.state_filter);if(!visible.length)rows.appendChild(buschUnraidNode('p',t.none));for(const row of visible){const item=buschUnraidNode('div',undefined,'row');item.appendChild(buschUnraidNode('div',row.name,'name'));if(this._config.show_status)item.appendChild(buschUnraidNode('p',t[row.status]||t.unknown,'state'));if(row.image)item.appendChild(buschUnraidNode('p',row.image,'detail'));this._actions(item,row,t);rows.appendChild(item);}card.appendChild(rows);}
+   }
+  }
+  if(this._error){const error=buschUnraidNode('p',this._error,'message error');error.setAttribute('role','alert');card.appendChild(error);}this.shadowRoot.replaceChildren(style,card);
+ }
+}
+class BuschUnraidStackCard extends BuschUnraidBaseCard {
+ get _kind(){return 'stack';}
+ static getConfigElement(){return document.createElement('busch-unraid-stack-card-editor');}
+ static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-stack-card'};const core=ensureBuschCore(1);core.attach(hass);const device=buschUnraidDevices(core,'stack')[0];return {type:'custom:busch-unraid-stack-card',...(device?{device_id:device.id}:{})};}
+}
+class BuschUnraidContainerCard extends BuschUnraidBaseCard {
+ get _kind(){return 'container';}
+ static getConfigElement(){return document.createElement('busch-unraid-container-card-editor');}
+ static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-container-card'};const core=ensureBuschCore(1);core.attach(hass);const model=buschUnraidModel(core,{},'container');return {type:'custom:busch-unraid-container-card',...(model.device?{device_id:model.device.id}:{}),...(model.containers[0]?{container_key:model.containers[0].key}:{})};}
+}
+class BuschUnraidBaseEditor extends HTMLElement {
+ setConfig(config){this._config={...config};this._render();}
+ set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
+ connectedCallback(){this._connect();this._render();}
+ disconnectedCallback(){this._release?.();this._unwatch?.();this._release=this._unwatch=null;}
+ _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
+ _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=document.createElement('ha-form');this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;}this._config=next;this._render();this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:next},bubbles:true,composed:true}));});this.appendChild(this._form);}
+  this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);this._form.computeLabel=s=>t.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:t.helpers[s.name]||'';
+ }
+}
+class BuschUnraidStackEditor extends BuschUnraidBaseEditor {get _kind(){return 'stack';}}
+class BuschUnraidContainerEditor extends BuschUnraidBaseEditor {get _kind(){return 'container';}}
+if(!customElements.get?.('busch-unraid-stack-card'))customElements.define('busch-unraid-stack-card',BuschUnraidStackCard);
+if(!customElements.get?.('busch-unraid-container-card'))customElements.define('busch-unraid-container-card',BuschUnraidContainerCard);
+if(!customElements.get?.('busch-unraid-stack-card-editor'))customElements.define('busch-unraid-stack-card-editor',BuschUnraidStackEditor);
+if(!customElements.get?.('busch-unraid-container-card-editor'))customElements.define('busch-unraid-container-card-editor',BuschUnraidContainerEditor);
+window.customCards=window.customCards||[];
+if(!window.customCards.some(c=>c.type==='busch-unraid-stack-card'))window.customCards.push({type:'busch-unraid-stack-card',name:buschTexte(TEXTE_BUSCH_UNRAID_STACK_CARD).stack,description:buschTexte(TEXTE_BUSCH_UNRAID_STACK_CARD).stack_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+if(!window.customCards.some(c=>c.type==='busch-unraid-container-card'))window.customCards.push({type:'busch-unraid-container-card',name:buschTexte(TEXTE_BUSCH_UNRAID_CONTAINER_CARD).container,description:buschTexte(TEXTE_BUSCH_UNRAID_CONTAINER_CARD).container_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});

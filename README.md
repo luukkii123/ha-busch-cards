@@ -4,17 +4,21 @@
 [![Release](https://img.shields.io/github/v/release/luukkii123/ha-busch-cards)](https://github.com/luukkii123/ha-busch-cards/releases)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 
-**Vier Lovelace-Karten ohne eigene Integration: ein Zeitplan-Editor für
-`schedule.*`-Helfer, die eingebaute Landkarte mit frei wählbaren Kacheln, eine
-Terminliste je Kalendermonat, und eine Gerätekarte, die aus einer Entität ihr
-ganzes Gerät macht.**
+**Sieben Lovelace-Karten im Entwicklungsstand:** Zeitplan, Landkarte,
+Kalender, Geräteübersicht, dynamische Entity-Auswahl und zwei Unraid-Karten.
+Die neuen Smart-/Unraid-Karten sind unten als noch nicht veröffentlichter
+Plattform-Entwicklungsstand dokumentiert. Unraid-Steuerung benötigt die
+zugehörige `unraid_ssh`-Integration.
 
 | Karte | Wofür |
 | --- | --- |
 | `busch-schedule-card` | Zeitplan-Helfer direkt im Dashboard bearbeiten |
 | `busch-map-card` | die eingebaute `map`-Karte, nur mit anderen Kacheln |
 | `busch-calendar-card` | Termine eines Monats als Tagesliste |
-| `busch-device-card` | ein Gerät samt aller Entitäten, aus einer Entität ermittelt |
+| `busch-device-card` | ein Gerät samt Entitäten, direkt über Geräte-ID oder eine Entität |
+| `busch-smart-entities` | dynamische Filter, Zielkarte und konfigurierbare Wertausgabe |
+| `busch-unraid-stack-card` | Compose-Stack mit Containersteuerung und Updates |
+| `busch-unraid-container-card` | einzelner Standalone- oder Compose-Container |
 
 ![Die Zeitplan-Karte im hellen Theme](docs/preview.png)
 
@@ -683,3 +687,134 @@ nicht im Messlauf, sondern erst an einem echten Gerät.
 **Eine Konfiguration aus `0.10.x` bricht nicht.** Die Karte schreibt die alte
 Kurzform (`tap_action: expand`), ein `navigation_path` neben der Aktion und
 die Schalter `show_config` / `show_diagnostic` beim Laden auf die neue Form um.
+
+# Smart Entities und Unraid (Plattform-Entwicklungsstand)
+
+Diese Erweiterungen sind im Entwicklungszweig implementiert. Sie verwenden
+zusammen mit der Gerätekarte einen Core innerhalb dieses Repositories.
+Andere HACS-Kartenpakete bleiben unabhängig. Keine Dashboardmigration erfolgt
+beim Laden der Ressource.
+
+## `busch-smart-entities`
+
+Eine bestehende `auto-entities`-Konfiguration kann durch Ändern des Typs auf
+`custom:busch-smart-entities` übernommen werden. Zielkarte, `card_param`,
+statische Entities, Include/Exclude, Jinja, `else`, `show_empty`, lokale und
+globale Sortierung/Pagination sowie `unique` bleiben erhalten. Die
+Kompatibilitätstests verwenden den Originalcode von auto-entities **1.16.1**;
+auch dessen ungewöhnliche Vergleichs- und Paginationregeln werden beibehalten.
+
+```yaml
+type: custom:busch-smart-entities
+card:
+  type: entities
+filter:
+  include:
+    - domain: sensor
+      attributes:
+        device_class: battery
+      state: "< 20"
+sort:
+  method: state
+  numeric: true
+```
+
+Der visuelle Editor enthält Zielkartenwahl und eingebetteten HA-Karteneditor,
+statische Entities, einen rekursiven UND/ODER/NICHT-Filterbuilder, Template,
+Sortierung, Anzeige, Debug und Ergebnisausgabe. Für beliebige Kartenoptionen
+steht zusätzlich ein strukturierter Objekteditor mit typisierten Werten zur
+Verfügung. YAML ist nicht erforderlich. Der Import nimmt JSON-Konfigurationen
+entgegen und ändert ausschließlich den Kartentyp.
+
+Optionale Wertausgabe:
+
+```yaml
+value:
+  type: device_id
+  missing: skip
+unique_values: true
+```
+
+`value.type` kann `entity_id`, `device_id` oder `attribute` sein. Bei Attributen
+enthält `value.attribute` den freien, auch verschachtelten Pfad, beispielsweise
+`network.details.interface`. Fehlende Werte werden übersprungen; `missing:
+"null"` gibt stattdessen null aus. `false`, `0` und Leerstrings bleiben Werte.
+`unique_values` vergleicht tatsächlich ausgegebene Werte; Objektwerte werden
+strukturell verglichen. Die erste Treffer-Entity liefert den Sortierkontext.
+Deduplizierung erfolgt vor globaler Sortierung/Begrenzung. Ohne Wertoption
+bleibt die originale Entity-Zeilenverarbeitung einschließlich `unique: true`
+(ganze Zeilen) und `unique: entity` (Entity-IDs) erhalten.
+
+Device-IDs und beliebige Attributwerte benötigen eine Zielkarte mit passendem
+Parametervertrag; HAs Entities-Karte interpretiert Device-IDs nicht als Entities.
+Bei `debug: true` zeigt die Karte Kandidaten, Auswertungen, Laufzeit und
+Zielkarten-Konfigurationen. Template- und experimentelle `eval_js`-Abfragen
+sind ausdrücklich als eingeschränkt optimierbar markiert. Jinja wird durch
+Home Assistants Template-Subscription ausgewertet.
+
+## `busch-unraid-stack-card`
+
+```yaml
+type: custom:busch-unraid-stack-card
+device_id: YOUR_STACK_DEVICE_ID
+```
+
+Im Editor die Unraid-Instanz und ein Gerät vom Modell `Compose stack` wählen.
+Die Karte zeigt laufende Container, Stacksteuerung und zugeordnete Container-
+Updates. Konfigurierbar sind Titel, kompakte/ausführliche Ansicht, Status,
+Steuerung, Container, Updates, Zustandsfilter, Sortierung, Neustart,
+Bestätigungen und anfängliches Aufklappen. Stoppen und Neustarten werden
+standardmäßig bestätigt.
+
+## `busch-unraid-container-card`
+
+```yaml
+type: custom:busch-unraid-container-card
+device_id: YOUR_CONTAINER_OR_STACK_DEVICE_ID
+container_key: YOUR_BACKEND_CONTAINER_KEY
+```
+
+Standalone-Containergeräte und Container am Compose-Stackgerät werden
+unterstützt. Der visuelle Editor bietet die echten Backendkennungen zur
+Auswahl; die Eingabe der Kennung ist nicht erforderlich. Details und Updates
+öffnen den nativen HA-Dialog. Ein Update wird nur bei vorhandener Zuordnung
+und verfügbarem Update angezeigt.
+
+Beide Karten ordnen Entities über Plattform, Config Entry, Gerätezuordnung
+und strukturierte Backendattribute zu. Für ältere Versionen wird ausschließlich
+der belegte Registry-`unique_id`-Vertrag verwendet, niemals ein Entity-ID-
+oder Anzeigenamenmuster. Unklare Zuordnungen bleiben unbedienbar; explizite
+Schalter-/Updateauswahl ist im Editor möglich. Neustart erscheint nur mit
+echtem Backendbutton. Ohne diese Fähigkeit ist die Editoroption deaktiviert
+und erklärt; es gibt keine Turn-off/Turn-on-Ersatzkette.
+
+Das passende `unraid_ssh`-Backend enthält native Docker-/Compose-Restarts und
+stabile Composeidentitäten aus Stack, Service und Replikaindex. Vor dessen
+Liveinstallation muss ein abweichender installierter Quellstand abgeglichen
+werden. Bestehende Containerentities werden nicht automatisch gelöscht.
+
+## Direkte Geräteauswahl
+
+Auch die vorhandene `busch-device-card` akzeptiert `device_id` allein.
+Der Editor bietet einen HA-Geräteselektor. Bisherige `entity`-Konfigurationen
+bleiben gültig. Bei Geräten ohne steuerbare Hauptentity werden vorhandene
+Entity-Gruppen angezeigt; ein leeres/fehlendes Gerät erhält einen Hinweis.
+
+## Entwicklertests
+
+```sh
+node --test tests/*.test.js
+node --expose-gc tests/smart-benchmark.cjs /tmp/smart-benchmark.json
+```
+
+Für den Original-Differenztest `BUSCH_AUTO_ENTITIES_SOURCE` auf ein externes
+Verzeichnis mit den unveränderten `src/{helpers,match,filter,sort,process_entity,
+main}.ts` aus dem GitHub-Tag `thomasloven/lovelace-auto-entities` **v1.16.1**
+setzen. Ohne diesen Quellenpfad wird nur dieser Referenzlauf als übersprungen
+markiert; die lokalen Funktionsfixtures laufen weiter. TypeScript wird nur
+für den isolierten Referenztest durch Nodes `stripTypeScriptTypes` gelesen;
+das Produkt hat weiterhin keinen Buildschritt.
+
+Browserharness: `docs/render/smart-entities.py` und `docs/render/unraid-cards.py`,
+jeweils mit Bundlepfad und privatem Ausgabeordner. Sie testen synthetische
+Daten und Schaltaufrufe über Attrappen, keine produktiven Containeraktionen.
