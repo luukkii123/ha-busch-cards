@@ -16,6 +16,344 @@
  * hat.
  */
 
+/* Shared runtime for this repository only. Public API major: 1. */
+const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
+const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
+function buschCoreMap(rows, key) {
+  return new Map((Array.isArray(rows) ? rows : Object.values(rows || {})).map(row => [row[key], row]));
+}
+function buschCoreSet(map, key, id, add = true) {
+  if (key === undefined || key === null || key === "") return;
+  if (add) { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(id); }
+  else { const set = map.get(key); if (set) { set.delete(id); if (!set.size) map.delete(key); } }
+}
+class BuschRegistryCache {
+  constructor(hass, onLoad = () => {}) { this.hass = hass; this.onLoad = onLoad; this.promises = new Map(); this.requests = {}; this.generation = 0; }
+  load(name) {
+    if (!(name in BUSCH_REGISTRY_IDS)) return Promise.reject(new Error(`Unknown registry: ${name}`));
+    if (this.promises.has(name)) return this.promises.get(name);
+    const generation = this.generation, hass = this.hass;
+    const pending = Promise.resolve().then(() => {
+      this.requests[name] = (this.requests[name] || 0) + 1;
+      return hass.callWS({ type: `config/${name}_registry/list` });
+    }).then(rows => {
+      if (generation !== this.generation || this.promises.get(name) !== pending) return null;
+      if (!Array.isArray(rows)) throw new Error(`Invalid ${name} registry response`);
+      const map = buschCoreMap(rows, BUSCH_REGISTRY_IDS[name]);
+      this.onLoad(name, map); return map;
+    }).catch(error => { if (this.promises.get(name) === pending) this.promises.delete(name); throw error; });
+    this.promises.set(name, pending); return pending;
+  }
+  invalidate(name) { this.promises.delete(name); }
+  clear() { this.generation++; this.promises.clear(); }
+}
+class BuschEntityIndex {
+  constructor() {
+    this.entities = new Map(); this.devices = new Map(); this.areas = new Map(); this.floors = new Map(); this.labels = new Map(); this.registry = new Map(); this.states = new Map();
+    this.indices = Object.fromEntries(["domain", "state", "integration", "config_entry", "device", "area", "floor", "label", "manufacturer", "model", "entity_category"].map(key => [key, new Map()]));
+    this.deviceIndices = { via_device_id: new Map(), config_entry_id: new Map() };
+  }
+  keys(info) {
+    return { domain: [info.domain], state: [info.state], integration: [info.platform], config_entry: [info.config_entry_id], device: [info.device_id], area: [info.area_id], floor: [info.floor_id], label: info.labels, manufacturer: [info.manufacturer], model: [info.model], entity_category: [info.entity_category] };
+  }
+  update(id, state) {
+    if (state) this.states.set(id, state); else this.states.delete(id);
+    const old = this.entities.get(id);
+    if (old) for (const [field, keys] of Object.entries(this.keys(old))) for (const key of keys) buschCoreSet(this.indices[field], key, id, false);
+    const entry = this.registry.get(id);
+    if (!entry && !state) { this.entities.delete(id); return { id, old, next: undefined }; }
+    const device = this.devices.get(entry?.device_id);
+    const area_id = entry?.area_id || device?.area_id;
+    const next = { entity_id: id, domain: id.split(".")[0], registry: entry, stateObject: state || undefined, attributes: state?.attributes || {}, state: state?.state,
+      platform: entry?.platform, config_entry_id: entry?.config_entry_id, device_id: entry?.device_id,
+      area_id, floor_id: this.areas.get(area_id)?.floor_id,
+      labels: [...new Set([...(entry?.labels || []), ...(device?.labels || [])])], manufacturer: device?.manufacturer, model: device?.model, entity_category: entry?.entity_category };
+    this.entities.set(id, next);
+    for (const [field, keys] of Object.entries(this.keys(next))) for (const key of keys) buschCoreSet(this.indices[field], key, id);
+    return { id, old, next };
+  }
+  rebuild() {
+    this.entities.clear(); for (const map of Object.values(this.indices)) map.clear();
+    for (const map of Object.values(this.deviceIndices)) map.clear();
+    for (const device of this.devices.values()) {
+      buschCoreSet(this.deviceIndices.via_device_id, device.via_device_id, device.id);
+      for (const entry of device.config_entries || []) buschCoreSet(this.deviceIndices.config_entry_id, entry, device.id);
+    }
+    for (const id of new Set([...this.states.keys(), ...this.registry.keys()])) this.update(id, this.states.get(id));
+  }
+}
+/* Internal declarative API; auto-entities compatibility is an adapter. */
+function buschCoreKey(value) {
+  if (Array.isArray(value)) return '[' + value.map(buschCoreKey).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + buschCoreKey(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
+function buschCorePath(object, path) { return String(path).split(/[.:]/).reduce((value, key) => value?.[key], object); }
+function buschCoreMatch(value, pattern) {
+  if (typeof pattern !== 'string') return value === pattern;
+  if (pattern.startsWith('$$')) return buschCoreMatch(JSON.stringify(value), pattern.slice(2));
+  if (pattern.startsWith('/') && pattern.endsWith('/')) return typeof value === 'string' && new RegExp(pattern.slice(1, -1)).test(value);
+  const numeric = pattern.match(/^\s*(<=|>=|==|!=|<|>|=)\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (numeric) {
+    const a = parseFloat(value), b = Number(numeric[2]);
+    if (!Number.isFinite(a)) return false;
+    return ({ '<': a < b, '>': a > b, '<=': a <= b, '>=': a >= b, '=': a === b, '==': a === b, '!=': a !== b })[numeric[1]];
+  }
+  return value === pattern;
+}
+const BUSCH_QUERY_FIELDS = { domain: 'domain', entity_id: 'entity_id', state: 'state', integration: 'platform', config_entry: 'config_entry_id', device: 'device_id', area: 'area_id', floor: 'floor_id', label: 'labels', device_manufacturer: 'manufacturer', device_model: 'model', entity_category: 'entity_category' };
+const BUSCH_QUERY_INDEX = { domain: 'domain', state: 'state', integration: 'integration', config_entry: 'config_entry', device: 'device', area: 'area', floor: 'floor', label: 'label', device_manufacturer: 'manufacturer', device_model: 'model', entity_category: 'entity_category' };
+const BUSCH_QUERY_TIME = new Set(['last_changed', 'last_updated', 'last_seen']);
+function buschCompileRule(rule) {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) throw new Error('Invalid query rule');
+  const tests = [], guards = [], lookups = [], timeRules = [];
+  for (const [raw, value] of Object.entries(rule)) {
+    const key = raw.trim().split(/\s+/)[0];
+    if (BUSCH_QUERY_TIME.has(key)) {
+      const parsed = String(value).match(/^\s*(<=|>=|==|!=|<|>|=)?\s*(\d+(?:\.\d+)?)\s*(m|h|d)?(?:\s+ago)?\s*$/i);
+      if (!parsed) throw new Error('Invalid time rule: ' + key);
+      const operator = parsed[1] || '=', duration = Number(parsed[2]) * ({ m: 60000, h: 3600000, d: 86400000 }[(parsed[3] || 'm').toLowerCase()]);
+      const timestamp = info => Date.parse(key === 'last_seen' ? info.attributes.last_seen : info.stateObject?.[key]);
+      tests.push((info, now) => buschCoreMatch(now - timestamp(info), operator + ' ' + duration)); timeRules.push({ timestamp, duration });
+    } else if (key === 'attributes') {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid attributes rule');
+      tests.push(info => Object.entries(value).every(([path, pattern]) => buschCoreMatch(buschCorePath(info.attributes, path.split(' ')[0]), pattern)));
+    } else if (key === 'name') tests.push(info => buschCoreMatch(info.attributes.friendly_name, value));
+    else if (key === 'hidden_by') { const fn = info => buschCoreMatch(info.registry?.hidden_by, value); tests.push(fn); guards.push(fn); }
+    else if (key in BUSCH_QUERY_FIELDS) {
+      const field = BUSCH_QUERY_FIELDS[key];
+      const fn = info => key === 'label' ? info.labels.some(label => buschCoreMatch(label, value)) : buschCoreMatch(info[field], value) || (key === 'integration' && buschCoreMatch(info.config_entry_id, value));
+      tests.push(fn); if (key !== 'state') guards.push(fn);
+      if (typeof value === 'string' && !/[*/<>=!]/.test(value)) lookups.push([key, value]);
+    } else throw new Error('Unsupported query rule: ' + key);
+  }
+  return { test: (info, now) => !!info?.stateObject && tests.length > 0 && tests.every(fn => fn(info, now)), guard: info => !!info && guards.every(fn => fn(info)), lookups, timeRules };
+}
+class BuschQueryEngine {
+  constructor(core) { this.core = core; this.cache = new Map(); this.timer = null; }
+  query(spec) {
+    const copy = JSON.parse(JSON.stringify(spec)), key = buschCoreKey(copy);
+    if (this.cache.has(key)) return this.cache.get(key);
+    const filter = copy.filter || {};
+    const query = { key, spec: copy, include: (filter.include || []).map(buschCompileRule), exclude: (filter.exclude || []).map(buschCompileRule), members: new Set(), deadlines: new Map(), nextDeadline: Infinity, subscribers: new Set(), result: Object.freeze([]), metrics: { calculations: 0, evaluated: 0, candidates: 0, executionMs: 0 } };
+    this.cache.set(key, query); this.calculate(query); this.evict(); return query;
+  }
+  evict() {
+    if (this.cache.size <= 128) return;
+    for (const [key, query] of this.cache) { if (!query.subscribers.size) this.cache.delete(key); if (this.cache.size <= 128) break; }
+  }
+  candidates(rule) {
+    const sets = [];
+    for (const [field, value] of rule.lookups) {
+      if (field === 'entity_id') sets.push(this.core.entities.has(value) ? new Set([value]) : new Set());
+      else if (field === 'integration') sets.push(new Set([...(this.core.index.indices.integration.get(value) || []), ...(this.core.index.indices.config_entry.get(value) || [])]));
+      else if (BUSCH_QUERY_INDEX[field]) sets.push(this.core.index.indices[BUSCH_QUERY_INDEX[field]].get(value) || new Set());
+    }
+    if (!sets.length) return this.core.entities.keys();
+    sets.sort((a, b) => a.size - b.size);
+    return [...sets[0]].filter(id => sets.every(set => set.has(id)));
+  }
+  matches(query, info, now) { return query.include.some(rule => rule.test(info, now)) && !query.exclude.some(rule => rule.test(info, now)); }
+  calculate(query, ids) {
+    const start = performance.now(), now = Date.now(); query.metrics.calculations++; this.core.metrics.queriesRecalculated++;
+    if (!ids) { query.members.clear(); query.deadlines.clear(); ids = new Set(query.include.flatMap(rule => [...this.candidates(rule)])); }
+    query.metrics.candidates = ids.size ?? ids.length;
+    for (const id of ids) { query.metrics.evaluated++; if (this.matches(query, this.core.getEntity(id), now)) query.members.add(id); else query.members.delete(id); }
+    const timed = [...query.include, ...query.exclude].filter(rule => rule.timeRules.length);
+    for (const id of ids) {
+      let next = Infinity; const info = this.core.getEntity(id);
+      if (info?.stateObject) for (const rule of timed) {
+        if (!rule.guard(info)) continue;
+        for (const time of rule.timeRules) {
+          const boundary = time.timestamp(info) + time.duration;
+          for (const at of [boundary, boundary + 1]) if (at > now) next = Math.min(next, at);
+        }
+      }
+      if (Number.isFinite(next)) query.deadlines.set(id, next); else query.deadlines.delete(id);
+    }
+    query.nextDeadline = Infinity;
+    for (const at of query.deadlines.values()) query.nextDeadline = Math.min(query.nextDeadline, at);
+    const result = [...query.members].sort();
+    if (result.length !== query.result.length || result.some((id, index) => id !== query.result[index])) {
+      query.result = Object.freeze(result); this.core.metrics.resultChanges++;
+      for (const fn of query.subscribers) { try { fn(query.result); } catch (error) { console.warn('Busch Core subscriber failed', error?.name); } }
+    }
+    query.metrics.executionMs = performance.now() - start;
+  }
+  changed({ id, old, next }) {
+    for (const query of this.cache.values()) {
+      if (query.include.some(rule => rule.guard(old) || rule.guard(next))) this.calculate(query, [id]); else this.core.metrics.queriesSkipped++;
+    }
+    this.schedule();
+  }
+  refresh() { for (const query of this.cache.values()) this.calculate(query); this.schedule(); }
+  subscribe(query, fn) {
+    if (typeof fn !== 'function') throw new Error('A query subscriber must be a function');
+    if (!this.cache.has(query.key)) { this.cache.set(query.key, query); this.calculate(query); }
+    query = this.cache.get(query.key);
+    query.subscribers.add(fn);
+    try { fn(query.result); } catch (error) { console.warn('Busch Core subscriber failed', error?.name); }
+    this.schedule();
+    let active = true;
+    return () => { if (!active) return; active = false; query.subscribers.delete(fn); if (!query.subscribers.size) this.cache.delete(query.key); this.schedule(); };
+  }
+  schedule() {
+    let deadline = Infinity;
+    for (const query of this.cache.values()) if (query.subscribers.size) deadline = Math.min(deadline, query.nextDeadline);
+    if (this.timer !== null && this.deadline === deadline) return;
+    if (this.timer !== null) clearTimeout(this.timer); this.timer = null; this.deadline = deadline;
+    if (Number.isFinite(deadline)) this.timer = setTimeout(() => {
+      this.timer = null; const now = Date.now();
+      for (const query of this.cache.values()) if (query.subscribers.size && query.nextDeadline <= now) this.calculate(query);
+      this.schedule();
+    }, Math.min(2147483647, Math.max(1, deadline - Date.now())));
+  }
+  stop() { if (this.timer !== null) clearTimeout(this.timer); this.timer = null; }
+}
+class BuschCardsCore {
+  constructor() {
+    this.apiVersion = "1.0"; this.version = "1.0.0"; this.index = new BuschEntityIndex(); this.metrics = { stateUpdates: 0, queriesSkipped: 0, queriesRecalculated: 0, resultChanges: 0, domRenders: null, structuralBuilds: 0 };
+    this.registry = new BuschRegistryCache(null, (name, map) => {
+      this.index[name === "entity" ? "registry" : name === "device" ? "devices" : name === "area" ? "areas" : name === "floor" ? "floors" : "labels"] = map;
+      this.index.rebuild(); this.engine?.refresh(); this.lastErrors.delete(name);
+      if (!this._notifyQueued) { this._notifyQueued = true; Promise.resolve().then(() => {
+        this._notifyQueued = false;
+        for (const listener of this._listeners) { try { listener(); } catch (error) { console.warn("Busch Core registry listener failed", error?.name); } }
+      }); }
+    });
+    this._listeners = new Set(); this.lastErrors = new Map(); this.unsubscribers = []; this.generation = 0; this.users = 0;
+    this.ready = Promise.resolve(); this.engine = new BuschQueryEngine(this);
+  }
+  get entities() { return this.index.entities; }
+  get devices() { return this.index.devices; }
+  get areas() { return this.index.areas; }
+  get floors() { return this.index.floors; }
+  get labels() { return this.index.labels; }
+  getEntity(id) { return this.entities.get(id); }
+  getDevice(id) { return this.devices.get(id); }
+  getDeviceEntities(id) { return [...(this.index.indices.device.get(id) || [])].map(entity => this.entities.get(entity)); }
+  seed(hass) {
+    this.index.registry = buschCoreMap(hass.entities, "entity_id"); this.index.devices = buschCoreMap(hass.devices, "id");
+    this.index.areas = buschCoreMap(hass.areas, "area_id"); this.index.floors = buschCoreMap(hass.floors, "floor_id");
+    this.index.states = new Map(Object.entries(hass.states || {})); this.index.rebuild(); this._states = hass.states;
+    this._display = [hass.entities, hass.devices, hass.areas, hass.floors]; this.engine?.refresh();
+  }
+  attach(hass) {
+    if (!hass) return;
+    const identity = hass.connection || hass;
+    if (this.connection === identity) {
+      this.hass = hass; this.registry.hass = hass;
+      if (!this.streaming && [hass.entities, hass.devices, hass.areas, hass.floors].some((value, index) => value !== this._display[index])) this.seed(hass);
+      // Without a stream, compare state references once for the shared runtime.
+      if (!this.streaming && this._states !== hass.states) this.syncStates(hass.states || {});
+      return;
+    }
+    this.dispose(); this.index.labels = new Map(); this.lastErrors.clear(); this.connection = identity; this.hass = hass; this.registry.hass = hass; this.seed(hass);
+    const generation = this.generation;
+    const connection = hass.connection;
+    let stateReady = Promise.resolve();
+    if (typeof connection?.subscribeEvents === "function") {
+      this._stateBuffer = [];
+      const subscribe = (type, callback) => {
+        return Promise.resolve(connection.subscribeEvents(event => { if (generation === this.generation) callback(event); }, type)).then(unsubscribe => {
+          if (generation !== this.generation) unsubscribe(); else {
+            this.unsubscribers.push(unsubscribe);
+            if (type === "state_changed") return this.syncStream();
+          }
+        }).catch(() => { if (generation === this.generation) this.streaming = false; });
+      };
+      stateReady = subscribe("state_changed", event => {
+        if (this._stateBuffer) this._stateBuffer.push(event.data);
+        else this.updateState(event.data.entity_id, event.data.new_state);
+      });
+      for (const name of Object.keys(BUSCH_REGISTRY_IDS)) subscribe(`${name}_registry_updated`, () => {
+        this._dirtyRegistries ||= new Set(); this._dirtyRegistries.add(name);
+        if (this._registryTimer) return;
+        this._registryTimer = setTimeout(() => { this._registryTimer = null; const names = [...this._dirtyRegistries]; this._dirtyRegistries.clear(); this.refreshRegistries(names, true); }, 50);
+      });
+      if (typeof connection.addEventListener === "function") {
+        const onReady = () => {
+          if (generation !== this.generation) return;
+          this.registry.clear(); this._refreshing.clear(); this._queuedRefresh?.clear();
+          this._snapshotEpoch = (this._snapshotEpoch || 0) + 1; this._snapshotPromise = null; this._stateBuffer = []; this.streaming = false;
+          this.ready = Promise.all([this.syncStream(), this.refreshRegistries()]); return this.ready;
+        };
+        connection.addEventListener("ready", onReady);
+        this.unsubscribers.push(() => connection.removeEventListener?.("ready", onReady));
+      }
+    }
+    this.ready = Promise.all([stateReady, typeof hass.callWS === "function" ? this.refreshRegistries() : Promise.resolve()]);
+  }
+  syncStream() {
+    if (this._snapshotPromise) return this._snapshotPromise;
+    const generation = this.generation, epoch = this._snapshotEpoch || 0, hass = this.hass; this._stateBuffer ||= [];
+    const pending = Promise.resolve().then(() => hass.callWS({ type: "get_states" })).then(rows => {
+      if (generation !== this.generation || epoch !== (this._snapshotEpoch || 0)) return;
+      if (!Array.isArray(rows)) throw new Error("Invalid state snapshot");
+      const states = Object.fromEntries(rows.map(state => [state.entity_id, state]));
+      for (const event of this._stateBuffer || []) {
+        const previous = states[event.entity_id], next = event.new_state;
+        if (!next) delete states[event.entity_id];
+        else if (!previous || !previous.last_updated || !next.last_updated || next.last_updated >= previous.last_updated) states[event.entity_id] = next;
+      }
+      this._stateBuffer = null; this.syncStates(states); this.streaming = true; this.lastErrors.delete("states");
+    }).catch(error => {
+      if (generation !== this.generation || epoch !== (this._snapshotEpoch || 0)) return;
+      for (const event of this._stateBuffer || []) this.updateState(event.entity_id, event.new_state);
+      this._stateBuffer = null; this.streaming = false; this.lastErrors.set("states", error);
+    }).finally(() => { if (this._snapshotPromise === pending) this._snapshotPromise = null; });
+    this._snapshotPromise = pending; return pending;
+  }
+  syncStates(states) {
+    const ids = new Set([...this.index.states.keys(), ...Object.keys(states)]);
+    for (const id of ids) if (this.index.states.get(id) !== states[id]) this.updateState(id, states[id]);
+    this._states = states;
+  }
+  updateState(id, state) { this.metrics.stateUpdates++; const change = this.index.update(id, state); this.engine?.changed(change); }
+  refreshRegistries(names = Object.keys(BUSCH_REGISTRY_IDS), afterPending = false) {
+    const generation = this.generation;
+    this._refreshing ||= new Map(); this._queuedRefresh ||= new Set();
+    return Promise.all(names.map(name => {
+      if (this._refreshing.has(name)) {
+        if (afterPending) this._queuedRefresh.add(name);
+        return this._refreshing.get(name);
+      }
+      if (this.registry.promises.has(name)) this.registry.invalidate(name);
+      const pending = this.registry.load(name).catch(error => {
+        if (generation === this.generation) this.lastErrors.set(name, error);
+        return null;
+      }).finally(() => {
+        if (generation !== this.generation || this._refreshing.get(name) !== pending) return;
+        this._refreshing.delete(name);
+        if (this._queuedRefresh.delete(name)) return this.refreshRegistries([name]);
+      });
+      this._refreshing.set(name, pending); return pending;
+    }));
+  }
+  loadEntityRegistry() { return this.registry.load("entity"); }
+  loadDeviceRegistry() { return this.registry.load("device"); }
+  loadAreaRegistry() { return this.registry.load("area"); }
+  loadFloorRegistry() { return this.registry.load("floor"); }
+  loadLabelRegistry() { return this.registry.load("label"); }
+  watch(callback) { this._listeners.add(callback); return () => this._listeners.delete(callback); }
+  retain(hass) { this.attach(hass); this.users++; let released = false; return () => { if (released) return; released = true; if (--this.users <= 0) this.dispose(); }; }
+  query(spec) { return this.engine.query(spec); }
+  subscribe(query, callback) { return this.engine.subscribe(query, callback); }
+  debugSnapshot() { return { ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
+  dispose() {
+    this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
+    this.streaming = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set(); this._snapshotPromise = null; this._stateBuffer = null;
+    if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this.engine?.stop();
+  }
+}
+function ensureBuschCore(requiredApiVersion = 1) {
+  const major = Number(String(requiredApiVersion).split(".")[0]);
+  if (major !== 1) throw new Error(`Busch Cards Core API ${major} is incompatible with API 1 / ist mit API 1 nicht kompatibel.`);
+  const core = globalThis[BUSCH_CORE_KEY] || (globalThis[BUSCH_CORE_KEY] = new BuschCardsCore());
+  if (Number(String(core.apiVersion).split(".")[0]) !== major) throw new Error("Busch Cards Core API mismatch / inkompatible API-Version.");
+  return core;
+}
+
 const CARD_VERSION = "0.11.0";
 
 console.info(
@@ -3094,8 +3432,8 @@ class BuschCalendarCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("busch-schedule-card", BuschScheduleCard);
-customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
+if (!customElements.get?.("busch-schedule-card")) customElements.define("busch-schedule-card", BuschScheduleCard);
+if (!customElements.get?.("busch-schedule-card-editor")) customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 
 /* Der Kartenwaehler liest `name` und `description` beim LADEN der Datei —
  * da gibt es noch keinen `hass`. Die Sprache kommt hier deshalb aus
@@ -3104,7 +3442,7 @@ customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
 const waehlerZeitplan = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD);
 
 window.customCards = window.customCards || [];
-window.customCards.push({
+window.customCards.some(card => card.type === "busch-schedule-card") || window.customCards.push({
   type: "busch-schedule-card",
   name: waehlerZeitplan.name,
   description: waehlerZeitplan.description,
@@ -3792,12 +4130,12 @@ class BuschMapCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("busch-map-card", BuschMapCard);
-customElements.define("busch-map-card-editor", BuschMapCardEditor);
+if (!customElements.get?.("busch-map-card")) customElements.define("busch-map-card", BuschMapCard);
+if (!customElements.get?.("busch-map-card-editor")) customElements.define("busch-map-card-editor", BuschMapCardEditor);
 
 const waehlerLandkarte = buschTexte(TEXTE_BUSCH_MAP_CARD);
 
-window.customCards.push({
+window.customCards.some(card => card.type === "busch-map-card") || window.customCards.push({
   type: "busch-map-card",
   name: waehlerLandkarte.name,
   description: waehlerLandkarte.description,
@@ -4030,6 +4368,7 @@ function devNormalisiereKonfig(config) {
   const roh = devMigriereKonfig(config);
   const k = { ...DEV_STANDARD, ...roh };
   k.entity = typeof roh.entity === "string" ? roh.entity : "";
+  k.device_id = typeof roh.device_id === "string" ? roh.device_id.trim() : "";
   for (const feld of ["labels", "labels_hide"]) {
     if (typeof roh[feld] === "string") k[feld] = [roh[feld]];
     else if (Array.isArray(roh[feld])) k[feld] = roh[feld].filter((l) => typeof l === "string");
@@ -4076,24 +4415,31 @@ function devUntertitel(geraet, bereich) {
  * Entität → Gerät → Bereich. Liefert `{ fehler }` mit einem Wörterbuch-
  * schlüssel aus `texte`, oder die Auflösung.
  */
-function devGeraetAufloesen(hass, entityId) {
-  if (!entityId) return { fehler: "keineEntitaet" };
-  if (!hass || !hass.entities || !hass.devices) return { fehler: "altesHa" };
-  const eintrag = hass.entities[entityId];
-  if (!eintrag) return { fehler: "nichtRegistriert" };
-  if (!eintrag.device_id) return { fehler: "keinGeraet" };
-  const geraet = hass.devices[eintrag.device_id];
-  if (!geraet) return { fehler: "keinGeraet" };
-  const bereich = (geraet.area_id && hass.areas && hass.areas[geraet.area_id]) || null;
-  const name = geraet.name_by_user || geraet.name || entityId;
-  return {
-    eintrag,
-    geraet,
-    bereich,
-    name,
-    untertitel: devUntertitel(geraet, bereich),
-    platform: eintrag.platform || "",
-  };
+function devGeraetAufloesen(hass, entityId, deviceId, core) {
+  if (!entityId && !deviceId) return { fehler: "keineEntitaet" };
+  if (!hass || (!core && (!hass.entities || !hass.devices))) return { fehler: "altesHa" };
+  const entryFor = id => core ? core.getEntity(id)?.registry : hass.entities?.[id];
+  let eintrag = entryFor(entityId);
+  const id = deviceId || eintrag?.device_id;
+  if (!deviceId && !eintrag) return { fehler: "nichtRegistriert" };
+  if (!id) return { fehler: "keinGeraet" };
+  const geraet = core ? core.getDevice(id) : hass.devices[id];
+  if (!geraet) return { fehler: deviceId ? "geraetFehlt" : "keinGeraet" };
+  if (deviceId && (!eintrag || eintrag.device_id !== id)) {
+    const domains = ["climate", "light", "cover", "fan", "media_player", "switch", "lock"];
+    const entries = devEntitaetenDesGeraets(hass, id, "", core)
+      .filter(entry => domains.includes(devDomain(entry.entity_id)) && !entry.entity_category &&
+        hass.states?.[entry.entity_id] && !["unavailable", "unknown"].includes(hass.states[entry.entity_id].state) && !entry.disabled_by);
+    const rank = entry => {
+      const pos = domains.indexOf(devDomain(entry.entity_id));
+      return entry.entity_category ? 200 : pos < 0 ? 100 : pos;
+    };
+    entries.sort((a, b) => rank(a) - rank(b) || a.entity_id.localeCompare(b.entity_id));
+    eintrag = entries[0] || {}; entityId = eintrag.entity_id || "";
+  }
+  const bereich = (geraet.area_id && (core ? core.areas.get(geraet.area_id) : hass.areas?.[geraet.area_id])) || null;
+  const name = geraet.name_by_user || geraet.name || id;
+  return { eintrag, geraet, bereich, entityId, name, untertitel: devUntertitel(geraet, bereich), platform: eintrag.platform || "" };
 }
 
 /**
@@ -4108,7 +4454,8 @@ const DEV_SENSOR_DOMAINS = [
 /** Reihenfolge der Gruppen in der Karte. */
 const DEV_GRUPPEN = ["control", "sensor", "config", "diagnostic"];
 
-function devEntitaetenDesGeraets(hass, deviceId, hauptId) {
+function devEntitaetenDesGeraets(hass, deviceId, hauptId, core) {
+  if (core) return core.getDeviceEntities(deviceId).map(info => info.registry).filter(e => e && !e.hidden && !e.hidden_by && !e.disabled_by && e.entity_id !== hauptId);
   const aus = [];
   const register = (hass && hass.entities) || {};
   for (const id of Object.keys(register)) {
@@ -4214,7 +4561,8 @@ function devStrukturStempel(deviceId, vorlage, gruppen, konfig) {
 }
 
 const SCHEMA_BUSCH_DEVICE_CARD = [
-  { name: "entity", required: true, selector: { entity: {} } },
+  { name: "device_id", selector: { device: {} } },
+  { name: "entity", selector: { entity: {} } },
   { name: "title", selector: { text: {} } },
   {
     name: "template",
@@ -4330,6 +4678,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
     name: "Busch Gerät",
     description: "Zeigt zu einer Entität ihr ganzes Gerät: Kopfzeile, Bedienelement und alle Entitäten, gruppiert wie auf der Geräteseite.",
     labels: {
+      device_id: "Gerät",
       entity: "Entität",
       title: "Überschrift",
       template: "Darstellung",
@@ -4347,7 +4696,8 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Halten auf einer Zeile",
     },
     helpers: {
-      entity: "Irgendeine Entität des Geräts. Die Karte sucht daraus das Gerät und zeigt diese Entität oben als Bedienelement.",
+      device_id: "Gerät direkt auswählen; weitere Entitäten sind nicht erforderlich. Vorgabe: Auswahl über die Entität.",
+      entity: "Optionale Hauptentität des Geräts. Die Karte sucht daraus das Gerät und zeigt diese Entität oben als Bedienelement.",
       title: "Überschrift der Karte. Leer nimmt den Gerätenamen. Vorgabe: leer.",
       template: "Welche Bedienelemente oben stehen. Automatisch richtet sich nach der Art der Entität. Vorgabe: automatisch.",
       labels: "Zeigt unten nur Entitäten, die eines dieser Labels tragen. Die Entität oben bleibt immer. Vorgabe: alle.",
@@ -4392,13 +4742,15 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       gruppe_sensor: "Sensoren",
       gruppe_config: "Konfiguration",
       gruppe_diagnostic: "Diagnose",
-      keineEntitaet: "Keine Entität gewählt. Im Karteneditor eine auswählen.",
+      keineEntitaet: "Kein Gerät gewählt. Im Karteneditor ein Gerät oder eine Entität auswählen.",
+      geraetFehlt: "Das gewählte Gerät existiert nicht oder wurde gelöscht.",
       altesHa: "Braucht Home Assistant 2024.11 oder neuer.",
       nichtRegistriert: "{entity} ist nicht registriert.",
       keinGeraet: "{entity} gehört zu keinem Gerät.",
       helferFehlt: "Bausteine von Home Assistant nicht ladbar.",
       laden: "Wird geladen …",
       keineTreffer: "Kein Eintrag mit diesen Labels.",
+      keineGeraeteEntitaeten: "Für dieses Gerät sind keine sichtbaren Entitäten verfügbar.",
       aufklappen: "Aufklappen",
       zuklappen: "Zuklappen",
       /* Rueckfallname fuer eine Entitaet ohne eigenen Namen, siehe devKurzname. */
@@ -4446,6 +4798,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
     name: "Busch device",
     description: "Shows the whole device behind an entity: header, control and every entity, grouped like the device page.",
     labels: {
+      device_id: "Device",
       entity: "Entity",
       title: "Heading",
       template: "Layout",
@@ -4463,6 +4816,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Hold on a row",
     },
     helpers: {
+      device_id: "Select a device directly; no entity is required. Default: resolve the entity’s device.",
       entity: "Any entity of the device. The card finds the device from it and shows this entity as the control at the top.",
       title: "Heading of the card. Empty uses the device name. Default: empty.",
       template: "Which controls appear at the top. Automatic follows the kind of entity. Default: automatic.",
@@ -4508,13 +4862,15 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       gruppe_sensor: "Sensors",
       gruppe_config: "Configuration",
       gruppe_diagnostic: "Diagnostic",
-      keineEntitaet: "No entity chosen. Pick one in the card editor.",
+      keineEntitaet: "No device selected. Choose a device or an entity in the card editor.",
+      geraetFehlt: "The selected device does not exist or has been deleted.",
       altesHa: "Needs Home Assistant 2024.11 or newer.",
       nichtRegistriert: "{entity} is not registered.",
       keinGeraet: "{entity} belongs to no device.",
       helferFehlt: "Home Assistant building blocks could not be loaded.",
       laden: "Loading …",
       keineTreffer: "No entry with these labels.",
+      keineGeraeteEntitaeten: "No visible entities are available for this device.",
       aufklappen: "Expand",
       zuklappen: "Collapse",
       /* Rueckfallname fuer eine Entitaet ohne eigenen Namen, siehe devKurzname. */
@@ -4561,19 +4917,10 @@ const TEXTE_BUSCH_DEVICE_CARD = {
 };
 
 /** Ein Aufruf je Seite, nicht je Karte. Bei Fehler eine leere Map. */
-let devLabelCache = null;
 function devLabelsLaden(hass) {
-  if (!devLabelCache) {
-    devLabelCache = Promise.resolve()
-      .then(() => hass.callWS({ type: "config/label_registry/list" }))
-      .then((liste) => {
-        const m = new Map();
-        for (const e of Array.isArray(liste) ? liste : []) m.set(e.label_id, e);
-        return m;
-      })
-      .catch(() => new Map());
-  }
-  return devLabelCache;
+  const core = ensureBuschCore(1);
+  core.attach(hass);
+  return core.loadLabelRegistry().then(map => map || new Map()).catch(() => new Map());
 }
 
 /** HA speichert Label-Farben als Namen (`red`, `indigo`) — im Frontend
@@ -4694,15 +5041,19 @@ class BuschDeviceCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._labels && hass && typeof hass.callWS === "function") {
-      this._labels = new Map();
-      devLabelsLaden(hass).then((m) => {
-        this._labels = m;
-        this._zeichneChips();
-      });
+    if (hass) {
+      this._core = ensureBuschCore(1);
+      if (!this._releaseCore) {
+        this._releaseCore = this._core.retain(hass);
+        this._unwatchCore = this._core.watch(() => { this._labels = this._core.labels; this._render(); });
+      } else this._core.attach(hass);
     }
+    this._labels = this._core?.labels || new Map();
     this._render();
   }
+
+  connectedCallback() { if (this._hass && !this._releaseCore) this.hass = this._hass; }
+  disconnectedCallback() { this._unwatchCore?.(); this._unwatchCore = null; this._releaseCore?.(); this._releaseCore = null; }
 
   getCardSize() {
     return this._offen ? 3 + (this._zeilenZahl || 0) : 2;
@@ -4806,7 +5157,7 @@ class BuschDeviceCard extends HTMLElement {
 
   /** Der Kontext der Kopfzeile: die Hauptentitaet dieser Karte. */
   _kopfKontext() {
-    return devKontext(this._config.entity,
+    return devKontext(this._entityId,
       this._auf && this._auf.geraet, this._auf && this._auf.bereich);
   }
 
@@ -4893,7 +5244,8 @@ class BuschDeviceCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     this._geruest();
     const t = this._texte;
-    const a = devGeraetAufloesen(this._hass, this._config.entity);
+    const a = devGeraetAufloesen(this._hass, this._config.entity, this._config.device_id, this._core);
+    this._entityId = a.entityId || "";
 
     if (a.fehler) {
       this._stempel = null;
@@ -4917,19 +5269,22 @@ class BuschDeviceCard extends HTMLElement {
     }
 
     this._auf = a;
-    const vorlage = devVorlageWaehlen(this._config.template, this._config.entity);
-    const alle = devEntitaetenDesGeraets(this._hass, a.geraet.id, this._config.entity);
+    const vorlage = devVorlageWaehlen(this._config.template, this._entityId);
+    const alle = devEntitaetenDesGeraets(this._hass, a.geraet.id, this._entityId, this._core);
     const gefiltert = devLabelFilter(alle, this._config.labels, this._config.labels_hide);
     const gruppen = devGruppieren(this._hass, gefiltert, this._config);
-    const stempel = devStrukturStempel(a.geraet.id, vorlage, gruppen, this._config);
+    const stempel = devStrukturStempel(a.geraet.id, vorlage, gruppen, this._config) + this._entityId;
     this._zeilenZahl = gruppen.reduce((n, g) => n + g.ids.length, 0);
 
     if (stempel !== this._stempel) {
       this._stempel = stempel;
+      if (this._core) this._core.metrics.structuralBuilds++;
       this._zeichneKopf(a);
       this._zeichneChips();
       this._baueBausteine(stempel, vorlage, gruppen);
     }
+    if (this._name.textContent !== (this._config.title || a.name)) this._name.textContent = this._config.title || a.name;
+    if (this._unterText.textContent !== a.untertitel) this._unterText.textContent = a.untertitel;
     this._reicheHassDurch();
     this._zeigeListe();
   }
@@ -5000,13 +5355,15 @@ class BuschDeviceCard extends HTMLElement {
     }
 
     try {
+      if (this._entityId) {
       const tile = helfer.createCardElement({
         type: "tile",
-        entity: this._config.entity,
+        entity: this._entityId,
         features: DEV_VORLAGEN[vorlage].features.map((f) => ({ ...f })),
       });
       this._tile = tile;
       this._tileBehaelter.appendChild(tile);
+      }
     } catch (e) {
       this._tile = null;
     }
@@ -5042,7 +5399,7 @@ class BuschDeviceCard extends HTMLElement {
       zeilen.className = "dev-zeilen";
       for (const id of g.ids) {
         try {
-          const voll = devAnzeigename(this._hass, this._hass.entities[id]);
+          const voll = devAnzeigename(this._hass, this._core?.getEntity(id)?.registry || this._hass.entities?.[id]);
           const kurz = devKurzname(voll, geraeteName, devDomainName(t, id));
           const zeile = helfer.createRowElement({ entity: id, name: kurz });
           const rahmen = document.createElement("div");
@@ -5060,10 +5417,10 @@ class BuschDeviceCard extends HTMLElement {
     // Auch der reine AUSSCHLUSS kann die Liste leeren — am 10.09.2026 an
     // echten Daten gesehen: Label `ignore` auf allen Entitaeten eines
     // Zigbee-Schalters. Ohne diese Zeile blieb die Liste stumm leer.
-    if (!gruppen.length && (this._config.labels.length || this._config.labels_hide.length)) {
+    if (!gruppen.length && (!this._entityId || this._config.labels.length || this._config.labels_hide.length)) {
       const leer = document.createElement("div");
       leer.className = "dev-hinweis";
-      leer.textContent = t.keineTreffer;
+      leer.textContent = this._config.labels.length || this._config.labels_hide.length ? t.keineTreffer : t.keineGeraeteEntitaeten;
       this._liste.appendChild(leer);
     }
     this._reicheHassDurch();
@@ -5075,7 +5432,7 @@ class BuschDeviceCard extends HTMLElement {
     for (const z of this._zeilen || []) z.hass = this._hass;
     if (this._stateIcon && this._auf) {
       this._stateIcon.hass = this._hass;
-      this._stateIcon.stateObj = this._hass.states[this._config.entity];
+      this._stateIcon.stateObj = this._hass.states[this._entityId];
     }
   }
 
@@ -5170,12 +5527,12 @@ class BuschDeviceCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("busch-calendar-card", BuschCalendarCard);
-customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
+if (!customElements.get?.("busch-calendar-card")) customElements.define("busch-calendar-card", BuschCalendarCard);
+if (!customElements.get?.("busch-calendar-card-editor")) customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
 
 const waehlerKalender = buschTexte(TEXTE_BUSCH_CALENDAR_CARD);
 
-window.customCards.push({
+window.customCards.some(card => card.type === "busch-calendar-card") || window.customCards.push({
   type: "busch-calendar-card",
   name: waehlerKalender.name,
   description: waehlerKalender.description,
@@ -5183,12 +5540,12 @@ window.customCards.push({
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 
-customElements.define("busch-device-card", BuschDeviceCard);
-customElements.define("busch-device-card-editor", BuschDeviceCardEditor);
+if (!customElements.get?.("busch-device-card")) customElements.define("busch-device-card", BuschDeviceCard);
+if (!customElements.get?.("busch-device-card-editor")) customElements.define("busch-device-card-editor", BuschDeviceCardEditor);
 
 const waehlerGeraet = buschTexte(TEXTE_BUSCH_DEVICE_CARD);
 
-window.customCards.push({
+window.customCards.some(card => card.type === "busch-device-card") || window.customCards.push({
   type: "busch-device-card",
   name: waehlerGeraet.name,
   description: waehlerGeraet.description,

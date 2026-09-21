@@ -36,7 +36,7 @@ const {
 
 /** Spec Abschnitt 8, woertlich. */
 const OPTIONEN_DER_SPEC = [
-  "entity", "title", "template", "labels", "labels_hide", "groups", "groups_open",
+  "device_id", "entity", "title", "template", "labels", "labels_hide", "groups", "groups_open",
   "show_subtitle", "start_expanded", "tap_action", "hold_action",
   "row_tap_action", "row_hold_action",
 ];
@@ -62,10 +62,10 @@ test("jedes Standardfeld hat ein Schemablatt", () => {
   for (const k of Object.keys(DEV_STANDARD)) assert.ok(namen.includes(k), k);
 });
 
-test("entity ist Pflicht, labels ein Label-Selektor mit Mehrfachauswahl", () => {
+test("Entity ist optional, Labels haben Mehrfachauswahl", () => {
   const blaetter = schemaBlaetter(SCHEMA_BUSCH_DEVICE_CARD);
   const entity = blaetter.find((b) => b.name === "entity");
-  assert.strictEqual(entity.required, true);
+  assert.ok(!entity.required);
   assert.ok(entity.selector.entity, "entity-Selektor");
   const labels = blaetter.find((b) => b.name === "labels");
   assert.strictEqual(labels.selector.label.multiple, true);

@@ -16,6 +16,7 @@ function zustand(name, state, extra) {
 
 function baueHass() {
   return {
+    connection: {},
     locale: { language: "de-DE" },
     states: {
       "light.decke": zustand("Wohnzimmer Deckenlampe", "on", { brightness: 180 }),
@@ -65,6 +66,9 @@ function baueHass() {
           { label_id: "l_energie", name: "Energie", icon: null, color: "green", description: null },
         ];
       }
+      if (nachricht.type === "config/entity_registry/list") return Object.values(this.entities);
+      if (nachricht.type === "config/device_registry/list") return Object.values(this.devices);
+      if (nachricht.type === "config/area_registry/list") return Object.values(this.areas);
       return [];
     },
     dienste: [],
