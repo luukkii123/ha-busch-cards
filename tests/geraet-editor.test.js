@@ -36,7 +36,7 @@ const {
 
 /** Spec Abschnitt 8, woertlich. */
 const OPTIONEN_DER_SPEC = [
-  "device_id", "entity", "title", "template", "labels", "labels_hide", "groups", "groups_open",
+  "filter", "device_id", "entity", "title", "template", "labels", "labels_hide", "groups", "groups_open",
   "show_subtitle", "start_expanded", "tap_action", "hold_action",
   "row_tap_action", "row_hold_action",
 ];
@@ -179,6 +179,8 @@ class EreignisStub { constructor(name, init) { this.type = name; this.detail = i
 function domAttrappe() {
   const knoten = () => ({
     kinder: [], style: {}, eigenschaften: {},
+    replaceChildren(...k) { this.kinder = [...k]; },
+    attachShadow() { this.shadowRoot = knoten(); return this.shadowRoot; },
     setAttribute() {}, addEventListener(name, fn) { this["on_" + name.replace(/-/g, "_")] = fn; },
     appendChild(k) { this.kinder.push(k); return k; }, append(...k) { this.kinder.push(...k); },
   });
@@ -190,6 +192,7 @@ test("der Editor gibt ha-form das gefilterte Schema und die Art als Datenfeld", 
   const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"],
     { document: dokument, CustomEvent: EreignisStub });
   const ed = new Editor();
+  ed.insertBefore = function () {};
   ed.appendChild = function (k) { this._angehaengt = k; };
   ed.setConfig({ entity: "light.decke" });
   ed.hass = baueHass();
@@ -199,6 +202,9 @@ test("der Editor gibt ha-form das gefilterte Schema und die Art als Datenfeld", 
   assert.strictEqual(form.data.tap_kind, "expand", "aus der Vorgabe abgeleitet");
   assert.strictEqual(form.data.hold_kind, "ha");
   const namen = form.schema.flatMap((e) => (e.schema ? e.schema.map((x) => x.name) : [e.name]));
+  assert.ok(!namen.includes("labels") && !namen.includes("labels_hide") && !namen.includes("filter"), "Filter stehen im eigenen Bereich");
+  assert.strictEqual(ed._labelForm.schema.length, 2);
+  assert.ok(ed._filterDetails, "eigener Filterbereich");
   assert.ok(!namen.includes("tap_action"), "bei expand kein HA-Editor");
   assert.ok(namen.includes("hold_action"), "bei ha schon");
   assert.strictEqual(form.computeLabel({ name: "labels_hide" }), "Entitäten mit Label verbergen");
@@ -210,6 +216,7 @@ test("die Art zu wechseln schreibt die Aktion um und setzt das Schema neu", () =
   const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"],
     { document: dokument, CustomEvent: EreignisStub });
   const ed = new Editor();
+  ed.insertBefore = function () {};
   ed.appendChild = function () {};
   let gemeldet = null;
   ed.dispatchEvent = (ev) => { gemeldet = ev.detail.config; };
@@ -231,6 +238,7 @@ test("eine gesetzte HA-Aktion bleibt erhalten, Vorgaben fallen heraus", () => {
   const { BuschDeviceCardEditor: Editor } = ladeKarte(["BuschDeviceCardEditor"],
     { document: dokument, CustomEvent: EreignisStub });
   const ed = new Editor();
+  ed.insertBefore = function () {};
   ed.appendChild = function () {};
   let gemeldet = null;
   ed.dispatchEvent = (ev) => { gemeldet = ev.detail.config; };

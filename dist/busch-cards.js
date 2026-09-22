@@ -359,7 +359,7 @@ class BuschCardsCore {
   watch(callback) { this._listeners.add(callback); return () => this._listeners.delete(callback); }
   retain(hass) { this.attach(hass); this.users++; let released = false; return () => { if (released) return; released = true; if (--this.users <= 0) this.dispose(); }; }
   query(spec) { return this.engine.query(spec); }
-  smartQuery(spec) { this.smart ||= new BuschSmartQueries(this); return this.smart.query(spec); }
+  smartQuery(spec, scopeDeviceId) { this.smart ||= new BuschSmartQueries(this); return this.smart.query(spec, scopeDeviceId); }
   subscribe(query, callback) { return this.engine.subscribe(query, callback); }
   debugSnapshot() { return { ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
   dispose() {
@@ -603,19 +603,20 @@ function buschSmartPlan(rule) {
 }
 class BuschSmartQueries {
   constructor(core) { this.core = core; }
-  query(config) {
+  query(config, scopeDeviceId) {
     const copy = JSON.parse(JSON.stringify(config)), cacheSpec = {...copy};
     if (!copy.filter?.template) for (const key of ['type','card','card_param','item','item_param','else','show_empty','debug']) delete cacheSpec[key];
-    const key = 'smart:' + buschCoreKey(cacheSpec), engine = this.core.engine;
+    const key = 'smart:' + buschCoreKey(scopeDeviceId?{scopeDeviceId,spec:cacheSpec}:cacheSpec), engine = this.core.engine;
     if (engine.cache.has(key)) return engine.cache.get(key);
     const include = copy.filter?.include || [];
-    const query = { key, spec: copy, smart: this, javascript:(copy.filter?.include||[]).some(rule=>rule.options?.eval_js===true), include: include.map(buschSmartPlan), extraPlans:(copy.filter?.exclude||[]).map(buschSmartPlan), matched:include.map(()=>new Set()), subscribers:new Set(), result:Object.freeze([]), nextDeadline:Infinity, deadlines:new Map(), metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}, templateRows:[], templateGeneration:0 };
+    const query = { key, scopeDeviceId, spec: copy, smart: this, javascript:(copy.filter?.include||[]).some(rule=>rule.options?.eval_js===true), include: include.map(buschSmartPlan), extraPlans:(copy.filter?.exclude||[]).map(buschSmartPlan), matched:include.map(()=>new Set()), subscribers:new Set(), result:Object.freeze([]), nextDeadline:Infinity, deadlines:new Map(), metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}, templateRows:[], templateGeneration:0 };
     engine.cache.set(key,query); this.calculate(query); engine.evict(); return query;
   }
-  candidates(plan) { return this.core.engine.candidates({lookups:plan.constraints}); }
+  candidates(plan, query) { return this.core.engine.candidates({lookups:query.scopeDeviceId?[...plan.constraints,['device',query.scopeDeviceId]]:plan.constraints}); }
   changed(query, change) {
     const id = change.id;
     if (query.javascript || [...query.include,...query.extraPlans].some(p=>p.groups.has(id))) return this.calculate(query);
+    if(query.scopeDeviceId && ![change.old,change.next].some(info=>info?.device_id===query.scopeDeviceId)){this.core.metrics.queriesSkipped++;return;}
     const statics = [...(query.spec.entities||[]),...query.templateRows];
     if (query.include.some(p=>p.guard(change.old)||p.guard(change.next)) || statics.some(row=>(typeof row==='string'?row.trim():row?.entity)===id)) this.calculate(query,[id]);
     else this.core.metrics.queriesSkipped++;
@@ -628,10 +629,10 @@ class BuschSmartQueries {
     let touched=new Set();
     for (const [index,rule] of (query.spec.filter?.include||[]).entries()) {
       if (rule.type !== undefined) continue;
-      const plan=query.include[index], candidates=ids || this.candidates(plan);
+      const plan=query.include[index], candidates=ids || this.candidates(plan,query);
       if (!ids) query.matched[index].clear();
       for (const id of candidates) {
-        if (!plan.guard(this.core.getEntity(id))) { query.matched[index].delete(id);continue; }
+        if (!plan.guard(this.core.getEntity(id)) || (query.scopeDeviceId&&this.core.getEntity(id)?.device_id!==query.scopeDeviceId)) { query.matched[index].delete(id);continue; }
         touched.add(id);query.metrics.evaluated++;
         if (buschSmartFilter(this.core,rule,id,now)) query.matched[index].add(id);else query.matched[index].delete(id);
       }
@@ -677,7 +678,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.13.0";
+const CARD_VERSION = "0.14.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -4700,11 +4701,28 @@ const DEV_VORLAGEN = {
   generic: { domains: [], features: [] },
 };
 
+function devFilterKonfig(filter) {
+  if(filter===undefined)return undefined;
+  if(!filter||typeof filter!=='object'||Array.isArray(filter)||Object.keys(filter).some(k=>!['include','exclude'].includes(k)))throw new Error('filter: include/exclude required / Include-/Exclude-Regeln erforderlich');
+  const validate=rule=>{
+    if(!rule||typeof rule!=='object'||Array.isArray(rule))throw new Error('filter: invalid rule / ungültige Regel');
+    for(const [raw,value]of Object.entries(rule)){
+      const key=raw.trim().split(' ')[0];
+      if(!BUSCH_DEVICE_FILTER_RULES.includes(key))throw new Error('filter: unknown predicate / unbekannte Filterregel: '+key);
+      if(key==='and'||key==='or'){if(!Array.isArray(value))throw new Error('filter: and/or requires a list / UND/ODER benötigt eine Liste');value.forEach(validate);}
+      if(key==='not')validate(value);
+      if(key==='attributes'&&(!value||typeof value!=='object'||Array.isArray(value)))throw new Error('filter.attributes: object required / Objekt erforderlich');
+    }
+  };
+  for(const rules of Object.values(filter)){if(!Array.isArray(rules))throw new Error('filter: rules must be a list / Regeln müssen eine Liste sein');rules.forEach(validate);}
+  return JSON.parse(JSON.stringify(filter));
+}
 function devNormalisiereKonfig(config) {
   const roh = devMigriereKonfig(config);
   const k = { ...DEV_STANDARD, ...roh };
   k.entity = typeof roh.entity === "string" ? roh.entity : "";
   k.device_id = typeof roh.device_id === "string" ? roh.device_id.trim() : "";
+  if(roh.filter!==undefined)k.filter=devFilterKonfig(roh.filter);
   for (const feld of ["labels", "labels_hide"]) {
     if (typeof roh[feld] === "string") k[feld] = [roh[feld]];
     else if (Array.isArray(roh[feld])) k[feld] = roh[feld].filter((l) => typeof l === "string");
@@ -4897,6 +4915,7 @@ function devStrukturStempel(deviceId, vorlage, gruppen, konfig) {
 }
 
 const SCHEMA_BUSCH_DEVICE_CARD = [
+  { name: "filter", selector: { object: {} } },
   { name: "device_id", selector: { device: {} } },
   { name: "entity", selector: { entity: {} } },
   { name: "title", selector: { text: {} } },
@@ -5014,6 +5033,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
     name: "Busch Gerät",
     description: "Zeigt zu einer Entität ihr ganzes Gerät: Kopfzeile, Bedienelement und alle Entitäten, gruppiert wie auf der Geräteseite.",
     labels: {
+      filter: "Filter",
       device_id: "Gerät",
       entity: "Entität",
       title: "Überschrift",
@@ -5032,11 +5052,12 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Halten auf einer Zeile",
     },
     helpers: {
+      filter: "Include-/Exclude-Regeln für Entities dieses Geräts, auch für das Hauptbedienelement. Vorgabe: keine zusätzlichen Regeln.",
       device_id: "Gerät direkt auswählen; weitere Entitäten sind nicht erforderlich. Vorgabe: Auswahl über die Entität.",
       entity: "Optionale Hauptentität des Geräts. Die Karte sucht daraus das Gerät und zeigt diese Entität oben als Bedienelement.",
       title: "Überschrift der Karte. Leer nimmt den Gerätenamen. Vorgabe: leer.",
       template: "Welche Bedienelemente oben stehen. Automatisch richtet sich nach der Art der Entität. Vorgabe: automatisch.",
-      labels: "Zeigt unten nur Entitäten, die eines dieser Labels tragen. Die Entität oben bleibt immer. Vorgabe: alle.",
+      labels: "Zeigt unten nur Entitäten, die eines dieser Labels tragen. Die Label-Auswahl betrifft nur die Liste. Vorgabe: alle.",
       labels_hide: "Entitäten mit einem dieser Labels erscheinen nicht. Schlägt die Auswahl darüber. Vorgabe: keines.",
       groups: "Welche Gruppen unter dem Bedienelement überhaupt erscheinen. Vorgabe: alle vier.",
       groups_open: "Welche dieser Gruppen offen starten. Die übrigen sind zugeklappt und öffnen sich per Klick. Vorgabe: nur Steuerung.",
@@ -5050,6 +5071,9 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Dasselbe für das Halten auf einer Zeile. Vorgabe: nichts.",
     },
     texte: {
+      filterBereich: "Filter",
+      filterHilfe: "Regeln innerhalb eines Filters sind UND-verknüpft. Mehrere Include-Filter sind ODER-verknüpft; Exclude hat Vorrang. Ohne Include-Regel bleiben alle sichtbaren Geräte-Entities zugelassen. Label-Filter wirken zusätzlich auf die Liste.",
+      filterFehler: "Die Entitätenauswahl konnte nicht ausgewertet werden. Regeln im Editor prüfen.",
       template_auto: "Automatisch",
       template_light: "Licht",
       template_climate: "Klima",
@@ -5085,7 +5109,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       keinGeraet: "{entity} gehört zu keinem Gerät.",
       helferFehlt: "Bausteine von Home Assistant nicht ladbar.",
       laden: "Wird geladen …",
-      keineTreffer: "Kein Eintrag mit diesen Labels.",
+      keineTreffer: "Keine passenden Entitäten.",
       keineGeraeteEntitaeten: "Für dieses Gerät sind keine sichtbaren Entitäten verfügbar.",
       aufklappen: "Aufklappen",
       zuklappen: "Zuklappen",
@@ -5134,6 +5158,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
     name: "Busch device",
     description: "Shows the whole device behind an entity: header, control and every entity, grouped like the device page.",
     labels: {
+      filter: "Filters",
       device_id: "Device",
       entity: "Entity",
       title: "Heading",
@@ -5152,11 +5177,12 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Hold on a row",
     },
     helpers: {
+      filter: "Include/exclude rules for this device’s entities, including its main control. Default: no additional rules.",
       device_id: "Select a device directly; no entity is required. Default: resolve the entity’s device.",
       entity: "Any entity of the device. The card finds the device from it and shows this entity as the control at the top.",
       title: "Heading of the card. Empty uses the device name. Default: empty.",
       template: "Which controls appear at the top. Automatic follows the kind of entity. Default: automatic.",
-      labels: "Lists only entities carrying one of these labels below. The entity at the top always stays. Default: all.",
+      labels: "Lists only entities carrying one of these labels below. Label selection only affects the list. Default: all.",
       labels_hide: "Entities carrying one of these labels do not appear. Beats the selection above. Default: none.",
       groups: "Which groups appear below the control at all. Default: all four.",
       groups_open: "Which of those start open. The rest are collapsed and open on click. Default: controls only.",
@@ -5170,6 +5196,9 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "The same for holding a row. Default: nothing.",
     },
     texte: {
+      filterBereich: "Filters",
+      filterHilfe: "Rules within a filter use AND. Multiple include filters use OR; exclude takes precedence. Without include rules, all visible device entities are allowed. Label filters additionally apply to the list.",
+      filterFehler: "The entity selection could not be evaluated. Check the rules in the editor.",
       template_auto: "Automatic",
       template_light: "Light",
       template_climate: "Climate",
@@ -5205,7 +5234,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       keinGeraet: "{entity} belongs to no device.",
       helferFehlt: "Home Assistant building blocks could not be loaded.",
       laden: "Loading …",
-      keineTreffer: "No entry with these labels.",
+      keineTreffer: "No matching entities.",
       keineGeraeteEntitaeten: "No visible entities are available for this device.",
       aufklappen: "Expand",
       zuklappen: "Collapse",
@@ -5310,20 +5339,11 @@ const DEV_STIL = `
   .dev-chips { display:flex; flex-wrap:wrap; gap:4px;
     padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .dev-chips:empty { display:none; }
-  .dev-chip { display:inline-flex; align-items:center; gap:4px; max-width:100%; min-width:0;
-    font-size:.75em; padding:2px 8px; border-radius:12px;
-    border:1px solid var(--dev-chip-farbe, var(--divider-color));
-    color:var(--primary-text-color); }
-  .dev-chip-punkt { width:8px; height:8px; border-radius:50%; flex:0 0 8px;
-    background:var(--dev-chip-farbe, var(--secondary-text-color)); }
-  .dev-chip-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   .dev-tile { padding:0 var(--ha-space-3, 12px) var(--ha-space-3, 12px); }
   .dev-tile:empty { display:none; }
   /* Ohne !important bliebe das Bedienelement beim Zuklappen stehen — dieselbe
      Absicherung wie bei .dev-liste. */
   .dev-tile[hidden] { display:none !important; }
-  .dev-chip-aus { opacity:.55; }
-  .dev-chip-aus .dev-chip-text { text-decoration:line-through; }
   .dev-zeile { display:block; }
   .dev-dienstfehler { padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px);
     color:var(--error-color); font-size:.85em; overflow-wrap:anywhere; }
@@ -5389,7 +5409,7 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   connectedCallback() { if (this._hass && !this._releaseCore) this.hass = this._hass; }
-  disconnectedCallback() { this._unwatchCore?.(); this._unwatchCore = null; this._releaseCore?.(); this._releaseCore = null; }
+  disconnectedCallback() { this._filterOff?.(); this._filterOff=null; this._filterQuery=null; this._unwatchCore?.(); this._unwatchCore = null; this._releaseCore?.(); this._releaseCore = null; }
 
   getCardSize() {
     return this._offen ? 3 + (this._zeilenZahl || 0) : 2;
@@ -5576,6 +5596,15 @@ class BuschDeviceCard extends HTMLElement {
 
   /* ── Zeichnen ───────────────────────────────────────────────────────── */
 
+  _filterForDevice(deviceId) {
+    const filter=this._config.filter,active=filter?.include?.length||filter?.exclude?.length;
+    if(!active||!this._core){this._filterOff?.();this._filterOff=null;this._filterQuery=null;return null;}
+    const spec={filter:{include:filter.include?.length?filter.include:[{entity_id:'*'}],exclude:filter.exclude||[]}};
+    const query=this._core.smartQuery(spec,deviceId);
+    if(query!==this._filterQuery){this._filterOff?.();this._filterQuery=query;let initial=true;this._filterOff=this._core.subscribe(query,()=>{if(!initial)this._render();});initial=false;}
+    return new Set(query.error?[]:query.result.map(row=>row.entity));
+  }
+
   _render() {
     if (!this._config || !this._hass) return;
     this._geruest();
@@ -5584,6 +5613,7 @@ class BuschDeviceCard extends HTMLElement {
     this._entityId = a.entityId || "";
 
     if (a.fehler) {
+      this._filterOff?.();this._filterOff=null;this._filterQuery=null;
       this._stempel = null;
       this._auf = null;
       this._name.textContent = this._config.title || this._config.entity || t.keineEntitaet;
@@ -5607,9 +5637,11 @@ class BuschDeviceCard extends HTMLElement {
     this._auf = a;
     const vorlage = devVorlageWaehlen(this._config.template, this._entityId);
     const alle = devEntitaetenDesGeraets(this._hass, a.geraet.id, this._entityId, this._core);
-    const gefiltert = devLabelFilter(alle, this._config.labels, this._config.labels_hide);
+    const allowed=this._filterForDevice(a.geraet.id);
+    this._filterShowPrimary=!allowed||allowed.has(this._entityId);
+    const gefiltert = devLabelFilter(allowed?alle.filter(e=>allowed.has(e.entity_id)):alle, this._config.labels, this._config.labels_hide);
     const gruppen = devGruppieren(this._hass, gefiltert, this._config);
-    const stempel = devStrukturStempel(a.geraet.id, vorlage, gruppen, this._config) + this._entityId;
+    const stempel = devStrukturStempel(a.geraet.id, vorlage, gruppen, this._config) + this._entityId + this._filterShowPrimary;
     this._zeilenZahl = gruppen.reduce((n, g) => n + g.ids.length, 0);
 
     if (stempel !== this._stempel) {
@@ -5623,6 +5655,7 @@ class BuschDeviceCard extends HTMLElement {
     if (this._unterText.textContent !== a.untertitel) this._unterText.textContent = a.untertitel;
     this._reicheHassDurch();
     this._zeigeListe();
+    if(this._filterQuery?.error){this._hinweis.textContent=t.filterFehler;this._hinweis.className='dev-hinweis dev-fehler';this._hinweis.hidden=false;this._filterErrorVisible=true;}else if(this._filterErrorVisible){this._hinweis.hidden=true;this._filterErrorVisible=false;}
   }
 
   _zeichneKopf(a) {
@@ -5645,24 +5678,9 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   _zeichneChips() {
-    if (!this._chips || !this._config) return;
-    this._chips.textContent = "";
-    const male = (id, ausgeschlossen) => {
-      const e = this._labels && this._labels.get(id);
-      const chip = document.createElement("span");
-      chip.className = ausgeschlossen ? "dev-chip dev-chip-aus" : "dev-chip";
-      const farbe = devLabelFarbe(e);
-      if (farbe) chip.style.setProperty("--dev-chip-farbe", farbe);
-      const punkt = document.createElement("span");
-      punkt.className = "dev-chip-punkt";
-      const text = document.createElement("span");
-      text.className = "dev-chip-text";
-      text.textContent = (e && e.name) || id;
-      chip.append(punkt, text);
-      this._chips.appendChild(chip);
-    };
-    for (const id of this._config.labels) male(id, false);
-    for (const id of this._config.labels_hide) male(id, true);
+    if(!this._chips)return;
+    this._chips.textContent='';
+    this._chips.hidden=true;
   }
 
   /** Tile und Zeilen von HA. Asynchron; eine veraltete Antwort (Stempel
@@ -5691,7 +5709,7 @@ class BuschDeviceCard extends HTMLElement {
     }
 
     try {
-      if (this._entityId) {
+      if (this._entityId && this._filterShowPrimary) {
       const tile = helfer.createCardElement({
         type: "tile",
         entity: this._entityId,
@@ -5753,10 +5771,10 @@ class BuschDeviceCard extends HTMLElement {
     // Auch der reine AUSSCHLUSS kann die Liste leeren — am 10.09.2026 an
     // echten Daten gesehen: Label `ignore` auf allen Entitaeten eines
     // Zigbee-Schalters. Ohne diese Zeile blieb die Liste stumm leer.
-    if (!gruppen.length && (!this._entityId || this._config.labels.length || this._config.labels_hide.length)) {
+    if (!gruppen.length && (!this._entityId || !this._filterShowPrimary || this._config.filter || this._config.labels.length || this._config.labels_hide.length)) {
       const leer = document.createElement("div");
       leer.className = "dev-hinweis";
-      leer.textContent = this._config.labels.length || this._config.labels_hide.length ? t.keineTreffer : t.keineGeraeteEntitaeten;
+      leer.textContent = this._config.filter || this._config.labels.length || this._config.labels_hide.length ? t.keineTreffer : t.keineGeraeteEntitaeten;
       this._liste.appendChild(leer);
     }
     this._reicheHassDurch();
@@ -5777,7 +5795,7 @@ class BuschDeviceCard extends HTMLElement {
     // auch das Bedienelement verschwindet (Spec 0.11.0, Abschnitt 6).
     const offen = Boolean(this._offen) && !this._helferFehlt;
     this._pfeil.hidden = Boolean(this._helferFehlt);
-    this._tileBehaelter.hidden = !offen;
+    this._tileBehaelter.hidden = !offen || !this._filterShowPrimary;
     this._liste.hidden = !offen;
     this._karte.classList.toggle("dev-offen", offen);
     const t = this._texte;
@@ -5811,8 +5829,8 @@ class BuschDeviceCardEditor extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config) return;
+    this._texte = buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass);
     if (!this._form) {
-      this._texte = buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass);
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => this._texte.labels[s.name] || s.name;
       this._form.computeHelper = (s) => this._texte.helpers[s.name] || "";
@@ -5827,8 +5845,29 @@ class BuschDeviceCardEditor extends HTMLElement {
     // Konfiguration: Ohne gesetzten Wert steht dort gar keine Aktion, und die
     // Vorgabe `expand` haette den HA-Editor faelschlich eingeblendet.
     const daten = this._daten();
-    this._form.schema = buschSchemaMitTexten(devSchemaFuer(daten), this._texte);
+    this._form.schema = buschSchemaMitTexten(devSchemaFuer(daten).filter(e=>!['filter','labels','labels_hide'].includes(e.name)), this._texte);
     this._form.data = daten;
+    this._renderFilter();
+  }
+
+  _renderFilter() {
+    if(!this._filterHost){this._filterHost=document.createElement('div');this._filterRoot=this._filterHost.attachShadow({mode:'open'});this.insertBefore(this._filterHost,this._form);}
+    const key=buschCoreKey([this._config.filter,this._config.labels,this._config.labels_hide,buschSprache(this._hass)]);
+    if(key===this._filterStamp){this._labelForm.hass=this._hass;return;}
+    this._filterStamp=key;
+    const root=this._filterRoot,t=this._texte,smart=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);
+    const wasOpen=this._filterDetails?.open??false;
+    root.replaceChildren(buschSmartElement('style',BUSCH_SMART_EDITOR_CSS));
+    const section=buschSmartElement('details');section.open=wasOpen;this._filterDetails=section;section.append(buschSmartElement('summary',t.texte.filterBereich));root.append(section);
+    const body=buschSmartElement('div');body.className='body';section.append(body);body.append(buschSmartElement('p',t.texte.filterHilfe));
+    const labels=buschSmartElement('ha-form');this._labelForm=labels;labels.hass=this._hass;labels.computeLabel=s=>t.labels[s.name];labels.computeHelper=s=>t.helpers[s.name];labels.schema=SCHEMA_BUSCH_DEVICE_CARD.filter(e=>['labels','labels_hide'].includes(e.name));labels.data={labels:this._config.labels||[],labels_hide:this._config.labels_hide||[]};labels.computeLabel=s=>t.labels[s.name];labels.computeHelper=s=>t.helpers[s.name];labels.addEventListener('value-changed',event=>{event.stopPropagation();this._uebernehmen({...this._daten(),...event.detail.value});});body.append(labels);
+    for(const name of ['include','exclude']){
+      const heading=buschSmartElement('h4',smart[name]);body.append(heading);
+      const rules=this._config.filter?.[name]||[];
+      const update=next=>this._emit({...this._config,filter:{...this._config.filter,[name]:next}});
+      rules.forEach((rule,i)=>{const wrap=buschSmartElement('div');body.append(wrap);buschSmartFilterBuilder(wrap,rule,v=>update(rules.map((r,j)=>i===j?v:r)),smart,BUSCH_DEVICE_FILTER_RULES);wrap.append(buschSmartButton(smart.remove,()=>update(rules.filter((_,j)=>i!==j))));});
+      body.append(buschSmartButton(smart.add,()=>update([...rules,{state:name==='exclude'?'unavailable':'on'}])));
+    }
   }
 
   /**
@@ -5889,6 +5928,7 @@ window.customCards.some(card => card.type === "busch-device-card") || window.cus
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 const BUSCH_SMART_RULES = ['domain','state','entity_id','name','group','area','floor','level','device','label','device_manufacturer','device_model','integration','hidden_by','attributes','last_changed','last_updated','last_triggered','entity_category','not','or','and','options','type','sort'];
+const BUSCH_DEVICE_FILTER_RULES=BUSCH_SMART_RULES.filter(key=>!['options','type','sort'].includes(key));
 function buschSmartConfig(config) {
   if(!config || (!config.entities&&!config.filter))throw new Error('filter / entities');
   const copy=JSON.parse(JSON.stringify(config));
@@ -5948,17 +5988,17 @@ function buschSmartObject(parent,value,change,t,label=t.value){
   }else if(kind==='boolean') row.append(buschSmartSelect([['true','true'],['false','false']],value,v=>change(v==='true'),t.value));
   else if(kind!=='null'){const input=buschSmartElement('input');input.type=kind==='number'?'number':'text';input.value=value??'';input.setAttribute('aria-label',t.value);input.addEventListener('change',()=>change(kind==='number'?Number(input.value):input.value));row.append(input);}
 }
-function buschSmartFilterBuilder(parent,rule,change,t){
+function buschSmartFilterBuilder(parent,rule,change,t,fields=BUSCH_SMART_RULES){
   const node=buschSmartElement('div');node.className='node';parent.append(node);
   for(const [raw,value] of Object.entries(rule)){
     const key=raw.trim().split(' ')[0],wrap=buschSmartElement('div');node.append(wrap);const row=buschSmartElement('div');row.className='row rule-row';wrap.append(row);
     const field=buschSmartElement('label',t.field);row.append(field);
-    field.append(buschSmartSelect(BUSCH_SMART_RULES.map(k=>[k,t.rules?.[k]||k]),key,next=>{const copy={...rule};delete copy[raw];let name=next,n=1;while(Object.hasOwn(copy,name))name=next+' '+n++;copy[name]=['and','or'].includes(next)?[{}]:next==='not'||['attributes','options','sort'].includes(next)?{}:'';change(copy);},t.field));row.append(buschSmartButton(t.remove,()=>{const copy={...rule};delete copy[raw];change(copy);}));
+    field.append(buschSmartSelect(fields.map(k=>[k,t.rules?.[k]||k]),key,next=>{const copy={...rule};delete copy[raw];let name=next,n=1;while(Object.hasOwn(copy,name))name=next+' '+n++;copy[name]=['and','or'].includes(next)?[{}]:next==='not'||['attributes','options','sort'].includes(next)?{}:'';change(copy);},t.field));row.append(buschSmartButton(t.remove,()=>{const copy={...rule};delete copy[raw];change(copy);}));
     const replace=v=>change({...rule,[raw]:v});
     if(key==='and'||key==='or'){
-      value.forEach((child,i)=>{const container=buschSmartElement('div');wrap.append(container);buschSmartFilterBuilder(container,child,v=>replace(value.map((item,j)=>j===i?v:item)),t);container.append(buschSmartButton(t.remove,()=>replace(value.filter((_,j)=>j!==i))));});
+      value.forEach((child,i)=>{const container=buschSmartElement('div');wrap.append(container);buschSmartFilterBuilder(container,child,v=>replace(value.map((item,j)=>j===i?v:item)),t,fields);container.append(buschSmartButton(t.remove,()=>replace(value.filter((_,j)=>j!==i))));});
       wrap.append(buschSmartButton(t.add,()=>replace([...value,{}])));
-    }else if(key==='not')buschSmartFilterBuilder(wrap,value,replace,t);
+    }else if(key==='not')buschSmartFilterBuilder(wrap,value,replace,t,fields);
     else if(typeof value==='string' && !['options','sort','attributes'].includes(key)) {
       const parsed=value.match(/^(<=|>=|==|!=|<|>|!|=)\s*(.*)$/), operator=parsed?.[1]||'is';
       const operatorSelect=buschSmartSelect([['is',t.is],...['<','<=','>','>=','=','==','!=','!'].map(op=>[op,op])],operator,op=>replace(op==='is'?input.value:op+' '+input.value),t.operator);

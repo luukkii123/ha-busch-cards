@@ -458,6 +458,13 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**22.09.2026 – 0.14.0:** Eigener Filterbereich im Geräteeditor mit den
+Include-/Exclude-Prädikaten von Smart Entities, einschließlich Zuständen,
+verschachtelter Logik und Zeitfiltern. Filterchips erscheinen nicht mehr auf
+der Karte. 433 Node-Tests samt Originalvergleich grün; Geräte-Browserregression,
+12 Editorfälle und native HA-Formulare/Live-Gerät geprüft. Smart- und
+Item-Mapper-Browserregressionen ebenfalls grün.
+
 **22.09.2026 – 0.13.0:** Generische Ergebniskarten mit `item` und
 `item_param`, sichere verschachtelte Objektpfade und unabhängige Kopien aller
 Vorlagenoptionen. Visueller Editor in Deutsch/Englisch, explizites `device_name`
@@ -651,12 +658,61 @@ tap_action:
 | `template` | `auto` | Bedienelemente der Tile-Karte: Licht → Helligkeit, Klima → Solltemperatur + Modi, Rollo → Auf/Zu + Position, Lüfter → Geschwindigkeit, Medien → Lautstärke, Schloss → Sperren, Schalter → Umschalten, Allgemein → nur Zustand. `auto` richtet sich nach der Domain der Entität |
 | `labels` | alle | zeigt unten nur Entitäten mit einem dieser Labels |
 | `labels_hide` | keines | verbirgt Entitäten mit einem dieser Labels. **Schlägt `labels`** |
+| `filter` | keine Regeln | Include-/Exclude-Regeln für die Entities dieses Geräts, einschließlich Hauptbedienelement |
 | `groups` | alle vier | welche Gruppen überhaupt erscheinen |
 | `groups_open` | `[control]` | welche davon offen starten |
 | `show_subtitle` | `true` | Hersteller · Modell · Bereich unter dem Namen |
 | `start_expanded` | `false` | Karte startet aufgeklappt |
 | `tap_action` / `hold_action` | Aufklappen / Details | Tippen und Halten auf der Kopfzeile |
 | `row_tap_action` / `row_hold_action` | Details / nichts | Tippen und Halten auf einer Entitätenzeile |
+
+## Geräte-Entities filtern (ab 0.14.0)
+
+Der aufklappbare Bereich **Filter** steht oben im Geräteeditor. Dort liegen
+sowohl die bisherigen Label-Auswahlen als auch der Include-/Exclude-Builder
+von Smart Entities. Die Karte selbst zeigt keine Filterchips oder Labelnamen
+wie „ignore“ mehr. Bestehende Label-Konfigurationen bleiben wirksam.
+
+Beispiel: nicht verfügbare und unbekannte Entities ausblenden:
+
+```yaml
+type: custom:busch-device-card
+device_id: example-device
+filter:
+  exclude:
+    - state: unavailable
+    - state: unknown
+```
+
+Nur eingeschaltete Entities zeigen:
+
+```yaml
+filter:
+  include:
+    - state: "on"
+```
+
+Verfügbar sind dieselben deklarativen Filterfelder wie bei Smart Entities:
+Domain, Zustand, Entity-ID, Name, Gruppe, Bereich, Etage, Stockwerk, Gerät,
+Label, Hersteller, Modell, Integration, verborgen durch, Attribute,
+Entity-Kategorie sowie Änderungs-/Aktualisierungs-/Auslösezeiten.
+Wildcards, reguläre Ausdrücke, Zahlen- und Zeitvergleiche, verschachtelte
+Attribute und UND/ODER/NICHT verwenden denselben Matcher und Editor.
+`options`, `type`, lokale Sortierung und Jinja gehören zur Ergebnisgenerierung
+von Smart Entities und sind keine Geräte-Filterfelder.
+
+Mehrere Regeln innerhalb eines Include-Filters sind UND-verknüpft, mehrere
+Include-Filter ODER-verknüpft. Ohne Include-Regeln sind zunächst alle sichtbaren
+Entities des gewählten Geräts zugelassen; Exclude hat stets Vorrang. Andere
+Geräte werden durch Filter nie hinzugefügt. Verborgene/deaktivierte Entities
+bleiben gemäß bisheriger Gerätekarte ausgeblendet. Die bestehenden Label-
+Auswahlen begrenzen die Liste zusätzlich. Neue Regeln gelten auch für das
+Hauptbedienelement; Kopfzeile und Geräteaktionen bleiben erhalten.
+
+Zustandswechsel aktualisieren die Mitgliedschaft im gemeinsamen Core.
+Identische Regeln desselben Geräts teilen ihre Query, die Kandidaten stammen
+aus dem Geräteindex. Zeitgrenzen nutzen den vorhandenen zentralen Timer.
+Die Gruppen-/Aktionskonfiguration der Gerätekarte bleibt unverändert.
 
 ## Aktionen
 
