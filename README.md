@@ -458,6 +458,12 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**22.09.2026 – 0.13.0:** Generische Ergebniskarten mit `item` und
+`item_param`, sichere verschachtelte Objektpfade und unabhängige Kopien aller
+Vorlagenoptionen. Visueller Editor in Deutsch/Englisch, explizites `device_name`
+und Debug-Projektion. 425 Node-Tests inklusive Originalvergleich sowie mobile
+Browsermatrizen für Mapping, Editor, Leerzustände und bestehende Smart-Ausgabe.
+
 **22.09.2026 – 0.12.1:** Smart-Editor mit den Bereichen Filter, Zielkarte und
 Weitere Optionen; mobile Regeln mit beschrifteten Eingaben und kompakter Auswahl.
 Die Startvorschau verwendet die Sonnenintegration (sonst die kleinste vorhandene
@@ -813,6 +819,69 @@ Auch die vorhandene `busch-device-card` akzeptiert `device_id` allein.
 Der Editor bietet einen HA-Geräteselektor. Bisherige `entity`-Konfigurationen
 bleiben gültig. Bei Geräten ohne steuerbare Hauptentity werden vorhandene
 Entity-Gruppen angezeigt; ein leeres/fehlendes Gerät erhält einen Hinweis.
+
+## Eine Karte pro Ergebnis (ab 0.13.0)
+
+`card` bleibt die Containerkarte. `item` ist die Vorlage für jeden einzelnen
+Treffer. `item_param` bindet den ausgegebenen Wert in die jeweilige Kopie:
+
+```yaml
+type: custom:busch-smart-entities
+filter:
+  include:
+    - state: unavailable
+value:
+  type: device_id
+  missing: skip
+unique_values: true
+sort:
+  method: device_name
+  count: 6
+card:
+  type: vertical-stack
+card_param: cards
+item:
+  type: custom:busch-device-card
+  start_expanded: false
+  groups_open: []
+item_param: device_id
+```
+
+Reihenfolge: Filter → Wertausgabe → fehlende Werte behandeln → `unique_values`
+→ Sortierung und `first`/`count` → Item kopieren und binden → Container befüllen.
+Ein Gerät mit mehreren passenden Entities erzeugt damit nur eine Karte.
+`name` sortiert weiterhin nach der ersten Treffer-Entity; `device_name` (wie
+`device`) verwendet den Gerätenamen aus dem Register, bevorzugt `name_by_user`.
+
+Der Mechanismus funktioniert mit beliebigen Karten: Für Tile `value.type:
+entity_id`, `item.type: tile` und `item_param: entity` wählen. Attribute können
+beispielsweise an `item_param: config.target` gebunden werden. Fehlende
+Objekte auf diesem Punktpfad werden erzeugt; vorhandene statische Felder bleiben
+erhalten. Pfade durch Skalare oder Arrays, leere Segmente, Listenindizes und
+Prototyp-Schlüssel sind ungültig. Jede Vorlage und jeder Objektwert werden
+für jede Karte tief kopiert. Ein vorhandener Wert am Bindungspfad wird ersetzt.
+
+Ohne `item` bleibt die bisherige reine Wert-/Entity-Ausgabe einschließlich
+Container-Präzedenz unverändert. Mit `item` ersetzt die erzeugte Liste den
+Containerparameter auch dann, wenn dessen Editor bereits eine leere Liste
+angelegt hat. `item_param` ist bei gesetztem `item` erforderlich.
+
+Im visuellen Editor unter **Zielkarte → Karte pro Ergebnis** aktivieren,
+Kartentyp und Bindungspfad wählen. Statische Optionen lassen sich unter
+**Erweiterte Kartenkonfiguration** mit dem strukturierten Objekteditor ohne
+YAML bearbeiten. Beim Aktivieren werden Tile, der Pfad `entity` und bei einer
+bisherigen Entities-Zielkarte ein Vertical Stack mit `cards` vorbelegt.
+Die Wertausgabe wird dabei nur dann auf Entity-ID gesetzt, wenn noch keine
+gewählt war. Geräteausgabe daher unter **Weitere Optionen → Ergebnisausgabe**
+auswählen und „Nur eindeutige Werte“ aktivieren.
+
+`debug: true` zeigt für Wertausgaben Quellen, projizierte Werte, fehlende
+Zuordnungen, Duplikate und nach Begrenzung ausgewählte Treffer. Die
+Quellenspur ist auf 100 Zeilen begrenzt (`truncated`); Zähler bleiben vollständig.
+`generated` zeigt die fertige Containerkonfiguration. Die optionale Diagnose
+berechnet Projektion/Sortierung erneut aus bereits gecachten Treffern; sie
+löst keine zusätzlichen Registry-Abfragen aus. Itemvorlagen teilen denselben
+deklarativen Query-Cache und werden erst danach getrennt angewendet.
 
 ## Entwicklertests
 
