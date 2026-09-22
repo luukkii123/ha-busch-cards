@@ -41,7 +41,7 @@ with sync_playwright() as pw:
   page.evaluate("dark=>{document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#222');document.documentElement.style.setProperty('--secondary-text-color',dark?'#ccc':'#555');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');document.body.style.background=dark?'#222':'#fff'}",dark)
   for width in [320,480,960]:
    page.set_viewport_size({'width':width,'height':1200})
-   page.evaluate("()=>{editor.shadowRoot.querySelectorAll('details').forEach(d=>d.open=false);const output=[...editor.shadowRoot.querySelectorAll('details')].find(d=>d.firstChild.textContent==='Ergebnisausgabe');output.open=true}")
+   page.evaluate("()=>{editor._showGroup('more');editor.shadowRoot.querySelectorAll('details').forEach(d=>d.open=false);const output=[...editor.shadowRoot.querySelectorAll('details')].find(d=>d.firstChild.textContent==='Ergebnisausgabe');output.open=true}")
    failures=page.evaluate("""()=>[card,editor].flatMap(host=>[...host.shadowRoot.querySelectorAll('*')].filter(e=>e.getBoundingClientRect().width&&getComputedStyle(e).display!=='none').filter(e=>{const r=e.getBoundingClientRect();return r.right>innerWidth+1||r.left< -1}).map(e=>e.tagName))""")
    page.screenshot(path=str(out/('smart-'+str(width)+'-'+('dark' if dark else 'light')+'.png')))
    report.append({'width':width,'dark':dark,'failures':failures})

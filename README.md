@@ -458,6 +458,13 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**22.09.2026 – 0.12.1:** Smart-Editor mit den Bereichen Filter, Zielkarte und
+Weitere Optionen; mobile Regeln mit beschrifteten Eingaben und kompakter Auswahl.
+Die Startvorschau verwendet die Sonnenintegration (sonst die kleinste vorhandene
+Integration) und maximal sechs Treffer. Bestehende Konfigurationen bleiben erhalten.
+Kalenderlisten scrollen innerhalb der Sections-Karte; Bearbeitungsvorschauen
+bleiben auf 60 % der Bildschirmhöhe begrenzt.
+
 **21.09.2026 – 0.12.0:** 413 Node-Tests einschließlich Originalvergleich gegen
 auto-entities 1.16.1, Syntax/Namespace und statische UI-Prüfung grün.
 Browsermatrizen: Smart 6, Unraid 24, bestehende Gerätekarte 54 Fälle bei
