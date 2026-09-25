@@ -33,11 +33,13 @@ with sync_playwright() as playwright:
       editor.hass = {locale: {language: 'de'}, states: {}};
       editor.setConfig(config);
       document.querySelector('main').append(editor);
+      const previousEditorConfig = editor._config;
       const input = editor.shadowRoot.querySelector('.rule-value input');
       if (!input) throw new Error('Filterwert-Eingabe fehlt');
       input.value = 'light';
       input.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
       const afterInput = emitted.at(-1)?.filter?.include?.[0]?.domain ?? null;
+      const previousEditorConfigUnchanged = previousEditorConfig.filter.include[0].domain === 'sensor';
       const stateInput = editor.shadowRoot.querySelectorAll('.rule-value input')[1];
       stateInput.value = 'off';
       stateInput.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
@@ -54,6 +56,12 @@ with sync_playwright() as playwright:
           key: 'k', [modifier]: true, bubbles: true, composed: true, cancelable: true,
         }));
       }
+      editor.hass = {locale: {language: 'de'}, states: {'sensor.other': {state: 'on', attributes: {}}}};
+      const afterHassUpdate = input.isConnected && input.value === 'light';
+      const includeSection = input.closest('details');
+      includeSection.open = false;
+      includeSection.open = true;
+      const afterSectionToggle = input.isConnected && input.value === 'light';
       const remainedMounted = input.isConnected;
       editor._emit({...editor._config, debug: true});
       const reopened = document.createElement('busch-smart-entities-editor');
@@ -83,6 +91,11 @@ with sync_playwright() as playwright:
       objectInput.value = 'new';
       objectInput.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
       const afterObjectInput = third._config.filter.include[0].attributes.friendly_name;
+      const propertyInput = third.shadowRoot.querySelector('.rule-row').parentElement
+        .querySelector('input[aria-label="Eigenschaft"]');
+      propertyInput.value = 'alias';
+      propertyInput.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
+      const afterPropertyInput = third._config.filter.include[0].attributes;
       const fourth = document.createElement('busch-smart-entities-editor');
       fourth.hass = {locale: {language: 'de'}, states: {}};
       fourth.setConfig({type: 'custom:busch-smart-entities', card: {type: 'entities'},
@@ -107,18 +120,40 @@ with sync_playwright() as playwright:
       entityInput.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
       const staticFieldRemainedMounted = entityInput.isConnected;
       const afterStaticInput = fifth._config.entities[0];
+      const sixth = document.createElement('busch-smart-entities-editor');
+      sixth.hass = {locale: {language: 'de'}, states: {}};
+      sixth.setConfig({type: 'custom:busch-smart-entities', card: {type: 'entities'},
+        filter: {include: [{attributes: {zero: 5, flag: true, empty: 'x'}}]}});
+      document.querySelector('main').append(sixth);
+      const numericInput = sixth.shadowRoot.querySelector('input[type="number"]');
+      numericInput.value = '0';
+      numericInput.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
+      const booleanSelect = [...sixth.shadowRoot.querySelectorAll('select[aria-label="Wert"]')]
+        .find(element => element.value === 'true');
+      booleanSelect.value = 'false';
+      booleanSelect.dispatchEvent(new Event('change', {bubbles: true, composed: true}));
+      const emptyInput = [...sixth.shadowRoot.querySelectorAll('input[aria-label="Wert"]')]
+        .find(element => element.value === 'x');
+      emptyInput.value = '';
+      emptyInput.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
+      const afterFalsyInputs = sixth._config.filter.include[0].attributes;
       return {
         afterInput,
+        previousEditorConfigUnchanged,
         afterSecondInput,
         afterRerender: editor.shadowRoot.querySelector('.rule-value input')?.value,
         reopenedValues,
         remainedMounted,
+        afterHassUpdate,
+        afterSectionToggle,
         afterTwoRules,
         afterObjectInput,
+        afterPropertyInput,
         nestedFieldRemainedMounted,
         afterAndInput,
         staticFieldRemainedMounted,
         afterStaticInput,
+        afterFalsyInputs,
         leakedKeys,
         incomingConfig: config.filter.include[0].domain,
       };
@@ -127,15 +162,20 @@ with sync_playwright() as playwright:
 
 print(result)
 assert result["afterInput"] == "light", "Eingabe wurde nicht sofort persistiert"
+assert result["previousEditorConfigUnchanged"] is True, "Interne Konfiguration wurde mutiert"
 assert result["afterSecondInput"] == {"domain": "light", "state": "off"}, "Nachbareingabe verwarf einen persistierten Wert"
 assert result["afterRerender"] == "light", "Eingabe ging beim Re-Render verloren"
 assert result["reopenedValues"] == ["light", "off"], "Gespeicherte Filterwerte fehlen nach erneutem Öffnen"
 assert result["remainedMounted"] is True, "Eingabefeld wurde beim Tippen neu erzeugt"
+assert result["afterHassUpdate"] is True, "HASS-Update verwarf den Filterwert"
+assert result["afterSectionToggle"] is True, "Sektionstoggle verwarf den Filterwert"
 assert result["afterTwoRules"] == [{"domain": "light"}, {"state": "off"}], "Nachbarregel verwarf einen persistierten Wert"
 assert result["afterObjectInput"] == "new", "Verschachtelter Objektwert wurde nicht sofort persistiert"
+assert result["afterPropertyInput"] == {"alias": "new"}, "Eigenschaftsname wurde nicht sofort persistiert"
 assert result["nestedFieldRemainedMounted"] is True, "AND-Eingabe verlor beim Tippen den Fokus"
 assert result["afterAndInput"] == [{"domain": "light"}, {"state": "off"}], "AND-Nachbarregel verwarf einen Wert"
 assert result["staticFieldRemainedMounted"] is True, "Statische Eingabe verlor beim Tippen den Fokus"
 assert result["afterStaticInput"] == "sensor.b", "Statische Eingabe wurde nicht sofort persistiert"
+assert result["afterFalsyInputs"] == {"zero": 0, "flag": False, "empty": ""}, "Gültige Falsy-Werte gingen verloren"
 assert result["leakedKeys"] == [], "Editor-Tastendruck erreichte das Dokument"
 assert result["incomingConfig"] == "sensor", "setConfig-Eingabe wurde mutiert"
