@@ -2731,6 +2731,7 @@ function calHinweisText(fehler, nichtGezeigt, texte) {
   return teile.join(" · ");
 }
 
+/* Busch HA UI 0.1.0: touch targets, themed header and responsive rows. */
 const CAL_STIL = `
   busch-calendar-card { display:block; height:100%; min-height:0; min-width:0; }
   busch-calendar-card > ha-card { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; box-sizing:border-box; }
@@ -2760,7 +2761,8 @@ const CAL_STIL = `
      WebKit, und dort gilt bis heute nur die praefigierte Form. \`-moz-\` und
      \`-ms-\` stehen bewusst NICHT da — Firefox versteht die schlichte Form seit
      69, und der alte Edge spielt hier keine Rolle. */
-  .cal-pfeil { background:none; border:none; cursor:pointer; padding:6px 10px;
+  .cal-pfeil { display:inline-grid; place-items:center; width:44px; height:44px;
+    background:none; border:none; cursor:pointer; padding:0;
     color:var(--secondary-text-color); font-size:1.2em; line-height:1; border-radius:6px;
     -webkit-user-select:none; user-select:none; }
   .cal-pfeil:hover { background:var(--divider-color); color:var(--primary-text-color); }
@@ -2782,7 +2784,7 @@ const CAL_STIL = `
     min-width:0; }
   .cal-nr { font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color); }
   .cal-inhalt { flex:1; min-width:0; }
-  .cal-termin { display:flex; gap:8px; align-items:baseline; padding:2px 0;
+  .cal-termin { display:flex; gap:8px; align-items:center; min-height:44px; padding:2px 0;
     cursor:pointer; -webkit-user-select:none; user-select:none; }
   /* Die leeren Tage tragen \`cursor: default\` und sind nicht klickbar — die
      Regel darueber gilt trotzdem auch fuer sie, und zwar bewusst: ihr Inhalt
