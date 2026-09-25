@@ -37,10 +37,22 @@ def run(bundle: Path, credentials: Path) -> dict:
         context.add_init_script(script=
             "localStorage.setItem('hassTokens', JSON.stringify(%s));" % json.dumps(auth))
         page = context.new_page()
+        page_errors = []
+        page.on("pageerror", lambda error: page_errors.append(type(error).__name__))
         page.goto(base + "/profile", wait_until="domcontentloaded", timeout=30000)
         page.wait_for_function(
             "() => !!document.querySelector('home-assistant')?.hass && "
             "!!customElements.get('ha-form')", timeout=30000)
+        page.evaluate(r"""() => {
+            window.__codexFrontendErrors = [];
+            window.addEventListener('unhandledrejection', event => {
+                const stack = String(event.reason?.stack || '');
+                const frame = stack.match(/\/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)/);
+                window.__codexFrontendErrors.push(frame
+                    ? {script:frame[1], line:Number(frame[2]), column:Number(frame[3])}
+                    : {script:'unknown'});
+            });
+        }""")
         page.add_script_tag(content="(function(){\n" + source + "\n})();")
         page.evaluate("""() => {
             const host = document.createElement('main');
@@ -51,7 +63,9 @@ def run(bundle: Path, credentials: Path) -> dict:
             editor.setConfig({type:'custom:codex-busch-smart-entities',
                 card:{type:'entities'},filter:{include:[{domain:'sensor'}]}});
             host.append(editor);
-            document.body.append(host);
+            // Im HA-Hauptbaum erhalten native Picker den i18n-Kontext.
+            document.querySelector('home-assistant').shadowRoot
+                .querySelector('home-assistant-main').shadowRoot.append(host);
             editor.shadowRoot.querySelector('[data-group=card]').click();
             window.__codexProbe = {editor, host, emitted:[], leaked:[]};
             editor.addEventListener('config-changed', event => {
@@ -99,6 +113,12 @@ def run(bundle: Path, credentials: Path) -> dict:
             for(const modifier of ['ctrlKey','metaKey'])
                 p.input.dispatchEvent(new KeyboardEvent('keydown',
                     {key:'k',[modifier]:true,bubbles:true,composed:true,cancelable:true}));
+            const pickers=[];
+            const walk=root=>{for(const element of root.querySelectorAll('*')) {
+                if(element.tagName==='HA-ENTITY-PICKER') pickers.push(element);
+                if(element.shadowRoot) walk(element.shadowRoot);
+            }};
+            walk(p.editor.shadowRoot);
             return {
                 realForm:p.form.constructor!==HTMLElement,
                 emissions:p.emitted.length,
@@ -107,9 +127,14 @@ def run(bundle: Path, credentials: Path) -> dict:
                 inputPreserved:p.input.isConnected && p.input.value==='aecdk',
                 reopened:reopened._config?.card_param==='aecdk',
                 leakedKeys:p.leaked.length,
+                entityPickers:{count:pickers.length,
+                    withHass:pickers.filter(element=>!!element.hass).length,
+                    withI18n:pickers.filter(element=>!!element._i18n).length},
                 widths,
             };
         }""")
+        result["pageErrors"] = len(page_errors)
+        result["frontendErrors"] = page.evaluate("window.__codexFrontendErrors")
         browser.close()
     return result
 
@@ -124,6 +149,8 @@ def main() -> int:
                 and result["complete"] and result["saved"]
                 and result["inputPreserved"] and result["reopened"]
                 and result["leakedKeys"] == 0
+                and result["entityPickers"]["withI18n"] == result["entityPickers"]["count"]
+                and result["pageErrors"] == 0
                 and not any(item["overflow"] for item in result["widths"]))
         return 0 if good else 1
     except Exception as error:
