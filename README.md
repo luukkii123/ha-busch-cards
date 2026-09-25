@@ -39,7 +39,9 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung: Home Assistant **2024.11.0** oder neuer.
+Voraussetzung für `0.15.0`: Home Assistant **2026.9.3** oder neuer. Die
+Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
+für diesen Stand nicht freigegeben.
 
 ---
 
@@ -457,6 +459,35 @@ sondern in ein eigenes Kartenrepo — siehe den Umzug oben. Dieses Repo ist die
 Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
+
+**25.09.2026 – 0.15.0 (lokale Release-Abnahme):** Sieben Busch-Karten im
+installierten Home Assistant 2026.9.3 mit isoliertem Testpräfix in einem
+versteckten synthetischen Dashboard geöffnet. Bei jedem der sieben echten
+`ha-form`-Editoren erzeugte eine Änderung sofort vollständige Config; nach
+Visual → YAML → Visual, Speichern, Dashboard-Abschluss, Neuladen und erneutem
+Öffnen blieben 7/7 Werte erhalten, ohne Frontendfehler. Die Testansicht wurde
+gelöscht und ihre Abwesenheit in der Dashboardliste geprüft. Smart Entities:
+die vollständige Featuretyp-Persistenzmatrix und 5 echte Tastatureingaben im
+nativen Formular bestanden; einzelne native Dialogproben für Filter-,
+Template-, Text-, Objekt-, JSON- und Picker-Suchfeld zeigten bei
+A/E/C/D/Ctrl+K/Cmd+K keinen an das Dokument durchgereichten Tastendruck.
+Der HA-Picker öffnete ein `WA-POPOVER`, das Escape schloss, während der
+Karteneditor offen blieb. Die Shortcut-/Popover-Proben wurden getrennt
+ausgeführt; ihr kombinierter Ablauf ist wegen Fokuswechseln nicht als ein
+zusammenhängendes grünes Gate gewertet. Lokal: 352 Node-Tests bestanden,
+1 bestehender Skip; Syntaxprüfung, statische UI-Regeln und Vertragslint ohne
+Fehler. Browserprüfungen für alle sieben Karten bei 320/480/960 px in Hell
+und Dunkel ohne Layoutbefund; 66/66 versionierte Baselines stimmen mit einem
+frischen Chromium-Lauf überein. Die Projektregel liefert `dist/busch-cards.js`
+ohne Build aus; gemeinsame UI-Bausteine sind daher im Bundle eingebettet.
+Die Mindestversion im `hacs.json` entspricht der nativ geprüften HA-Version.
+Eine zusätzliche rein lesende Offscreen-Probe mit echten HA-Backenddaten
+montierte die sieben Karten nacheinander bei 320 px ohne Überlauf,
+Frontendfehler oder Schaltaufruf; das Zeitplan-Modell wurde geladen. Beim
+gleichzeitigen künstlichen Mount aller sieben Karten gab es zwei Fehler in
+einem HA-Frontend-Chunk. Die sequenzielle Gegenprobe reproduzierte sie nicht;
+die Ursache der Parallel-Initialisierung bleibt offen. Kartenaktionen und
+sämtliche Backendzustände sind damit nicht vollständig live abgenommen.
 
 **22.09.2026 – 0.14.0:** Eigener Filterbereich im Geräteeditor mit den
 Include-/Exclude-Prädikaten von Smart Entities, einschließlich Zuständen,

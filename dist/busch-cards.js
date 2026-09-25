@@ -688,7 +688,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.14.0";
+const CARD_VERSION = "0.15.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
