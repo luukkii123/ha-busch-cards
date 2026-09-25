@@ -23,7 +23,7 @@ with sync_playwright() as pw:
  p.wait_for_function("card.querySelector('.dev-tile').hidden&&card.querySelector('.dev-liste').textContent.includes('Keine passenden')")
  p.evaluate("()=>{card.remove();window.editor=document.createElement('busch-device-card-editor');editor.setConfig({...cfg,tap_action:{action:'expand'}});editor.hass=h;document.body.append(editor);editor._filterDetails.open=true;editor.addEventListener('config-changed',e=>window.saved=e.detail.config)}")
  assert p.evaluate("!editor._form.schema.some(f=>['labels','labels_hide','filter'].includes(f.name))&&editor.firstElementChild===editor._filterHost")
- p.evaluate("()=>{const input=editor._filterRoot.querySelector('.rule-value input');input.value='off';input.dispatchEvent(new Event('change'))}")
+ p.evaluate("()=>{const input=editor._filterRoot.querySelector('.rule-value input');input.value='off';input.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}")
  assert p.evaluate("saved.filter.include[0].state==='off'&&saved.labels_hide[0]==='ignore'&&saved.tap_action.action==='expand'&&editor._filterDetails.open")
  cases=[]
  for lang in ['de','en']:

@@ -5807,8 +5807,15 @@ class BuschDeviceCard extends HTMLElement {
 }
 
 class BuschDeviceCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.addEventListener?.('keydown', event => event.stopPropagation());
+    this.addEventListener?.('keyup', event => event.stopPropagation());
+  }
   setConfig(config) {
-    this._config = devMigriereKonfig(config);
+    const next = devMigriereKonfig(config);
+    if (buschCoreKey(next) === buschCoreKey(this._config)) return;
+    this._config = next;
     this._render();
   }
 
@@ -5864,9 +5871,10 @@ class BuschDeviceCardEditor extends HTMLElement {
     for(const name of ['include','exclude']){
       const heading=buschSmartElement('h4',smart[name]);body.append(heading);
       const rules=this._config.filter?.[name]||[];
-      const update=next=>this._emit({...this._config,filter:{...this._config.filter,[name]:next}});
-      rules.forEach((rule,i)=>{const wrap=buschSmartElement('div');body.append(wrap);buschSmartFilterBuilder(wrap,rule,v=>update(rules.map((r,j)=>i===j?v:r)),smart,BUSCH_DEVICE_FILTER_RULES);wrap.append(buschSmartButton(smart.remove,()=>update(rules.filter((_,j)=>i!==j))));});
-      body.append(buschSmartButton(smart.add,()=>update([...rules,{state:name==='exclude'?'unavailable':'on'}])));
+      const currentRules=()=>this._config.filter?.[name]||[];
+      const update=(next,render=true)=>this._emit({...this._config,filter:{...this._config.filter,[name]:next}},render);
+      rules.forEach((rule,i)=>{const wrap=buschSmartElement('div');body.append(wrap);buschSmartFilterBuilder(wrap,rule,(v,render=true)=>update(currentRules().map((r,j)=>i===j?v:r),render),smart,BUSCH_DEVICE_FILTER_RULES);wrap.append(buschSmartButton(smart.remove,()=>update(currentRules().filter((_,j)=>i!==j))));});
+      body.append(buschSmartButton(smart.add,()=>update([...currentRules(),{state:name==='exclude'?'unavailable':'on'}])));
     }
   }
 
@@ -5893,9 +5901,10 @@ class BuschDeviceCardEditor extends HTMLElement {
     this._emit(neu);
   }
 
-  _emit(config) {
+  _emit(config, render=true) {
     this._config = config;
-    this._render();
+    if(render) this._render();
+    else this._filterStamp=buschCoreKey([config.filter,config.labels,config.labels_hide,buschSprache(this._hass)]);
     this.dispatchEvent(
       new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true })
     );
