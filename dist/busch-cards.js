@@ -6283,7 +6283,7 @@ p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-
 .card-icon,.row-icon{display:grid;place-items:center;flex:none;color:var(--primary-color);background:var(--secondary-background-color);border-radius:var(--ha-card-border-radius,12px)}.card-icon{width:48px;height:48px}.row-icon{width:40px;height:40px}
 .header-main{display:grid;gap:var(--ha-space-1,4px);min-width:0}.header-main .detail{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .status-badge{display:inline-flex;align-items:center;gap:var(--ha-space-2,8px);justify-self:end;padding:var(--ha-space-1,4px) var(--ha-space-3,12px);border-radius:999px;font-size:var(--ha-font-size-s,12px);font-weight:var(--ha-font-weight-medium,500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;min-width:0;background:var(--secondary-background-color);color:var(--secondary-text-color)}
-.status-badge::before{content:'';width:8px;height:8px;flex:none;border-radius:50%;background:currentColor}.status-running{color:var(--success-color,#16864b);background:color-mix(in srgb,var(--success-color,#16864b) 12%,var(--card-background-color))}.status-partial,.status-paused{color:var(--warning-color,#a76900);background:color-mix(in srgb,var(--warning-color,#a76900) 12%,var(--card-background-color))}.status-unavailable{color:var(--error-color);background:color-mix(in srgb,var(--error-color) 10%,var(--card-background-color))}
+.status-badge::before{content:'';width:8px;height:8px;flex:none;border-radius:50%;background:currentColor}.status-success{color:var(--success-color,#16864b);background:color-mix(in srgb,var(--success-color,#16864b) 12%,var(--card-background-color))}.status-warning{color:var(--warning-color,#a76900);background:color-mix(in srgb,var(--warning-color,#a76900) 12%,var(--card-background-color))}.status-error,.status-unavailable{color:var(--error-color);background:color-mix(in srgb,var(--error-color) 10%,var(--card-background-color))}
 .actions{display:flex;flex-wrap:wrap;gap:var(--unraid-small)}.header>.actions{grid-column:2/-1;justify-content:flex-end}
 button{font:inherit;color:var(--primary-color);background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--unraid-small) var(--ha-space-3,12px);min-height:44px;cursor:pointer;overflow-wrap:anywhere;max-width:100%}button:disabled{color:var(--disabled-text-color);cursor:default}button:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}.danger{color:var(--error-color);border-color:color-mix(in srgb,var(--error-color) 35%,var(--divider-color));background:color-mix(in srgb,var(--error-color) 7%,var(--card-background-color))}.quiet{background:var(--card-background-color)}
 .disclosure{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:var(--unraid-small);text-align:start;color:var(--primary-text-color);background:var(--secondary-background-color)}.disclosure::after{content:'⌄';font-size:1.25em;line-height:1}.disclosure[aria-expanded=false]::after{transform:rotate(-90deg)}
@@ -6292,7 +6292,17 @@ button{font:inherit;color:var(--primary-color);background:var(--secondary-backgr
 @container (max-width:440px){.header{grid-template-columns:40px minmax(0,1fr);column-gap:var(--unraid-small)}.card-icon{width:40px;height:40px}.header>.status-badge{grid-column:2;justify-self:start}.header>.actions{grid-column:1/-1;justify-content:flex-start}.row>.status-badge{grid-column:1;justify-self:start}.row>.actions{justify-content:flex-start}.actions button{flex:1 1 calc(50% - var(--unraid-small))}}
 `;
 function buschUnraidNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
-function buschUnraidBadge(status,text){return buschUnraidNode('span',text,'status-badge status-'+status);}
+/* Busch HA UI 0.1.0: domain states map to the same semantic badge roles. */
+function buschUiStatusSemantic(status){
+ const state=String(status||'').toLowerCase();
+ if(['running','online','connected','on'].includes(state))return 'success';
+ if(['partial','paused'].includes(state))return 'warning';
+ if(['failed','error'].includes(state))return 'error';
+ if(state==='unavailable')return 'unavailable';
+ if(['stopped','offline','disconnected','off'].includes(state))return 'neutral';
+ return 'unknown';
+}
+function buschUnraidBadge(status,text){return buschUnraidNode('span',text,'status-badge status-'+buschUiStatusSemantic(status));}
 function buschUnraidIcon(name,className){const holder=buschUnraidNode('span',undefined,className),icon=buschUnraidNode('ha-icon');holder.setAttribute('aria-hidden','true');icon.setAttribute('icon',name);holder.appendChild(icon);return holder;}
 class BuschUnraidBaseCard extends HTMLElement {
  constructor(){super();this.attachShadow({mode:'open'});this._config={...BUSCH_UNRAID_DEFAULTS};this._expanded=true;this._generation=0;}

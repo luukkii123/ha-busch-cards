@@ -12,7 +12,7 @@ function load(){
  const context={performance,setTimeout,clearTimeout,HTMLElement:Element,customElements:{define:(k,v)=>registered.set(k,v),get:k=>registered.get(k)},window:{customCards:[],confirm:()=>true},navigator:{language:'de'},console,CustomEvent:class {constructor(type,init){this.type=type;Object.assign(this,init);}},document:{createElement:tag=>new Element(tag)},buschTexte:(t,h)=>t[h?.locale?.language?.startsWith('de')?'de':'en'],buschSchemaMitTexten:s=>s};
  vm.createContext(context);
  vm.runInContext(source,context);
- return {...vm.runInContext('({buschUnraidModel,buschUnraidDevices,buschUnraidSchema,BUSCH_UNRAID_TEXT,BUSCH_UNRAID_DEFAULTS,BuschUnraidStackCard,BuschUnraidContainerCard,BuschUnraidStackEditor})',context),context,registered};
+ return {...vm.runInContext('({buschUnraidModel,buschUnraidDevices,buschUnraidSchema,buschUiStatusSemantic,BUSCH_UNRAID_TEXT,BUSCH_UNRAID_DEFAULTS,BuschUnraidStackCard,BuschUnraidContainerCard,BuschUnraidStackEditor})',context),context,registered};
 }
 function fixture(){
  const core={devices:new Map(),entities:new Map(),getDeviceEntities(id){return [...this.entities.values()].filter(e=>e.device_id===id);}};
@@ -30,6 +30,7 @@ function fixture(){
  return {core,add};
 }
 test('both Unraid cards and editors register with HA discovery metadata',()=>{const l=load();for(const type of ['busch-unraid-stack-card','busch-unraid-container-card']){assert.ok(l.registered.has(type));assert.ok(l.registered.has(type+'-editor'));assert.ok(l.context.window.customCards.find(c=>c.type===type&&c.preview&&c.documentationURL));}});
+test('shared status roles preserve visible domain text',()=>{const semantic=load().buschUiStatusSemantic;for(const [raw,role] of [['running','success'],['online','success'],['partial','warning'],['failed','error'],['stopped','neutral'],['unavailable','unavailable'],['mystery','unknown']])assert.equal(semantic(raw),role);});
 test('device scope requires unraid_ssh, correct model and chosen instance',()=>{const l=load(),{core}=fixture();core.devices.set('fake',{id:'fake',model:'Compose stack',config_entries:['instance']});assert.equal(l.buschUnraidDevices(core,'stack','instance').length,1);assert.equal(l.buschUnraidDevices(core,'stack','other').length,0);assert.equal(l.buschUnraidDevices(core,'container','instance').length,2);});
 test('exact metadata associates renamed controls and matching update; stack partial state',()=>{const l=load(),{core}=fixture();const m=l.buschUnraidModel(core,{device_id:'stack'},'stack');assert.equal(m.containers.length,2);assert.equal(m.status,'partial');assert.equal(m.running,1);assert.equal(m.switch.entity_id,'switch.stack');const web=m.containers.find(c=>c.key==='web');assert.equal(web.restart.entity_id,'button.native');assert.equal(web.update.entity_id,'update.correct');});
 test('container selector supports standalone and compose without entity-name parsing',()=>{const l=load(),{core}=fixture();assert.equal(l.buschUnraidModel(core,{device_id:'solo'},'container').selected.key,'solo');assert.equal(l.buschUnraidModel(core,{device_id:'stack',container_key:'db'},'container').selected.switch.entity_id,'switch.other');assert.equal(l.buschUnraidModel(core,{device_id:'stack'},'container').selected,null);});
