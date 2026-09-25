@@ -2299,9 +2299,9 @@ class BuschScheduleCard extends HTMLElement {
   }
 }
 
-class BuschScheduleCardEditor extends HTMLElement {
+class BuschScheduleCardEditor extends BuschEditorBase {
   setConfig(config) {
-    this._config = { first_day: "auto", step: 15, ...config };
+    if (!this._acceptConfig({ first_day: "auto", step: 15, ...config })) return;
     this._render();
   }
 
@@ -2321,13 +2321,7 @@ class BuschScheduleCardEditor extends HTMLElement {
       this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
-        this.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config: { ...this._config, ...event.detail.value } },
-            bubbles: true,
-            composed: true,
-          })
-        );
+        this._publishConfig({ ...this._config, ...event.detail.value });
       });
       this.appendChild(this._form);
     }
@@ -3670,9 +3664,9 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
   },
 };
 
-class BuschCalendarCardEditor extends HTMLElement {
+class BuschCalendarCardEditor extends BuschEditorBase {
   setConfig(config) {
-    this._config = { ...CAL_STANDARD, ...config };
+    if (!this._acceptConfig({ ...CAL_STANDARD, ...config })) return;
     this._render();
   }
 
@@ -3704,15 +3698,8 @@ class BuschCalendarCardEditor extends HTMLElement {
       this._form.addEventListener("value-changed", (ereignis) => {
         ereignis.stopPropagation();
         const werte = { ...ereignis.detail.value };
-        werte.entities = this._verschmelzeEntities(werte.entities);
-        this._config = { ...this._config, ...werte };
-        this.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config: this._config },
-            bubbles: true,
-            composed: true,
-          })
-        );
+        if (Object.hasOwn(werte, "entities")) werte.entities = this._verschmelzeEntities(werte.entities);
+        this._publishConfig({ ...this._config, ...werte });
         this._renderFarben();
       });
       this.appendChild(this._form);
@@ -3757,20 +3744,13 @@ class BuschCalendarCardEditor extends HTMLElement {
         .join("");
 
     for (const feld of this._farbFeld.querySelectorAll("input[type=color]")) {
-      feld.addEventListener("change", (ereignis) => {
+      feld.addEventListener("input", (ereignis) => {
         const id = ereignis.target.dataset.entity;
         const liste = calNormalisiereKonfig(this._config).entities.map((e) => ({
           entity: e.entity,
           color: e.entity === id ? ereignis.target.value : e.color,
         }));
-        this._config = { ...this._config, entities: liste };
-        this.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config: this._config },
-            bubbles: true,
-            composed: true,
-          })
-        );
+        this._publishConfig({ ...this._config, entities: liste });
       });
     }
   }
@@ -4367,9 +4347,9 @@ class BuschMapCard extends HTMLElement {
   }
 }
 
-class BuschMapCardEditor extends HTMLElement {
+class BuschMapCardEditor extends BuschEditorBase {
   setConfig(config) {
-    this._config = config || {};
+    if (!this._acceptConfig(config || {})) return;
     this._render();
   }
 
@@ -4463,14 +4443,7 @@ class BuschMapCardEditor extends HTMLElement {
   }
 
   _emit(config) {
-    this._config = config;
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    this._publishConfig(config);
   }
 }
 
