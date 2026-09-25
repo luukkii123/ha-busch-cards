@@ -190,7 +190,7 @@ PAGE = """<!doctype html>
       const div = document.createElement('div');
       div.style.cssText = 'width:100%;height:300px';
       haMap.appendChild(div);
-      const map = window.L.map(div).setView([48.2, 16.35], 13);
+      const map = window.L.map(div).setView([0, 0], 13);
       if (window.__modus === 'raster') {
         window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: 'HA-Standardangabe', maxZoom: 19,
@@ -259,14 +259,14 @@ PAGE = """<!doctype html>
   window.__hass = {
     themes: { darkMode: false },
     states: {
-      'person.lukas': { entity_id:'person.lukas', state:'home',
-        attributes:{ friendly_name:'Lukas', latitude:48.2, longitude:16.35 } },
-      'person.marie': { entity_id:'person.marie', state:'not_home',
-        attributes:{ friendly_name:'Marie', latitude:48.21, longitude:16.37 } },
+      'person.demo': { entity_id:'person.demo', state:'home',
+        attributes:{ friendly_name:'Demo', latitude:0, longitude:0 } },
+      'person.second': { entity_id:'person.second', state:'not_home',
+        attributes:{ friendly_name:'Second', latitude:0.01, longitude:0.01 } },
       'input_text.carto_api_key': { entity_id:'input_text.carto_api_key',
         state:'HELFERSCHLUESSEL', attributes:{ friendly_name:'CARTO-Schlüssel' } },
       'zone.home': { entity_id:'zone.home', state:'1',
-        attributes:{ friendly_name:'Home', latitude:48.2, longitude:16.35, radius:200 } },
+        attributes:{ friendly_name:'Home', latitude:0, longitude:0, radius:200 } },
     },
     callWS(){ return Promise.resolve({}); },
   };
@@ -363,7 +363,7 @@ with sync_playwright() as pw:
     leafletVersion = page.evaluate("() => window.L && window.L.version")
 
     page.evaluate("async () => { window.__card = await window.__mk("
-                  "{type:'custom:busch-map-card', entities:['person.lukas'],"
+                  "{type:'custom:busch-map-card', entities:['person.demo'],"
                   " theme_mode:'auto', hours_to_show:2}); }")
     page.wait_for_function("window.__card && window.__card._layer", timeout=15000)
     hell = page.evaluate(LESEN)
@@ -379,7 +379,7 @@ with sync_playwright() as pw:
 
     eigen = page.evaluate("""async () => {
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'custom',
+          entities:['person.demo'], map_style:'custom',
           tile_url:'https://beispiel.test/{z}/{x}/{y}.png',
           tile_attribution:'Meine Quelle'});
         window.__card = c;
@@ -394,7 +394,7 @@ with sync_playwright() as pw:
 
     unberuehrt = page.evaluate("""async () => {
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'ha'});
+          entities:['person.demo'], map_style:'ha'});
         await new Promise(r => setTimeout(r, 900));
         const inner = c.shadowRoot.querySelector('fake-map-card');
         const map = inner.shadowRoot.querySelector('ha-map').leafletMap;
@@ -406,7 +406,7 @@ with sync_playwright() as pw:
     # kein eingebettetes Leaflet mehr, also wird NICHTS ersetzt.
     ohneRaster = page.evaluate("""async () => {
         window.__modus = 'ohneRaster';
-        const c = await window.__mk({type:'custom:busch-map-card', entities:['person.lukas']});
+        const c = await window.__mk({type:'custom:busch-map-card', entities:['person.demo']});
         await new Promise(r => setTimeout(r, 900));
         const inner = c.shadowRoot.querySelector('fake-map-card');
         const map = inner.shadowRoot.querySelector('ha-map').leafletMap;
@@ -419,7 +419,7 @@ with sync_playwright() as pw:
     vektor = page.evaluate("""async () => {
         window.__modus = 'ohneRaster';
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'osm'});
+          entities:['person.demo'], map_style:'osm'});
         await new Promise(r => setTimeout(r, 1200));
         const inner = c.shadowRoot.querySelector('fake-map-card');
         const map = inner.shadowRoot.querySelector('ha-map').leafletMap;
@@ -441,7 +441,7 @@ with sync_playwright() as pw:
     # allein genuegen nicht — verdeckt stehen sie ebenfalls im DOM.
     paar = page.evaluate("""async () => {
         window.__modus = 'ohneRaster';
-        const zwei = ['person.lukas', 'person.marie'];
+        const zwei = ['person.demo', 'person.second'];
         const eigen = await window.__mk({type:'custom:busch-map-card',
           entities: zwei, map_style:'osm'});
         const standard = await window.__mk({type:'custom:busch-map-card',
@@ -458,7 +458,7 @@ with sync_playwright() as pw:
     gegenprobe = page.evaluate("""async () => {
         window.__modus = 'ohneRaster';
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas', 'person.marie'], map_style:'osm'});
+          entities:['person.demo', 'person.second'], map_style:'osm'});
         await new Promise(r => setTimeout(r, 1400));
         const vorher = window.__stapel(c);
         const map = c.shadowRoot.querySelector('fake-map-card')
@@ -475,7 +475,7 @@ with sync_playwright() as pw:
         delete window.L;
         window.__modus = 'stubKarte';
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'osm'});
+          entities:['person.demo'], map_style:'osm'});
         await new Promise(r => setTimeout(r, 1500));
         const m = window.__stubMap;
         const l = m && m._hinzugefuegt[0];
@@ -491,7 +491,7 @@ with sync_playwright() as pw:
 
     rueckfall = page.evaluate("""async () => {
         window.__modus = 'ohneLeaflet';
-        const c = await window.__mk({type:'custom:busch-map-card', entities:['person.lukas']});
+        const c = await window.__mk({type:'custom:busch-map-card', entities:['person.demo']});
         await new Promise(r => setTimeout(r, 1200));
         const inner = c.shadowRoot.querySelector('fake-map-card');
         return {
@@ -506,7 +506,7 @@ with sync_playwright() as pw:
     schluessel = page.evaluate("""async () => {
         window.__modus = 'raster';
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'carto',
+          entities:['person.demo'], map_style:'carto',
           tile_api_key:'TESTSCHLUESSEL'});
         window.__card = c;
         await new Promise(r => setTimeout(r, 900));
@@ -517,7 +517,7 @@ with sync_playwright() as pw:
     }""")
     ohneSchluessel = page.evaluate("""async () => {
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'carto'});
+          entities:['person.demo'], map_style:'carto'});
         await new Promise(r => setTimeout(r, 900));
         const map = c.shadowRoot.querySelector('fake-map-card')
                      .shadowRoot.querySelector('ha-map').leafletMap;
@@ -528,7 +528,7 @@ with sync_playwright() as pw:
     # Schluessel aus dem Helfer, ohne Eintrag in der Karte.
     ausHelfer = page.evaluate("""async () => {
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'carto'});
+          entities:['person.demo'], map_style:'carto'});
         window.__card = c;
         await new Promise(r => setTimeout(r, 900));
         const map = c.shadowRoot.querySelector('fake-map-card')
@@ -553,7 +553,7 @@ with sync_playwright() as pw:
     editor = page.evaluate("""async () => {
         const el = window.__card.constructor.getConfigElement();
         document.body.appendChild(el);
-        el.setConfig({type:'custom:busch-map-card', entities:['person.lukas']});
+        el.setConfig({type:'custom:busch-map-card', entities:['person.demo']});
         el.hass = window.__hass;
         /* Der eingebaute Editor wird asynchron nachgeladen und eingehaengt. */
         for (let i = 0; i < 40 && !el.querySelector('#echter-map-editor'); i++) {
@@ -595,12 +595,12 @@ with sync_playwright() as pw:
         w.style.maxWidth = 'none'; w.style.width = 'auto';
         window.__modus = 'raster';
         const c = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'carto'});
+          entities:['person.demo'], map_style:'carto'});
         c.id = 'karte-map';
         await new Promise(r => setTimeout(r, 1200));
         window.__modus = 'wirft';
         const f = await window.__mk({type:'custom:busch-map-card',
-          entities:['person.lukas'], map_style:'carto'});
+          entities:['person.demo'], map_style:'carto'});
         f.id = 'karte-fehler';
         await new Promise(r => setTimeout(r, 600));
         window.__modus = 'raster';
@@ -656,7 +656,7 @@ checks["eigene Schluessel gelangen NICHT nach innen"] = not any(
     k in innen for k in ("map_style", "tile_url", "tile_url_dark", "tile_attribution")
 )
 checks["Fremdoptionen werden durchgereicht"] = (
-    innen.get("hours_to_show") == 2 and innen.get("entities") == ["person.lukas"]
+    innen.get("hours_to_show") == 2 and innen.get("entities") == ["person.demo"]
 )
 checks["getCardSize kommt von der inneren Karte"] = hell["kartenGroesse"] == 7
 checks["eigene URL wird verwendet"] = (
@@ -684,12 +684,12 @@ checks["Vektorfall: Dunkelfilter abgeschaltet"] = vektor["mapFilter"] == "none"
 _pe, _ps = paar["eigen"], paar["standard"]
 checks["Paar: eigene Vorlage zeigt beide Entitaeten"] = (
     _pe["markerImDom"] == 2
-    and _pe["markerEntitaeten"] == ["person.lukas", "person.marie"]
+    and _pe["markerEntitaeten"] == ["person.demo", "person.second"]
     and _pe["kachelnUeberMarkern"] is False
 )
 checks["Paar: Standardvorlage zeigt beide Entitaeten"] = (
     _ps["markerImDom"] == 2
-    and _ps["markerEntitaeten"] == ["person.lukas", "person.marie"]
+    and _ps["markerEntitaeten"] == ["person.demo", "person.second"]
     and _ps["kachelnUeberMarkern"] is False
 )
 # Ohne das waere das Paar wertlos: beide gruen, weil gar nichts passiert ist.
@@ -727,7 +727,7 @@ checks["Editor: sieben Vorlagen plus eigene URL"] = editor["vorlagen"] == [
 checks["Editor beschriftet deutsch"] = editor["beschriftung"] == "Kartenvorlage"
 checks["Editor gibt die Vorlage weiter"] = editor["nachAenderung"].get("map_style") == "topo"
 checks["Editor behaelt die Fremdoptionen"] = (
-    editor["nachAenderung"].get("entities") == ["person.lukas"]
+    editor["nachAenderung"].get("entities") == ["person.demo"]
 )
 
 # Fehlgeschlagene KACHEL-Abrufe zaehlen nicht als Kartenfehler: eine der
