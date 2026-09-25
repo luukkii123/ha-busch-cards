@@ -89,6 +89,13 @@ function buschCoreKey(value) {
   if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + buschCoreKey(value[key])).join(',') + '}';
   return JSON.stringify(value);
 }
+/* Shared editor contract for the standalone Busch bundle. */
+function buschEditorCopy(config){return JSON.parse(JSON.stringify(config||{}));}
+class BuschEditorBase extends HTMLElement {
+  constructor(){super();this.addEventListener?.('keydown',event=>event.stopPropagation());this.addEventListener?.('keyup',event=>event.stopPropagation());}
+  _acceptConfig(config,normalize=buschEditorCopy){const next=buschEditorCopy(normalize(config));if(buschCoreKey(next)===buschCoreKey(this._config))return false;this._config=next;return true;}
+  _publishConfig(config){const next=buschEditorCopy(config);this._config=next;this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:buschEditorCopy(next)},bubbles:true,composed:true}));return next;}
+}
 function buschCorePath(object, path) { return String(path).split(/[.:]/).reduce((value, key) => value?.[key], object); }
 function buschCoreMatch(value, pattern) {
   if (typeof pattern !== 'string') return value === pattern;
@@ -5806,16 +5813,9 @@ class BuschDeviceCard extends HTMLElement {
 
 }
 
-class BuschDeviceCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.addEventListener?.('keydown', event => event.stopPropagation());
-    this.addEventListener?.('keyup', event => event.stopPropagation());
-  }
+class BuschDeviceCardEditor extends BuschEditorBase {
   setConfig(config) {
-    const next = devMigriereKonfig(config);
-    if (buschCoreKey(next) === buschCoreKey(this._config)) return;
-    this._config = next;
+    if (!this._acceptConfig(config,devMigriereKonfig)) return;
     this._render();
   }
 
@@ -5902,12 +5902,9 @@ class BuschDeviceCardEditor extends HTMLElement {
   }
 
   _emit(config, render=true) {
-    this._config = config;
+    this._publishConfig(config);
     if(render) this._render();
     else this._filterStamp=buschCoreKey([config.filter,config.labels,config.labels_hide,buschSprache(this._hass)]);
-    this.dispatchEvent(
-      new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true })
-    );
   }
 }
 
@@ -6077,10 +6074,10 @@ const SCHEMA_BUSCH_SMART_ENTITIES = [
  {name:'method',selector:{select:{mode:'dropdown',options:['none','domain','entity_id','name','device','device_name','area','state','attribute','last_changed','last_updated','last_triggered'].map(value=>({value,label:value}))}}},
  {name:'reverse',selector:{boolean:{}}},{name:'ignore_case',selector:{boolean:{}}},{name:'numeric',selector:{boolean:{}}},{name:'ip',selector:{boolean:{}}},{name:'sort_attribute',selector:{text:{}}},{name:'first',selector:{number:{min:0,mode:'box'}}},{name:'count',selector:{number:{min:0,mode:'box'}}}
 ];
-class BuschSmartEntitiesEditor extends HTMLElement {
-  setConfig(config){const next=JSON.parse(JSON.stringify(config||BuschSmartEntities.getStubConfig()));if(buschCoreKey(next)===buschCoreKey(this._config))return;this._config=next;this._render();}
+class BuschSmartEntitiesEditor extends BuschEditorBase {
+  setConfig(config){if(!this._acceptConfig(config||BuschSmartEntities.getStubConfig()))return;this._render();}
   set hass(hass){const changed=buschSprache(this._hass)!==buschSprache(hass);this._hass=hass;if(!this.shadowRoot||changed)this._render();else for(const form of this.shadowRoot.querySelectorAll('ha-form,hui-entities-card-editor'))form.hass=hass;}
-  _emit(config,render=true){const next=JSON.parse(JSON.stringify(config));this._config=next;this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:next},bubbles:true,composed:true}));if(render)this._render();}
+  _emit(config,render=true){this._publishConfig(config);if(render)this._render();}
   _section(title,group='more',defaultOpen=false){const details=buschSmartElement('details');details.className='editor-section';details.dataset.group=group;details.dataset.section=title;details.open=this._sectionOpen?.get(title)??defaultOpen;details.append(buschSmartElement('summary',title));const body=buschSmartElement('div');body.className='body';details.append(body);this.shadowRoot.append(details);return body;}
   _form(parent,names,data,change){const t=this._t,form=buschSmartElement('ha-form');form.computeLabel=s=>t.labels[s.name]||s.name;form.computeHelper=s=>t.helpers[s.name]||'';form.hass=this._hass;form.schema=buschSchemaMitTexten(SCHEMA_BUSCH_SMART_ENTITIES.filter(f=>names.includes(f.name)),t);
     if(names.includes('attribute')) {
@@ -6089,7 +6086,7 @@ class BuschSmartEntitiesEditor extends HTMLElement {
       form.schema=form.schema.map(f=>f.name==='attribute'?{...f,selector:{select:{custom_value:true,options:[...attrs].sort().map(value=>({value,label:value}))}}}:f);
     }form.data=data;form.computeLabel=s=>t.labels[s.name]||s.name;form.computeHelper=s=>t.helpers[s.name]||'';form.addEventListener('value-changed',event=>{event.stopPropagation();change(event.detail.value);});parent.append(form);return form;}
   _render(){
-    if(!this._hass||!this._config)return;if(!this.shadowRoot){const root=this.attachShadow({mode:'open'});root.addEventListener('keydown',event=>event.stopPropagation());root.addEventListener('keyup',event=>event.stopPropagation());}this._t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);const t=this._t,c=this._config;
+    if(!this._hass||!this._config)return;if(!this.shadowRoot)this.attachShadow({mode:'open'});this._t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);const t=this._t,c=this._config;
     this._sectionOpen=new Map([...this.shadowRoot.querySelectorAll('.editor-section')].map(e=>[e.dataset.section,e.open]));this.shadowRoot.replaceChildren(buschSmartElement('style',BUSCH_SMART_EDITOR_CSS));
     const nav=buschSmartElement('div');nav.className='tabs';nav.setAttribute('role','tablist');nav.setAttribute('aria-label',t.navigation);this.shadowRoot.append(nav);
     for(const [group,label]of [['filters',t.filters],['card',t.target],['more',t.more]]){const button=buschSmartButton(label,()=>this._showGroup(group));button.dataset.group=group;button.setAttribute('role','tab');button.id='tab-'+group;button.setAttribute('aria-controls','panel-'+group);nav.append(button);}
@@ -6326,13 +6323,13 @@ class BuschUnraidContainerCard extends BuschUnraidBaseCard {
  static getConfigElement(){return document.createElement('busch-unraid-container-card-editor');}
  static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-container-card'};const core=ensureBuschCore(1);core.attach(hass);const model=buschUnraidModel(core,{},'container');return {type:'custom:busch-unraid-container-card',...(model.device?{device_id:model.device.id}:{}),...(model.containers[0]?{container_key:model.containers[0].key}:{})};}
 }
-class BuschUnraidBaseEditor extends HTMLElement {
- setConfig(config){this._config={...config};this._render();}
+class BuschUnraidBaseEditor extends BuschEditorBase {
+ setConfig(config){if(!this._acceptConfig(config))return;this._render();}
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
  connectedCallback(){this._connect();this._render();}
  disconnectedCallback(){this._release?.();this._unwatch?.();this._release=this._unwatch=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
- _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=document.createElement('ha-form');this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;}this._config=next;this._render();this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:next},bubbles:true,composed:true}));});this.appendChild(this._form);}
+ _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=document.createElement('ha-form');this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};let structural=false;if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);if(structural)this._render();});this.appendChild(this._form);}
   this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);this._form.computeLabel=s=>t.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:t.helpers[s.name]||'';
  }
 }
