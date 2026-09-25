@@ -126,6 +126,17 @@ test("eine unbekannte Aktion bleibt stehen und tut spaeter nichts", () => {
     "ein Wert, der gar keine Aktion ist, faellt auf die Vorgabe");
 });
 
+test("Sections laesst der aufklappbaren Geraetekarte eine dynamische Hoehe", () => {
+  const card = new BuschDeviceCard();
+  for (const offen of [false, true]) {
+    card._offen = offen;
+    const options = card.getGridOptions();
+    assert.strictEqual(options.columns, 12);
+    assert.strictEqual(options.min_columns, 6);
+    assert.strictEqual(Object.hasOwn(options, "rows"), false);
+  }
+});
+
 /* ── Vorlagen ──────────────────────────────────────────────────────────── */
 
 test("die Vorlagentabelle aus Spec Abschnitt 4 steht vollstaendig", () => {

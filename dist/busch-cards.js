@@ -701,7 +701,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.15.1";
+const CARD_VERSION = "0.15.2";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -5318,7 +5318,7 @@ const DEV_STIL = `
   busch-device-card > ha-card { display:block; overflow:hidden; color:var(--primary-text-color);
     background:var(--card-background-color); }
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
-    min-height:72px; padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
+    padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
     user-select:none; -webkit-user-select:none; min-width:0; }
   .dev-icon[hidden] { display:none; }
   .dev-icon { flex:0 0 48px; width:48px; height:48px; border-radius:50%;
@@ -5377,7 +5377,7 @@ const DEV_STIL = `
   .dev-hinweis.dev-fehler { color:var(--error-color); }
   .dev-kopf:focus-visible,.dev-gruppe-kopf:focus-visible,.dev-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:-2px; }
   @container (max-width:380px) {
-    .dev-kopf { gap:var(--ha-space-2, 8px); min-height:64px; padding:var(--ha-space-3, 12px); }
+    .dev-kopf { gap:var(--ha-space-2, 8px); padding:var(--ha-space-3, 12px); }
     .dev-icon { flex-basis:40px; width:40px; height:40px; }
     .dev-tile { margin-inline:var(--ha-space-3, 12px); }
     .dev-liste { padding-inline:var(--ha-space-3, 12px); }
@@ -5431,7 +5431,7 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return { columns: 12, min_columns: 6 };
   }
 
   get _texte() {
@@ -6304,7 +6304,7 @@ button{font:inherit;color:var(--primary-color);background:var(--secondary-backgr
 .disclosure{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:var(--unraid-small);text-align:start;color:var(--primary-text-color);background:var(--secondary-background-color)}.disclosure::after{content:'⌄';font-size:1.25em;line-height:1}.disclosure[aria-expanded=false]::after{transform:rotate(-90deg)}
 .rows{display:grid;margin-top:var(--unraid-small);border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);overflow:hidden}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--unraid-small);align-items:center;padding:var(--ha-space-3,12px)}.row+.row{border-top:1px solid var(--divider-color)}.row-identity{display:flex;align-items:center;gap:var(--ha-space-3,12px);min-width:0}.row-text{display:grid;gap:var(--ha-space-1,4px);min-width:0}.row .name{font-size:var(--ha-font-size-m,14px)}.row>.actions{grid-column:1/-1;justify-content:flex-end}.row .detail{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .message{margin-top:var(--unraid-space)}.error{color:var(--error-color)}.compact .detail{display:none}
-@container (max-width:440px){.header{grid-template-columns:40px minmax(0,1fr);column-gap:var(--unraid-small)}.card-icon{width:40px;height:40px}.header>.status-badge{grid-column:2;justify-self:start}.header>.actions{grid-column:1/-1;justify-content:flex-start}.row>.status-badge{grid-column:1;justify-self:start}.row>.actions{justify-content:flex-start}.actions button{flex:1 1 calc(50% - var(--unraid-small))}}
+@container (max-width:440px){.header{grid-template-columns:40px minmax(0,1fr);column-gap:var(--unraid-small);row-gap:var(--unraid-small);padding-bottom:var(--unraid-small)}.card-icon{width:40px;height:40px}.header>.status-badge{grid-column:2;justify-self:start}.header>.actions{grid-column:1/-1;justify-content:flex-start}.row>.status-badge{grid-column:1;justify-self:start}.row>.actions{justify-content:flex-start}.actions button{flex:1 1 0;padding-inline:var(--unraid-small);font-size:var(--ha-font-size-m,14px)}.actions:has(>button:nth-child(4)) button{flex-basis:calc(50% - var(--unraid-small))}.disclosure{margin-top:0}}
 `;
 function buschUnraidNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
 /* Busch HA UI 0.1.0: domain states map to the same semantic badge roles. */
@@ -6328,7 +6328,7 @@ class BuschUnraidBaseCard extends HTMLElement {
  disconnectedCallback(){this._release?.();this._unwatch?.();this._unwatchDevice?.();this._unwatchDevice=null;this._watchDeviceId=null;this._release=this._unwatch=null;this._generation++;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
  getCardSize(){return this._kind==='stack'&&this._expanded?4:2;}
- getGridOptions(){return {columns:12,min_columns:3,rows:this.getCardSize()*2,min_rows:2};}
+ getGridOptions(){return {columns:12,min_columns:3};}
  _button(parent,text,action,disabled=false,destructive=false){const button=buschUnraidNode('button',text,destructive?'danger':'');button.type='button';button.disabled=disabled;button.addEventListener('click',action);parent.appendChild(button);return button;}
  _actions(parent,row,t){const actions=buschUnraidNode('div',undefined,'actions');
   if(this._config.show_controls&&row.switch){const running=row.status==='running'||row.status==='partial'||row.switch.state==='on';this._button(actions,running?t.stop:t.start,()=>this._action(running?'stop':'start',row),this._busy||!buschUnraidAvailable(row.switch),running);}

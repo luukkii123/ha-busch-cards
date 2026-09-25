@@ -32,6 +32,16 @@ with sync_playwright() as pw:
    overflow=p.evaluate("""()=>{const card=document.querySelector('busch-device-card'),bounds=card.getBoundingClientRect();return [...card.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).flatMap(e=>{const rect=e.getBoundingClientRect(),style=getComputedStyle(e);if(!rect.width||style.display==='none')return [];const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis';return rect.left<bounds.left-1||rect.right>bounds.right+1||(!clipped&&e.scrollWidth>e.clientWidth+1)?[e.className||e.tagName]:[]})}""")
    card_cases.append({'width':width,'dark':dark,'overflow':overflow})
  assert not any(case['overflow'] for case in card_cases),card_cases
+ # Ein zusammengeklappter Gerätekopf soll auf dem Handy die Höhe einer
+ # HA-Kartenzeile behalten. Der Pfeil bleibt unabhängig davon gut treffbar.
+ collapsed_cases=[]
+ for width in [320,374,390,480]:
+  p.set_viewport_size({'width':max(width,390),'height':1000})
+  p.evaluate("width=>{card.style.width=width+'px';card._offen=false;card._zeigeListe()}",width)
+  geometry=p.evaluate("""()=>{const head=card.querySelector('.dev-kopf').getBoundingClientRect(),arrow=card.querySelector('.dev-pfeil').getBoundingClientRect();return {headHeight:head.height,arrowWidth:arrow.width,arrowHeight:arrow.height,cardWidth:card.getBoundingClientRect().width}}""")
+  p.locator('busch-device-card').screenshot(path=str(out/f'device-collapsed-{width}.png'))
+  collapsed_cases.append({'width':width,**geometry})
+ assert all(c['headHeight']<=76 and c['arrowWidth']>=44 and c['arrowHeight']>=44 for c in collapsed_cases),collapsed_cases
  old_open=p.evaluate("card._offen")
  p.locator("busch-device-card .dev-pfeil").press("Enter")
  assert p.evaluate("card._offen") != old_open
@@ -49,4 +59,4 @@ with sync_playwright() as pw:
     p.set_viewport_size({'width':width,'height':1000});p.screenshot(path=str(out/f'filters-{lang}-{width}-{dark}.png'),full_page=True)
     overflow=p.evaluate("()=>[...editor._filterRoot.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&(r.right>innerWidth+1||r.left< -1)}).length")
     cases.append({'width':width,'language':lang,'dark':dark,'overflow':overflow})
- result={'cases':cases,'card_cases':card_cases,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()
+ result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()

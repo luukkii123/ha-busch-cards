@@ -30,6 +30,16 @@ function fixture(){
  return {core,add};
 }
 test('both Unraid cards and editors register with HA discovery metadata',()=>{const l=load();for(const type of ['busch-unraid-stack-card','busch-unraid-container-card']){assert.ok(l.registered.has(type));assert.ok(l.registered.has(type+'-editor'));assert.ok(l.context.window.customCards.find(c=>c.type===type&&c.preview&&c.documentationURL));}});
+test('Unraid cards let Sections size their dynamic content naturally',()=>{
+ const l=load(),stack=new l.BuschUnraidStackCard(),container=new l.BuschUnraidContainerCard();
+ for(const expanded of [false,true]){
+  stack._expanded=expanded;
+  assert.equal(Object.hasOwn(stack.getGridOptions(),'rows'),false);
+  assert.equal(Object.hasOwn(stack.getGridOptions(),'min_rows'),false);
+ }
+ assert.equal(Object.hasOwn(container.getGridOptions(),'rows'),false);
+ assert.equal(stack.getGridOptions().columns,12);
+});
 test('shared status roles preserve visible domain text',()=>{const semantic=load().buschUiStatusSemantic;for(const [raw,role] of [['running','success'],['online','success'],['partial','warning'],['failed','error'],['stopped','neutral'],['unavailable','unavailable'],['mystery','unknown']])assert.equal(semantic(raw),role);});
 test('device scope requires unraid_ssh, correct model and chosen instance',()=>{const l=load(),{core}=fixture();core.devices.set('fake',{id:'fake',model:'Compose stack',config_entries:['instance']});assert.equal(l.buschUnraidDevices(core,'stack','instance').length,1);assert.equal(l.buschUnraidDevices(core,'stack','other').length,0);assert.equal(l.buschUnraidDevices(core,'container','instance').length,2);});
 test('exact metadata associates renamed controls and matching update; stack partial state',()=>{const l=load(),{core}=fixture();const m=l.buschUnraidModel(core,{device_id:'stack'},'stack');assert.equal(m.containers.length,2);assert.equal(m.status,'partial');assert.equal(m.running,1);assert.equal(m.switch.entity_id,'switch.stack');const web=m.containers.find(c=>c.key==='web');assert.equal(web.restart.entity_id,'button.native');assert.equal(web.update.entity_id,'update.correct');});

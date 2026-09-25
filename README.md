@@ -39,7 +39,7 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung für `0.15.1`: Home Assistant **2026.9.3** oder neuer. Die
+Voraussetzung für `0.15.2`: Home Assistant **2026.9.3** oder neuer. Die
 Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
 für diesen Stand nicht freigegeben.
 
@@ -459,6 +459,22 @@ sondern in ein eigenes Kartenrepo — siehe den Umzug oben. Dieses Repo ist die
 Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
+
+**25.09.2026 – 0.15.2 (mobile Sections-Ansicht):** Die Gerätekarte addierte
+Padding auf ihre Mindesthöhe; ihr zugeklappter Kopf maß dadurch 88–96 px.
+Ohne diese Mindesthöhe misst er bei 320–480 px Kartenbreite 68–72 px, der
+Pfeil bleibt 44 × 44 px groß. In Home Assistants Sections-Ansicht reservierte die
+eingeklappte Unraid-Stack-Karte bei 360 px nur 248 px Rasterhöhe für 281 px
+Inhalt; die folgende Überschrift überlappte sie um 9 px. Die dynamischen
+Geräte- und Unraid-Karten geben deshalb keine feste `rows`-Zahl mehr an.
+Die drei Stack-Aktionen stehen mobil in einer Reihe; bei 393 px sank die
+eingeklappte Kartenhöhe von 275 auf 207 px. Der isolierte Test in der echten
+HA-Ansicht zeigte bei 320/360/390/440/480 px gleiche Höhen für Karte und
+Rasterzelle, 0 Überlappung, 0 horizontalen Überlauf und 0 Browserfehler;
+bei 1280 px ebenfalls keine Überschneidung. 41 Unraid-Browserfälle samt
+16 aufgeklappten Containern und neun Gerätefälle in Hell/Dunkel bestanden.
+Lokal: 356 Node-Tests bestanden, ein bestehender Skip; Syntax und statische
+UI-Regeln ohne Fehler. Keine produktiven Schaltaktionen ausgeführt.
 
 **25.09.2026 – 0.15.1 (Snapshot-Hotfix):** Die Systemansicht blockierte
 beim Start, weil der vollständige `get_states`-Snapshot rund 7.100 neue
