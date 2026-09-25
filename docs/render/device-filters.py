@@ -21,6 +21,17 @@ with sync_playwright() as pw:
  p.wait_for_function("card.querySelectorAll('.dev-zeile').length===0&&!!card.querySelector('test-tile')")
  p.evaluate("()=>card.setConfig({...cfg,filter:{exclude:[{entity_id:'*'}]}})")
  p.wait_for_function("card.querySelector('.dev-tile').hidden&&card.querySelector('.dev-liste').textContent.includes('Keine passenden')")
+ p.evaluate("()=>card.setConfig({...cfg,filter:undefined,title:'Testgerät mit einem absichtlich sehr langen Namen für mobile Karten'})")
+ p.wait_for_function("card.querySelector('test-tile')&&card.querySelectorAll('.dev-zeile').length>=2")
+ card_cases=[]
+ for dark in [False,True]:
+  p.evaluate("dark=>{for(const [k,v]of Object.entries({'--primary-text-color':dark?'#eee':'#222','--secondary-text-color':dark?'#bbb':'#555','--card-background-color':dark?'#222':'#fff','--divider-color':dark?'#555':'#ddd','--primary-color':'#03a9f4'}))document.documentElement.style.setProperty(k,v)}",dark)
+  for width in [320,480,960]:
+   p.set_viewport_size({'width':width,'height':1000})
+   p.locator('busch-device-card').screenshot(path=str(out/f'device-card-{width}-{dark}.png'))
+   overflow=p.evaluate("""()=>{const card=document.querySelector('busch-device-card'),bounds=card.getBoundingClientRect();return [...card.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).flatMap(e=>{const rect=e.getBoundingClientRect(),style=getComputedStyle(e);if(!rect.width||style.display==='none')return [];const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis';return rect.left<bounds.left-1||rect.right>bounds.right+1||(!clipped&&e.scrollWidth>e.clientWidth+1)?[e.className||e.tagName]:[]})}""")
+   card_cases.append({'width':width,'dark':dark,'overflow':overflow})
+ assert not any(case['overflow'] for case in card_cases),card_cases
  p.evaluate("()=>{card.remove();window.editor=document.createElement('busch-device-card-editor');editor.setConfig({...cfg,tap_action:{action:'expand'}});editor.hass=h;document.body.append(editor);editor._filterDetails.open=true;editor.addEventListener('config-changed',e=>window.saved=e.detail.config)}")
  assert p.evaluate("!editor._form.schema.some(f=>['labels','labels_hide','filter'].includes(f.name))&&editor.firstElementChild===editor._filterHost")
  p.evaluate("()=>{const input=editor._filterRoot.querySelector('.rule-value input');input.value='off';input.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}")
@@ -34,4 +45,4 @@ with sync_playwright() as pw:
     p.set_viewport_size({'width':width,'height':1000});p.screenshot(path=str(out/f'filters-{lang}-{width}-{dark}.png'),full_page=True)
     overflow=p.evaluate("()=>[...editor._filterRoot.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&(r.right>innerWidth+1||r.left< -1)}).length")
     cases.append({'width':width,'language':lang,'dark':dark,'overflow':overflow})
- result={'cases':cases,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()
+ result={'cases':cases,'card_cases':card_cases,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()
