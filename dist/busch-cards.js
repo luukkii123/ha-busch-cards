@@ -5297,17 +5297,21 @@ function devHelferLaden() {
   return devHelferCache;
 }
 
+/* Busch HA UI 0.1.0: Header, Disclosure und mobile Card-Shell. */
 const DEV_STIL = `
+  busch-device-card { display:block; container-type:inline-size; }
+  busch-device-card > ha-card { display:block; overflow:hidden; color:var(--primary-text-color);
+    background:var(--card-background-color); }
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
-    padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
+    min-height:72px; padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
     user-select:none; -webkit-user-select:none; min-width:0; }
   .dev-icon[hidden] { display:none; }
-  .dev-icon { flex:0 0 40px; width:40px; height:40px; border-radius:50%;
+  .dev-icon { flex:0 0 48px; width:48px; height:48px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    background:rgba(var(--rgb-primary-color, 3, 169, 244), .12);
+    background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
     color:var(--primary-color); --mdc-icon-size:24px; }
   .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
-  .dev-name { font-size:1.05em; font-weight:var(--ha-font-weight-medium, 500);
+  .dev-name { font-size:1.05em; font-weight:var(--ha-font-weight-semibold, 600);
     color:var(--primary-text-color);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   .dev-unter { display:flex; align-items:center; gap:6px; min-width:0;
@@ -5316,14 +5320,18 @@ const DEV_STIL = `
   .dev-unter-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   .dev-brand { width:16px; height:16px; flex:0 0 16px; }
   .dev-brand[hidden] { display:none; }
-  .dev-pfeil { flex:0 0 auto; width:24px; height:24px; color:var(--secondary-text-color);
-    transition:transform .2s ease; --mdc-icon-size:24px; }
+  .dev-pfeil { flex:0 0 44px; width:44px; height:44px; display:grid; place-items:center;
+    padding:0; border:0; border-radius:50%; background:transparent; cursor:pointer;
+    color:var(--secondary-text-color); --mdc-icon-size:24px; }
+  .dev-pfeil ha-icon { transition:transform .2s ease; }
   .dev-pfeil[hidden] { display:none !important; }
-  .dev-offen .dev-pfeil { transform:rotate(180deg); }
+  .dev-offen .dev-pfeil ha-icon { transform:rotate(180deg); }
   .dev-chips { display:flex; flex-wrap:wrap; gap:4px;
     padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .dev-chips:empty { display:none; }
-  .dev-tile { padding:0 var(--ha-space-3, 12px) var(--ha-space-3, 12px); }
+  .dev-tile { margin:0 var(--ha-space-4, 16px) var(--ha-space-4, 16px);
+    padding:var(--ha-space-2, 8px); border:1px solid var(--divider-color);
+    border-radius:var(--ha-card-border-radius, 12px); min-width:0; }
   .dev-tile:empty { display:none; }
   /* Ohne !important bliebe das Bedienelement beim Zuklappen stehen — dieselbe
      Absicherung wie bei .dev-liste. */
@@ -5337,6 +5345,7 @@ const DEV_STIL = `
   .dev-liste[hidden] { display:none; }
   .dev-gruppe-kopf { display:flex; align-items:center; gap:6px; min-width:0;
     padding:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px);
+    min-height:44px;
     font-size:.78em; text-transform:uppercase; letter-spacing:.06em;
     color:var(--secondary-text-color); background:none; border:0; width:100%;
     text-align:left; font-family:inherit; cursor:pointer; }
@@ -5351,6 +5360,13 @@ const DEV_STIL = `
     color:var(--secondary-text-color); font-size:.9em; overflow-wrap:anywhere; }
   .dev-hinweis[hidden] { display:none; }
   .dev-hinweis.dev-fehler { color:var(--error-color); }
+  .dev-kopf:focus-visible,.dev-gruppe-kopf:focus-visible,.dev-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:-2px; }
+  @container (max-width:380px) {
+    .dev-kopf { gap:var(--ha-space-2, 8px); min-height:64px; padding:var(--ha-space-3, 12px); }
+    .dev-icon { flex-basis:40px; width:40px; height:40px; }
+    .dev-tile { margin-inline:var(--ha-space-3, 12px); }
+    .dev-liste { padding-inline:var(--ha-space-3, 12px); }
+  }
 `;
 
 class BuschDeviceCard extends HTMLElement {
@@ -5434,10 +5450,13 @@ class BuschDeviceCard extends HTMLElement {
     this._unterText.className = "dev-unter-text";
     this._unter.append(this._brand, this._unterText);
     this._titel.append(this._name, this._unter);
-    this._pfeil = document.createElement("ha-icon");
+    this._pfeil = document.createElement("button");
     this._pfeil.className = "dev-pfeil";
-    this._pfeil.setAttribute("icon", "mdi:chevron-down");
-    this._pfeil.icon = "mdi:chevron-down";
+    this._pfeil.type = "button";
+    const pfeilIcon = document.createElement("ha-icon");
+    pfeilIcon.setAttribute("icon", "mdi:chevron-down");
+    pfeilIcon.icon = "mdi:chevron-down";
+    this._pfeil.appendChild(pfeilIcon);
     this._kopf.append(this._icon, this._titel, this._pfeil);
 
     this._chips = document.createElement("div");
@@ -5571,6 +5590,7 @@ class BuschDeviceCard extends HTMLElement {
     this._kopf.setAttribute("role", "button");
     this._kopf.tabIndex = 0;
     this._kopf.addEventListener("keydown", (e) => {
+      if (e.target.closest(".dev-pfeil")) return;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         devFuehreAus(this, this._hass, this._config.tap_action, this._kopfKontext());
@@ -5725,9 +5745,11 @@ class BuschDeviceCard extends HTMLElement {
         this._zu[g.gruppe] = !devGruppeOffen(this._config, g.gruppe);
       }
       if (this._zu[g.gruppe]) block.classList.add("dev-zu");
+      kopf.setAttribute("aria-expanded", String(!this._zu[g.gruppe]));
       kopf.addEventListener("click", () => {
         this._zu[g.gruppe] = !this._zu[g.gruppe];
         block.classList.toggle("dev-zu", this._zu[g.gruppe]);
+        kopf.setAttribute("aria-expanded", String(!this._zu[g.gruppe]));
       });
       const text = document.createElement("span");
       text.className = "dev-gruppe-text";
@@ -5784,6 +5806,8 @@ class BuschDeviceCard extends HTMLElement {
     this._karte.classList.toggle("dev-offen", offen);
     const t = this._texte;
     this._kopf.setAttribute("aria-expanded", String(offen));
+    this._pfeil.setAttribute("aria-expanded", String(offen));
+    this._pfeil.setAttribute("aria-label", offen ? t.zuklappen : t.aufklappen);
     this._pfeil.setAttribute("title", offen ? t.zuklappen : t.aufklappen);
   }
 

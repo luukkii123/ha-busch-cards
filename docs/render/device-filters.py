@@ -32,6 +32,10 @@ with sync_playwright() as pw:
    overflow=p.evaluate("""()=>{const card=document.querySelector('busch-device-card'),bounds=card.getBoundingClientRect();return [...card.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).flatMap(e=>{const rect=e.getBoundingClientRect(),style=getComputedStyle(e);if(!rect.width||style.display==='none')return [];const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis';return rect.left<bounds.left-1||rect.right>bounds.right+1||(!clipped&&e.scrollWidth>e.clientWidth+1)?[e.className||e.tagName]:[]})}""")
    card_cases.append({'width':width,'dark':dark,'overflow':overflow})
  assert not any(case['overflow'] for case in card_cases),card_cases
+ old_open=p.evaluate("card._offen")
+ p.locator("busch-device-card .dev-pfeil").press("Enter")
+ assert p.evaluate("card._offen") != old_open
+ assert p.evaluate("card._pfeil.getAttribute('aria-expanded')") == str(not old_open).lower()
  p.evaluate("()=>{card.remove();window.editor=document.createElement('busch-device-card-editor');editor.setConfig({...cfg,tap_action:{action:'expand'}});editor.hass=h;document.body.append(editor);editor._filterDetails.open=true;editor.addEventListener('config-changed',e=>window.saved=e.detail.config)}")
  assert p.evaluate("!editor._form.schema.some(f=>['labels','labels_hide','filter'].includes(f.name))&&editor.firstElementChild===editor._filterHost")
  p.evaluate("()=>{const input=editor._filterRoot.querySelector('.rule-value input');input.value='off';input.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}")
