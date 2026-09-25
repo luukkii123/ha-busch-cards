@@ -39,7 +39,7 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung für `0.15.0`: Home Assistant **2026.9.3** oder neuer. Die
+Voraussetzung für `0.15.1`: Home Assistant **2026.9.3** oder neuer. Die
 Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
 für diesen Stand nicht freigegeben.
 
@@ -459,6 +459,20 @@ sondern in ein eigenes Kartenrepo — siehe den Umzug oben. Dieses Repo ist die
 Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
+
+**25.09.2026 – 0.15.1 (Snapshot-Hotfix):** Die Systemansicht blockierte
+beim Start, weil der vollständige `get_states`-Snapshot rund 7.100 neue
+Zustandsobjekte einzeln durch die globale Smart-Entities-Abfrage schickte.
+Mehrere Änderungen werden jetzt im Index gesammelt und die Abfragen einmal
+nach dem vollständigen Snapshot aktualisiert; eine einzelne Änderung bleibt
+inkrementell. Der Regressionstest prüft unveränderte Vollsnapshots, echte
+Zustandswechsel und den Einzelfall. Im isolierten echten HA-Browserlauf mit
+der ursprünglichen Smart-Konfiguration dauerten rund 7.100 Index-Updates
+58–120 ms bei 17 Abfrageberechnungen; die Karte blieb nach 2, 5 und 12
+Sekunden bedienbar. Lokal: 354 Node-Tests bestanden, ein bestehender Skip;
+Syntaxprüfung und statische UI-Regeln ohne Fehler. Chromium-Render für alle
+sieben Kartentypen und das Smart-Editor-Mapping ohne Layoutverstoß bei
+320/480/960 px in Hell und Dunkel. Mindestversion bleibt HA 2026.9.3.
 
 **25.09.2026 – 0.15.0 (lokale Release-Abnahme):** Sieben Busch-Karten im
 installierten Home Assistant 2026.9.3 mit isoliertem Testpräfix in einem

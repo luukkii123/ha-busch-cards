@@ -322,12 +322,25 @@ class BuschCardsCore {
   }
   syncStates(states) {
     const ids = new Set([...this.index.states.keys(), ...Object.keys(states)]);
-    for (const id of ids) if (this.index.states.get(id) !== states[id]) this.updateState(id, states[id]);
+    const changes = [];
+    for (const id of ids) {
+      if (this.index.states.get(id) === states[id]) continue;
+      this.metrics.stateUpdates++;
+      const change = this.index.update(id, states[id]);
+      for (const device of [change.old?.device_id, change.next?.device_id]) if (device && this._deviceListeners.has(device)) this._dirtyDevices.add(device);
+      changes.push(change);
+    }
     this._states = states;
+    if (changes.length === 1) this.engine?.changed(changes[0]);
+    else if (changes.length > 1) this.engine?.refresh();
+    this.notifyDevices();
   }
   updateState(id, state) {
     this.metrics.stateUpdates++; const change = this.index.update(id, state); this.engine?.changed(change);
     for (const device of [change.old?.device_id, change.next?.device_id]) if (device && this._deviceListeners.has(device)) this._dirtyDevices.add(device);
+    this.notifyDevices();
+  }
+  notifyDevices() {
     if (this._dirtyDevices.size && !this._deviceNotifyQueued) {
       this._deviceNotifyQueued = true;
       Promise.resolve().then(() => {
@@ -688,7 +701,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.15.0";
+const CARD_VERSION = "0.15.1";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,

@@ -38,6 +38,44 @@ test('stream registration is followed by a fresh state snapshot',async()=>{
  const original=h.callWS.bind(h);h.callWS=async msg=>msg.type==='get_states'?[{entity_id:'light.decke',state:'off',attributes:{},last_updated:'2026-01-01T00:00:02Z'}]:original(msg);
  c.attach(h);await c.ready;await new Promise(r=>setImmediate(r));assert.equal(c.getEntity('light.decke').state,'off');c.dispose();
 });
+test('fresh full snapshots recalculate a global smart query at most once and retain real state changes',async()=>{
+ const c=fresh(),states=Object.fromEntries(Array.from({length:100},(_,i)=>{
+  const entity_id=`sensor.synthetic_${i}`;
+  return [entity_id,{entity_id,state:i===0?'unavailable':'on',attributes:{friendly_name:`Synthetic ${i}`}}];
+ }));
+ const h={states,entities:{},devices:{},areas:{},floors:{},formatEntityState:state=>state.state};
+ let snapshot=Object.values(states).map(state=>({...state,attributes:{...state.attributes}}));
+ h.callWS=async message=>{assert.equal(message.type,'get_states');return snapshot;};
+ c.hass=h;c.seed(h);
+ const q=c.smartQuery({filter:{include:[{state:'unavailable'}]}}),off=c.subscribe(q,()=>{});
+ const ids=()=>[...q.result].map(row=>row.entity);
+ assert.deepEqual(ids(),['sensor.synthetic_0']);
+ let before=q.metrics.calculations;
+ await c.syncStream();
+ assert.ok(q.metrics.calculations-before<=1,`unchanged full snapshot recalculated ${q.metrics.calculations-before} times`);
+ assert.deepEqual(ids(),['sensor.synthetic_0']);
+ snapshot=snapshot.map(state=>state.entity_id==='sensor.synthetic_1'?{...state,state:'unavailable',attributes:{...state.attributes}}:{...state,attributes:{...state.attributes}});
+ before=q.metrics.calculations;
+ await c.syncStream();
+ assert.ok(q.metrics.calculations-before<=1,`changed full snapshot recalculated ${q.metrics.calculations-before} times`);
+ assert.deepEqual(ids(),['sensor.synthetic_0','sensor.synthetic_1']);
+ off();c.dispose();
+});
+test('a one-state snapshot keeps global smart queries incremental',()=>{
+ const c=fresh(),states=Object.fromEntries(Array.from({length:100},(_,i)=>{
+  const entity_id=`sensor.delta_${i}`;
+  return [entity_id,{entity_id,state:i===0?'unavailable':'on',attributes:{}}];
+ }));
+ const h={states,entities:{},devices:{},areas:{},floors:{},formatEntityState:state=>state.state};
+ c.hass=h;c.seed(h);
+ const q=c.smartQuery({filter:{include:[{state:'unavailable'}]}}),off=c.subscribe(q,()=>{});
+ const next={...states,'sensor.delta_1':{...states['sensor.delta_1'],state:'unavailable'}};
+ const before=q.metrics.evaluated;
+ c.syncStates(next);
+ assert.equal(q.metrics.evaluated-before,1);
+ assert.deepEqual([...q.result].map(row=>row.entity),['sensor.delta_0','sensor.delta_1']);
+ off();c.dispose();
+});
 test('registry changes notify every attached consumer and failures stay inspectable',async()=>{
  const c=fresh(),h=baueHass();c.attach(h);await c.ready;let count=0;const unwatch=c.watch(()=>count++);
  h.devices={...h.devices,d1:{...h.devices.d1,name_by_user:'Renamed'}};await c.refreshRegistries(['device']);await Promise.resolve();assert.equal(c.getDevice('d1').name_by_user,'Renamed');assert.equal(count,1);unwatch();c.dispose();
