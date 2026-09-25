@@ -90,7 +90,10 @@ function buschCoreKey(value) {
   return JSON.stringify(value);
 }
 /* Shared editor contract for the standalone Busch bundle. */
-function buschEditorCopy(config){return JSON.parse(JSON.stringify(config||{}));}
+function buschEditorCopy(value){return value===undefined?undefined:JSON.parse(JSON.stringify(value));}
+function buschEditorUpdate(config,patch){const next=buschEditorCopy(config||{});for(const [key,value] of Object.entries(patch||{})){if(['__proto__','prototype','constructor'].includes(key))throw new Error('Invalid editor config key');if(value===undefined)delete next[key];else next[key]=buschEditorCopy(value);}return next;}
+function buschEditorUpdatePath(config,path,value){const parts=Array.isArray(path)?path:String(path).split('.');if(!parts.length||parts.some(part=>!String(part)||['__proto__','prototype','constructor'].includes(String(part))))throw new Error('Invalid editor config path');const next=buschEditorCopy(config||{});let node=next;for(let i=0;i<parts.length-1;i++){const part=parts[i];if(!Object.hasOwn(node,part)||!node[part]||typeof node[part]!=='object')node[part]=typeof parts[i+1]==='number'?[]:{};node=node[part];}const key=parts.at(-1);if(value===undefined){if(Array.isArray(node)&&typeof key==='number')node.splice(key,1);else delete node[key];}else node[key]=buschEditorCopy(value);return next;}
+function buschEditorDeletePath(config,path){return buschEditorUpdatePath(config,path,undefined);}
 class BuschEditorBase extends HTMLElement {
   constructor(){super();this.addEventListener?.('keydown',event=>event.stopPropagation());this.addEventListener?.('keyup',event=>event.stopPropagation());}
   _acceptConfig(config,normalize=buschEditorCopy){const next=buschEditorCopy(normalize(config));if(buschCoreKey(next)===buschCoreKey(this._config))return false;this._config=next;return true;}
@@ -2321,7 +2324,7 @@ class BuschScheduleCardEditor extends BuschEditorBase {
       this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
-        this._publishConfig({ ...this._config, ...event.detail.value });
+        this._publishConfig(buschEditorUpdate(this._config,event.detail.value));
       });
       this.appendChild(this._form);
     }
@@ -3746,11 +3749,12 @@ class BuschCalendarCardEditor extends BuschEditorBase {
     for (const feld of this._farbFeld.querySelectorAll("input[type=color]")) {
       feld.addEventListener("input", (ereignis) => {
         const id = ereignis.target.dataset.entity;
-        const liste = calNormalisiereKonfig(this._config).entities.map((e) => ({
-          entity: e.entity,
-          color: e.entity === id ? ereignis.target.value : e.color,
-        }));
-        this._publishConfig({ ...this._config, entities: liste });
+        const liste = calNormalisiereKonfig(this._config).entities;
+        const index = liste.findIndex((entry) => entry.entity === id);
+        if (index < 0) return;
+        this._publishConfig(buschEditorUpdatePath(
+          { ...this._config, entities: liste }, ["entities", index, "color"], ereignis.target.value
+        ));
       });
     }
   }
