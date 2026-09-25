@@ -19,7 +19,8 @@ python3 docs/render/compare-baselines.py \
 
 Das Skript meldet fehlende Bilder, Größenwechsel und mehr als 0,5 %
 deutlich geänderte Pixel. Jede beabsichtigte Designänderung erfordert
-Sichtung der neuen Bilder und eine neue Versionsnummer. Ein grüner
+Sichtung und bewusste Annahme der neuen Bilder; eine Änderung des
+gemeinsamen UI-Vertrags erhält eine neue Versionsnummer. Ein grüner
 Pixelvergleich ersetzt weder die geometrischen UI-Regeln noch den Test in
 der installierten Home-Assistant-Oberfläche. Insbesondere verwenden die
 Geräte- und Smart-Proben Attrappen für HA-interne Komponenten; die
