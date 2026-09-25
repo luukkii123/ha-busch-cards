@@ -145,11 +145,8 @@ def main() -> int:
             case["visualRoundtrip"] and case["reopened"]
             for case in result["cases"]) else 1
     except Exception as error:
-        # Tool exceptions may contain URLs: do not print the exception text.
-        message = str(error).splitlines()[0]
-        if "http" in message or "token" in message.lower():
-            message = "redacted"
-        print(json.dumps({"error": type(error).__name__, "message": message}))
+        # Tool exceptions may contain private HA names, addresses, or URLs.
+        print(json.dumps({"error_type": type(error).__name__}))
         return 1
 
 
