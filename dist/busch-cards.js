@@ -5835,9 +5835,10 @@ class BuschDeviceCard extends HTMLElement {
     const state=this._hass.states[this._entityId];
     const controls=this._config.quick_controls&&this._filterShowPrimary?devQuickControls(state?{...state,entity_id:this._entityId}:null):[];
     this._quick.hidden=!controls.length;
-    const key=JSON.stringify(controls.map(({value,disabled,...c})=>c));
+    const key=JSON.stringify([this._entityId,controls.map(({value,disabled,...c})=>c)]);
     if(key!==this._quickKey){
-      this._quickKey=key;this._quick.replaceChildren();this._quickNodes=[];this._quickOutputs=[];
+      this._quickKey=key;this._quickGeneration=(this._quickGeneration||0)+1;this._quick.replaceChildren();this._quickNodes=[];this._quickOutputs=[];
+      const entityId=this._entityId,generation=this._quickGeneration;
       for(const c of controls){
         const wrap=document.createElement('label'),label=this._texte[c.label||c.id];
         wrap.className='dev-quick-item';
@@ -5848,15 +5849,32 @@ class BuschDeviceCard extends HTMLElement {
         if(c.kind==='range'){
           el.type='range';el.min=c.min;el.max=c.max;el.step=c.step;
           output=document.createElement('output');output.className='dev-quick-value';wrap.appendChild(output);
-          el.addEventListener('input',()=>{output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);});
         }
         else if(c.kind==='select'){for(const value of c.options){const option=document.createElement('option');option.value=value;option.textContent=(c.id==='hvac_mode'?this._hass.localize?.('component.climate.entity_component._.state.'+value):undefined)||value;el.appendChild(option);}}
         else{el.type='button';el.textContent=label;}
-        el.addEventListener(c.kind?'change':'click',()=>this._quickAction(c.id,c.kind==='range'?Number(el.value):el.value));
+        const current=()=>entityId===this._entityId&&generation===this._quickGeneration;
+        const reset=()=>{if(!current())return;el._devQuickDraft=false;this._zeichneQuick();};
+        if(c.kind){
+          el.addEventListener('input',()=>{
+            if(!current()||el.disabled)return;
+            el._devQuickDraft=true;
+            if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}
+          });
+          el.addEventListener('blur',reset);
+          el.addEventListener('pointercancel',reset);
+          el.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();reset();}});
+        }
+        el.addEventListener(c.kind?'change':'click',()=>{
+          if(!current())return;
+          const value=c.kind==='range'?Number(el.value):el.value;
+          el._devQuickDraft=false;
+          this._quickAction(c.id,value,entityId,generation);
+          this._zeichneQuick();
+        });
         wrap.appendChild(el);this._quick.appendChild(wrap);this._quickNodes.push(el);this._quickOutputs.push(output);
       }
     }
-    controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.kind&&document.activeElement!==el)el.value=c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});
+    controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.disabled)el._devQuickDraft=false;if(c.kind&&!el._devQuickDraft)el.value=c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});
   }
 
   _quickValue(control,value) {
@@ -5866,7 +5884,8 @@ class BuschDeviceCard extends HTMLElement {
     return new Intl.NumberFormat(this._hass?.locale?.language||'en',{maximumFractionDigits:percent?0:1}).format(n)+(unit?' '+unit:'');
   }
 
-  async _quickAction(id,value) {
+  async _quickAction(id,value,entityId=this._entityId,generation=this._quickGeneration) {
+    if(entityId!==this._entityId||generation!==this._quickGeneration)return;
     if(!this._config.quick_controls||!this._filterShowPrimary)return;
     const state=this._hass?.states?.[this._entityId],c=devQuickControls(state?{...state,entity_id:this._entityId}:null).find(c=>c.id===id);
     if(!c||c.disabled)return;
