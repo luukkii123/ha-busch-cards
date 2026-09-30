@@ -1,7 +1,7 @@
-/* BEGIN BUSCH SHARED UI 0.3.0 sha256:0bd2486252eeba30468ee5e6dd5ac30594562f69457f8bf89a4ebf7b25cfd297 */
-/** Busch UI 0.3.0 — standalone Vanilla source. Synchronized verbatim, never imported at runtime. */
+/* BEGIN BUSCH SHARED UI 0.3.2 sha256:03f8f2772ce4a11e5bc843226fea493d961f9119bc588f6187190e8bc5a663f2 */
+/** Busch UI 0.3.2 — standalone Vanilla source. Synchronized verbatim, never imported at runtime. */
 const BuschUI = (() => {
-  const sourceVersion = '0.3.0';
+  const sourceVersion = '0.3.2';
   const cloneConfig = value => Array.isArray(value) ? value.map(cloneConfig)
     : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key,item]) => [key,cloneConfig(item)])) : value;
   function configsEqual(a,b) {
@@ -30,7 +30,10 @@ const BuschUI = (() => {
     return next;
   }
   const deleteConfigPath=(config,path)=>updateConfigPath(config,path,undefined);
-  function emitConfigChanged(editor,config) {
+  const editorEchoStates=new WeakMap();
+  function editorEchoState(editor) {let state=editorEchoStates.get(editor);if(!state){state=createEchoState();editorEchoStates.set(editor,state);}return state;}
+  function emitConfigChanged(editor,config,{echo=true}={}) {
+    if(echo)queueEcho(editorEchoState(editor),config);
     editor.dispatchEvent(new CustomEvent('config-changed',{detail:{config:cloneConfig(config)},bubbles:true,composed:true}));
   }
   function guardEditorKeys(root) {
@@ -39,15 +42,15 @@ const BuschUI = (() => {
   }
   class EditorBase extends (typeof HTMLElement==='undefined'?class{}:HTMLElement) {
     constructor() {super();guardEditorKeys(this);}
-    _acceptConfig(config,normalize=cloneConfig) {
+    _acceptConfig(config,normalize=cloneConfig,{echo=true}={}) {
       const result=validateConfig(config,{normalize});
       if(!result.ok)throw result.error;
       const next=result.value;
-      if (configsEqual(next,this._config)) return false;
+      if (echo?!acceptEcho(editorEchoState(this),next,this._config):configsEqual(next,this._config)) return false;
       this._config=next;return true;
     }
-    _publishConfig(config) {
-      const next=cloneConfig(config);this._config=next;emitConfigChanged(this,next);return next;
+    _publishConfig(config,options) {
+      const next=cloneConfig(config);this._config=next;emitConfigChanged(this,next,options);return next;
     }
   }
   // HA supplies no echo ID: match the earliest unacknowledged equal snapshot.
@@ -180,9 +183,13 @@ const BuschUI = (() => {
   // these fundamentals. No global selectors or services in shared primitives.
   const cardStyles=`
 .busch-ui-header{min-width:0}.busch-ui-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-:where(.busch-ui-action){box-sizing:border-box;min-height:44px;min-width:44px;max-width:100%;font:inherit;cursor:pointer}
+:where(.busch-ui-action){border:0;border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px) var(--ha-space-3,12px);color:var(--primary-text-color,#212121);background:var(--secondary-background-color,#eeeeee);box-sizing:border-box;min-height:44px;min-width:44px;max-width:100%;font:inherit;cursor:pointer}
 :where(.busch-ui-action):focus-visible{outline:2px solid var(--primary-color,#03a9f4);outline-offset:2px}
-:where(.busch-ui-action):disabled{cursor:default}:where(.busch-ui-action[data-variant=danger]){color:var(--error-color,#db4437)}
+:where(.busch-ui-action[data-variant=primary]){background:var(--primary-color,#03a9f4);color:var(--text-primary-color,#ffffff)}
+:where(.busch-ui-action[data-variant=secondary]){background:var(--secondary-background-color,#eeeeee);color:var(--primary-text-color,#212121)}
+:where(.busch-ui-action[data-variant=destructive]),:where(.busch-ui-action[data-variant=danger]){color:var(--error-color,#db4437)}
+:where(.busch-ui-action[data-variant=quiet]),:where(.busch-ui-action[data-variant=icon-only]),:where(.busch-ui-action[data-variant=overflow]){background:transparent}
+:where(.busch-ui-action):disabled{cursor:default;opacity:0.5}
 `;
   const editorStyles=cardStyles+`
 :host(.busch-ui-editor),.busch-ui-editor{display:block;min-width:0;color:var(--primary-text-color,#212121);font:inherit}
@@ -6748,7 +6755,7 @@ function buschUnraidModel(core,config,kind) {
  const keys=new Set(controls.map(e=>e.config_entry_id+'\0'+e.attributes.container_key));
  for(const key of keys){const candidates=controls.filter(e=>e.config_entry_id+'\0'+e.attributes.container_key===key),sw=unique(candidates);if(!sw)continue;
   const a=sw.attributes,related=entries.filter(e=>e.config_entry_id===sw.config_entry_id&&e.attributes.kind==='container'&&e.attributes.container_key===a.container_key);
-  model.containers.push({key:a.container_key,name:a.container_name||sw.attributes.friendly_name||sw.entity_id,stack:a.stack_name||a.stack_key||(device.model==='Compose stack'?(device.name_by_user||device.name):null),image:a.image||'',entity_picture:a.entity_picture,device_picture:device.entity_picture,...buschUnraidResources(related,'container',sw.state==='on'&&a.container_state!=='paused'),switch:sw,restart:unique(related.filter(e=>e.domain==='button'&&e.attributes.role==='restart')),update:unique(related.filter(e=>e.domain==='update'&&e.attributes.role==='update')),status:a.container_state==='paused'?'paused':buschUnraidStatus(sw)});
+  model.containers.push({key:a.container_key,name:a.container_name||sw.attributes.friendly_name||sw.entity_id,stack:a.stack_name||a.stack_key||(device.model==='Compose stack'?(device.name_by_user||device.name):null),image:a.image||'',entity_picture:a.entity_picture,device_picture:device.entity_picture,...buschUnraidResources(related,'container',sw.state==='on'&&a.container_state!=='paused'),switch:sw,restart:unique(related.filter(e=>e.domain==='button'&&e.attributes.role==='restart')),update:unique(related.filter(e=>e.domain==='update'&&e.attributes.role==='update')),status:!['unavailable','unknown'].includes(sw.state)&&a.container_state==='paused'?'paused':buschUnraidStatus(sw)});
  }
  const stack=unique(entries.filter(e=>e.domain==='switch'&&e.attributes.kind==='stack'&&e.attributes.role==='control'&&e.attributes.stack_key));
  model.switch=stack||explicit(config.switch_entity,'switch');
@@ -9329,11 +9336,11 @@ function buschNetworkRuleEditor(parent,initial,change,t){
 class BuschNetworkBaseEditor extends BuschEditorBase {
  constructor(){super();this._echo=BuschUI.createEchoState();this._forms=[];this._sectionOpen=new Map();}
  get _kind(){return 'network';}
- setConfig(config){const result=BuschUI.validateConfig(config||{},{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return;}if(!BuschUI.acceptEcho(this._echo,result.value,this._config))return;const previous=this._config;this._acceptConfig(result.value);this._validationError=null;const structural=!previous||buschCoreKey(previous.filter)!==buschCoreKey(this._config.filter)||buschCoreKey(previous.actions)!==buschCoreKey(this._config.actions)||previous.device_id!==this._config.device_id||previous.config_entry_id!==this._config.config_entry_id;if(structural)this._render();else this._syncForms();}
+ setConfig(config){const result=BuschUI.validateConfig(config||{},{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return;}if(!BuschUI.acceptEcho(this._echo,result.value,this._config))return;const previous=this._config;this._acceptConfig(result.value,BuschUI.cloneConfig,{echo:false});this._validationError=null;const structural=!previous||buschCoreKey(previous.filter)!==buschCoreKey(this._config.filter)||buschCoreKey(previous.actions)!==buschCoreKey(this._config.actions)||previous.device_id!==this._config.device_id||previous.config_entry_id!==this._config.config_entry_id;if(structural)this._render();else this._syncForms();}
  set hass(hass){const languageChanged=BuschUI.language(this._hass,{legacy:true})!==BuschUI.language(hass,{legacy:true});this._hass=hass;if(this.isConnected)this._connect();if(!this.shadowRoot||languageChanged)this._render();else this._syncForms();}get hass(){return this._hass;}
  connectedCallback(){this._connect();this._render();}disconnectedCallback(){this._unwatch?.();this._release?.();this._unwatch=this._release=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._syncForms());}
- _change(patch,structural=false){const next={...this._config,...patch},result=BuschUI.validateConfig(next,{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return false;}this._validationError=null;BuschUI.queueEcho(this._echo,result.value);this._publishConfig(result.value);if(structural)this._render();else this._syncForms();return true;}
+ _change(patch,structural=false){const next={...this._config,...patch},result=BuschUI.validateConfig(next,{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return false;}this._validationError=null;BuschUI.queueEcho(this._echo,result.value);this._publishConfig(result.value,{echo:false});if(structural)this._render();else this._syncForms();return true;}
  _showError(){if(this._errorNode){const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});this._errorNode.textContent=this._validationError?(t[this._validationError]||t.invalid_config):'';this._errorNode.hidden=!this._validationError;}for(const input of this.shadowRoot?.querySelectorAll('input')||[])input.setAttribute('aria-invalid',String(!!this._validationError));}
  _section(key,title,open=false){const body=buschNetworkNode('div',undefined,'body'),section=BuschUI.section({title,content:body,open:this._sectionOpen.get(key)??open});section.dataset.section=key;section.addEventListener('toggle',()=>this._sectionOpen.set(key,section.open));this.shadowRoot.appendChild(section);return body;}
  _form(body,fields,getData,onChange){const form=BuschUI.ha.form();form.hass=this._hass;form.schema=fields;form.data=getData();form.computeLabel=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).label;form.computeHelper=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).helper;form.addEventListener('value-changed',event=>{event.stopPropagation();onChange(event.detail.value);});body.appendChild(form);this._forms.push({form,getData,fields});return form;}

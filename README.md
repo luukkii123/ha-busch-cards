@@ -1252,3 +1252,31 @@ native Gesamtabnahme wird nicht behauptet. Echte FRITZ!-Registry-Picker,
 Speichern/Visual-YAML-Reopen, Portal-/IME-Gesamtabnahme und Performancematrix
 sind Teil der folgenden Gesamtprüfung. Keine Veröffentlichung, Installation,
 Optionsänderung, produktive Dashboardänderung oder Geräteaktion erfolgt.
+
+### Geprüft: lokaler UPDATED-Kandidat, 30.09.2026
+
+Gemeinsame UI-Quelle/API **0.3.2**, bytegleich in vier eigenständigen Bundles.
+Die native Familienabnahme umfasst 17 Editoren auf Home Assistant 2026.9.4
+mit Frontend 20260826.7: physische Texteingabe, Visual/YAML/Visual,
+nativer Save mit Serverantwort und Config-Readback, Reload und Reopen.
+Readonly-Konfiguration, vollständige Snapshots und Erhalt von false/0 sind
+separat geprüft; ein echter Netzwerk-Switch und Anzahl 0 wurden über native
+Controls gespeichert. Verzögerte Echo-Proben: alle 17 Editoren grün.
+
+Finale lokale Suiten: Busch 508/508 mit offiziellem auto-entities 1.16.1 ohne
+Skips, Arrstack 1 vollständige Dateisuite, Shared UI 21/21. Vier Bundle-
+Syntax-/Source-/Vertragsprüfungen und statische UI-Regeln ohne Verstöße.
+Galerien: Unraid 126, Device 48, Network/FRITZ 144, Light 66 und Localtrack 14;
+Arrstack prüft zusätzlich die bestehenden Screenshotbaselines. Die gemeinsame
+Actionpaint-Probe umfasst beide Themen und alle Varianten inklusive danger-
+Alias für destructive. Native Font-/Theme-Tokenprobe bei 320/480/960 ohne
+horizontalen Overflow; Licht-/Dunkelwerte nur browserlokal gesetzt.
+
+Die Kandidatenbytes wurden ausschließlich im Testbrowser geladen. Dies ist
+kein Installationsnachweis; keine produktive Geräteaktion ausgeführt. Echte
+Pickerwerte stimmen mit den HA-Registern überein. Beim Öffnen tritt jedoch
+auch ohne Kandidaten im vorhandenen HA ein `lit-virtualizer`-Registrierungs-
+konflikt auf; vollständige fehlerfreie Portal-/IME-Abnahme wird deshalb nicht
+behauptet. Neue Backendrollen müssen nach regulärem Backendupdate geprüft werden.
+
+Prüfbundle SHA256: `9d933d7064e7ecf57f03d50a8eaa8c4efe49de363c0124a312dce682339e5fa8`.
