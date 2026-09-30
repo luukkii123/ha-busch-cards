@@ -1091,7 +1091,7 @@ Skripte: `docs/render/device-quick-controls.py` und
 `docs/render/live-ha-device-controls.py`. Keine Veröffentlichung oder
 produktiven Schaltversuche in diesem Durchlauf.
 
-### Gemeinsame UI-Quelle 0.2.0 – lokal geprüft am 30.09.2026
+### Gemeinsame UI-Quelle 0.3.0 – lokal geprüft am 30.09.2026
 
 Das eigenständige Bundle enthält die physische Vanilla-JS-Quelle der lokalen
 HACS-Verwaltung (`shared-ui/busch-ui.js`) identisch mit Versions-/SHA256-
@@ -1109,3 +1109,5 @@ und Keyboardguard geprüft. Je Version 15 Editoren × 6 Breiten-/Themefälle
 Bestehende lokale Karten-/Editorproben ebenfalls grün; Laufartefakte privat.
 Diese lesende Probe ergänzt die bisherigen Speicherrundläufe; sie ist kein
 neuer vollständiger Visual/YAML-/Save-Reopen-/Portal-/IME-Gesamtnachweis.
+
+Gemeinsame Source/API 0.3.0 ergänzt tatsächlich verwendete Header-/Action-/Sectionprimitives, scoped Card-/Editorstyles sowie DE/EN-Fieldtext und kopierende Validation mit fachlichen Normalisierungscallbacks. Bestehende Layouts und Configfelder bleiben erhalten; keine HACS-Releaseversion geändert.

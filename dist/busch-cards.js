@@ -1,7 +1,7 @@
-/* BEGIN BUSCH SHARED UI 0.2.0 sha256:31637c8f3ea97a0a56d0de9264e5991aedd7ea0d7c3c747d08afff93fcc4e492 */
-/** Busch UI 0.2.0 — standalone Vanilla source. Synchronized verbatim, never imported at runtime. */
+/* BEGIN BUSCH SHARED UI 0.3.0 sha256:0bd2486252eeba30468ee5e6dd5ac30594562f69457f8bf89a4ebf7b25cfd297 */
+/** Busch UI 0.3.0 — standalone Vanilla source. Synchronized verbatim, never imported at runtime. */
 const BuschUI = (() => {
-  const sourceVersion = '0.2.0';
+  const sourceVersion = '0.3.0';
   const cloneConfig = value => Array.isArray(value) ? value.map(cloneConfig)
     : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key,item]) => [key,cloneConfig(item)])) : value;
   function configsEqual(a,b) {
@@ -40,7 +40,9 @@ const BuschUI = (() => {
   class EditorBase extends (typeof HTMLElement==='undefined'?class{}:HTMLElement) {
     constructor() {super();guardEditorKeys(this);}
     _acceptConfig(config,normalize=cloneConfig) {
-      const next=cloneConfig(normalize(config));
+      const result=validateConfig(config,{normalize});
+      if(!result.ok)throw result.error;
+      const next=result.value;
       if (configsEqual(next,this._config)) return false;
       this._config=next;return true;
     }
@@ -114,16 +116,82 @@ const BuschUI = (() => {
     },
     input({native=false}={}) {return document.createElement(!native&&typeof customElements!=='undefined'&&customElements.get?.('ha-input')?'ha-input':'input');},
     icon(name) {const icon=document.createElement('ha-icon');icon.setAttribute('icon',name);return icon;},
-    async cardHelpers() {
-      if (helperPromise) return helperPromise;
+    async cardHelpers({requireRow=false}={}) {
+      if (!helperPromise) {
       if (typeof window==='undefined'||typeof window.loadCardHelpers!=='function') return null;
       helperPromise=Promise.resolve().then(()=>window.loadCardHelpers()).then(helpers=>helpers&&typeof helpers.createCardElement==='function'?helpers:null).catch(()=>null);
-      const helpers=await helperPromise;if (!helpers) helperPromise=null;return helpers;
+      }
+      const helpers=await helperPromise;
+      if(!helpers||(requireRow&&typeof helpers.createRowElement!=='function')){helperPromise=null;return null;}
+      return helpers;
     },
   };
   const tokens=Object.freeze({space1:'var(--ha-space-1, 4px)',space2:'var(--ha-space-2, 8px)',space3:'var(--ha-space-3, 12px)',space4:'var(--ha-space-4, 16px)',mediaRadius:'var(--ha-card-border-radius, 12px)',controlMinHeight:'44px'});
-  const language=hass=>String(hass?.locale?.language||(typeof navigator!=='undefined'?navigator.language:'en')).startsWith('de')?'de':'en';
-  return Object.freeze({sourceVersion,EditorBase,cloneConfig,configsEqual,updateConfig,updateConfigPath,deleteConfigPath,emitConfigChanged,guardEditorKeys,createEchoState,queueEcho,acceptEcho,resolveMedia,media,statusSemantic,statusBadge,metric,formatNumber,ha,tokens,language});
+  function language(hass,{legacy=false,browser=true}={}) {
+    const code=hass?.locale?.language||(legacy&&hass?.language)||(browser&&typeof navigator!=='undefined'&&navigator.language)||'en';
+    return String(code).toLowerCase().startsWith('de')?'de':'en';
+  }
+  const dictionary=(table,hass,options)=>table[language(hass,options)]||table.en;
+  function fieldText(table,hass,name,options) {
+    const words=dictionary(table,hass,options),fallback=table.en||{};
+    return {label:words?.labels?.[name]??fallback.labels?.[name]??name,helper:words?.helpers?.[name]??fallback.helpers?.[name]??''};
+  }
+  function validateConfig(input,{parse=false,normalize=cloneConfig,validate}={}) {
+    try {
+      const copied=cloneConfig(parse?JSON.parse(input):input);
+      const error=validate?.(copied);
+      if(error) return {ok:false,error:error instanceof Error?error:new Error(String(error))};
+      return {ok:true,value:cloneConfig(normalize(copied))};
+    } catch(error) {return {ok:false,error};}
+  }
+  const addClass=(node,name)=>{if(!String(node.className||'').split(/\s+/).includes(name))node.className=((node.className||'')+' '+name).trim();};
+  function header({node=document.createElement('div'),titleNode,label}={}) {
+    addClass(node,'busch-ui-header');node.setAttribute('role','group');
+    const name=label??titleNode?.textContent;if(name)node.setAttribute('aria-label',name);
+    if(titleNode){if(!/^H[1-6]$/.test(titleNode.tagName||'')){titleNode.setAttribute('role','heading');titleNode.setAttribute('aria-level','2');}addClass(titleNode,'busch-ui-title');}
+    return node;
+  }
+  const actionBindings=new WeakMap();
+  function action({node=document.createElement('button'),label,text,icon,disabled,variant='secondary',onClick}={}) {
+    if(!label)throw new Error('Action requires an accessible label');
+    addClass(node,'busch-ui-action');node.type='button';node.setAttribute('aria-label',label);node.setAttribute('data-variant',variant);
+    if(disabled!==undefined)node.disabled=disabled;
+    let binding=actionBindings.get(node);
+    if(!binding){
+      binding={};actionBindings.set(node,binding);
+      // Keep native keyboard activation and owning tablist arrow navigation.
+      for(const type of ['keydown','keyup'])node.addEventListener(type,event=>{if(event.key==='Enter'||event.key===' ')event.stopPropagation();});
+      node.addEventListener('click',event=>{event.stopPropagation();if(!node.disabled)binding.onClick?.(event);});
+    }
+    binding.onClick=onClick;
+    if(text!==undefined){node.textContent=text;binding.icon=null;}
+    if(icon){if(!binding.icon){binding.icon=ha.icon(icon);binding.icon.setAttribute('aria-hidden','true');node.appendChild(binding.icon);}else binding.icon.setAttribute('icon',icon);}
+    if(icon||text===undefined){if(!node.title||node.title===binding.tooltip){node.title=label;binding.tooltip=label;}}
+    return node;
+  }
+
+  function section({title,content,open=false}={}) {
+    const node=document.createElement('details');
+    addClass(node,'busch-ui-section');node.open=open;
+    const summary=document.createElement('summary');summary.textContent=title;node.appendChild(summary);
+    if(content)node.appendChild(content);return node;
+  }
+  // Scoped bases: family layout/grid/padding and domain presentation override
+  // these fundamentals. No global selectors or services in shared primitives.
+  const cardStyles=`
+.busch-ui-header{min-width:0}.busch-ui-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:where(.busch-ui-action){box-sizing:border-box;min-height:44px;min-width:44px;max-width:100%;font:inherit;cursor:pointer}
+:where(.busch-ui-action):focus-visible{outline:2px solid var(--primary-color,#03a9f4);outline-offset:2px}
+:where(.busch-ui-action):disabled{cursor:default}:where(.busch-ui-action[data-variant=danger]){color:var(--error-color,#db4437)}
+`;
+  const editorStyles=cardStyles+`
+:host(.busch-ui-editor),.busch-ui-editor{display:block;min-width:0;color:var(--primary-text-color,#212121);font:inherit}
+:host(.busch-ui-editor) ha-form,.busch-ui-editor ha-form{display:block;min-width:0}.busch-ui-section{min-width:0}
+.busch-ui-section>summary{cursor:pointer;min-height:44px;box-sizing:border-box;overflow-wrap:anywhere;font-weight:var(--ha-font-weight-medium,500)}
+.busch-ui-section>summary:focus-visible{outline:2px solid var(--primary-color,#03a9f4);outline-offset:2px}
+.busch-ui-validation{color:var(--error-color,#db4437);overflow-wrap:anywhere;font-size:var(--ha-font-size-s,12px)}
+`;
+  return Object.freeze({sourceVersion,EditorBase,cloneConfig,configsEqual,updateConfig,updateConfigPath,deleteConfigPath,emitConfigChanged,guardEditorKeys,createEchoState,queueEcho,acceptEcho,resolveMedia,media,statusSemantic,statusBadge,metric,formatNumber,ha,tokens,language,dictionary,fieldText,validateConfig,header,action,section,cardStyles,editorStyles});
 })();
 /* END BUSCH SHARED UI */
 
@@ -850,16 +918,12 @@ console.info(
 
 /** `de` oder `en` — mehr Sprachen hat diese Datei nicht. */
 function buschSprache(hass) {
-  let sprache = "";
-  if (hass && hass.locale && hass.locale.language) sprache = hass.locale.language;
-  else if (hass && hass.language) sprache = hass.language;
-  else if (typeof navigator !== "undefined" && navigator.language) sprache = navigator.language;
-  return String(sprache).toLowerCase().indexOf("de") === 0 ? "de" : "en";
+  return BuschUI.language(hass,{legacy:true});
 }
 
 /** Der Sprachabschnitt eines Wörterbuchs. Ohne `hass`: der Kartenwähler-Fall. */
 function buschTexte(tabelle, hass) {
-  return tabelle[buschSprache(hass)] || tabelle.en;
+  return BuschUI.dictionary(tabelle,hass,{legacy:true});
 }
 
 /**
@@ -5495,17 +5559,19 @@ function devLabelFarbe(eintrag) {
 
 /** `window.loadCardHelpers()` einmal je Seite; `null`, wenn es fehlt. */
 let devHelferCache = null;
-function devHelferLaden() {
+async function devHelferLaden() {
   if (!devHelferCache) {
     devHelferCache = Promise.resolve()
       .then(() => {
         if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return null;
-        return BuschUI.ha.cardHelpers();
+        return BuschUI.ha.cardHelpers({requireRow:true});
       })
       .then((h) => (h && typeof h.createCardElement === "function" && typeof h.createRowElement === "function" ? h : null))
       .catch(() => null);
   }
-  return devHelferCache;
+  const helpers=await devHelferCache;
+  if(!helpers)devHelferCache=null;
+  return helpers;
 }
 
 /* Busch HA UI 0.1.0: Header, Disclosure und mobile Card-Shell. */
@@ -6277,12 +6343,16 @@ window.customCards.some(card => card.type === "busch-device-card") || window.cus
 const BUSCH_SMART_RULES = ['domain','state','entity_id','name','group','area','floor','level','device','label','device_manufacturer','device_model','integration','hidden_by','attributes','last_changed','last_updated','last_triggered','entity_category','not','or','and','options','type','sort'];
 const BUSCH_DEVICE_FILTER_RULES=BUSCH_SMART_RULES.filter(key=>!['options','type','sort'].includes(key));
 function buschSmartConfig(config) {
+  const result=BuschUI.validateConfig(config,{normalize:config=>{
   if(!config || (!config.entities&&!config.filter))throw new Error('filter / entities');
   const copy=JSON.parse(JSON.stringify(config));
   for(const rule of [...(copy.filter?.include||[]),...(copy.filter?.exclude||[])]) for(const key of Object.keys(rule)) if(rule.type===undefined&&!BUSCH_SMART_RULES.includes(key.trim().split(' ')[0]))throw new Error('Unknown rule: '+key);
   if(copy.value&&!['entity_id','device_id','attribute'].includes(copy.value.type))throw new Error('value.type');
   if(Object.hasOwn(copy,'item'))buschSmartItem(copy,null);
   return {...copy,type:'custom:busch-smart-entities'};
+  }});
+  if(!result.ok)throw result.error;
+  return result.value;
 }
 /* Bind only own object properties; never traverse prototypes or share template values. */
 function buschSmartItem(config,value){
@@ -6313,10 +6383,10 @@ Object.assign(TEXTE_BUSCH_SMART_ENTITIES.de, {
  rules:{domain:'Domain',state:'Zustand',entity_id:'Entity-ID',name:'Name',group:'Gruppe',area:'Bereich',floor:'Etage',level:'Stockwerk',device:'Gerät',label:'Label',device_manufacturer:'Hersteller',device_model:'Modell',integration:'Integration',hidden_by:'Verborgen durch',attributes:'Attribute',last_changed:'Letzte Zustandsänderung',last_updated:'Letzte Aktualisierung',last_triggered:'Letzte Auslösung',entity_category:'Entity-Kategorie',not:'NICHT',or:'ODER',and:'UND',options:'Zeilenoptionen',type:'Zeilentyp',sort:'Lokale Sortierung'}
 });
 Object.assign(TEXTE_BUSCH_SMART_ENTITIES.en, {texte:{method_device_name:'Device name'},rules:{domain:'Domain',state:'State',entity_id:'Entity ID',name:'Name',group:'Group',area:'Area',floor:'Floor',level:'Level',device:'Device',label:'Label',device_manufacturer:'Manufacturer',device_model:'Model',integration:'Integration',hidden_by:'Hidden by',attributes:'Attributes',last_changed:'Last changed',last_updated:'Last updated',last_triggered:'Last triggered',entity_category:'Entity category',not:'NOT',or:'OR',and:'AND',options:'Row options',type:'Row type',sort:'Local sorting'}});
-const BUSCH_SMART_EDITOR_CSS = `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:var(--primary-color)}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}
+const BUSCH_SMART_EDITOR_CSS = BuschUI.editorStyles + `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:var(--primary-color)}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}
 [hidden]{display:none!important}.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--ha-space-1,4px);margin-block:var(--ha-space-2,8px)}.tabs button{border-radius:var(--ha-card-border-radius,12px);min-height:48px;overflow-wrap:anywhere}.tabs [aria-selected=true]{border-color:var(--primary-color);background:var(--secondary-background-color);font-weight:600}.editor-section{border-bottom:1px solid var(--divider-color)}.rule-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;padding-block:var(--ha-space-2,8px)}.rule-row label{display:grid;gap:var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px)}.rule-row select,.rule-row input{width:100%;min-height:44px;font-size:var(--ha-font-size-m,14px)}.rule-value{grid-column:1/-1}.rule-row .rule-operator{grid-column:1/-1}.node{margin-inline-start:0}.node .node{padding-inline-start:var(--ha-space-2,8px);border-inline-start:1px solid var(--divider-color)}button:focus-visible,summary:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}`;
 function buschSmartElement(tag,text){const element=tag==='ha-form'?BuschUI.ha.form():tag==='input'?BuschUI.ha.input({native:true}):document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
-function buschSmartButton(text,action){const b=buschSmartElement('button',text);b.type='button';b.addEventListener('click',action);return b;}
+function buschSmartButton(text,action){return BuschUI.action({label:text,text,onClick:action});}
 function buschSmartSelect(options,value,onchange,label){const select=buschSmartElement('select');select.setAttribute('aria-label',label);for(const [v,text]of options){const o=buschSmartElement('option',text);o.value=v;select.append(o);}select.value=String(value);select.addEventListener('change',()=>onchange(select.value));return select;}
 /* UI identities live beside the JSON config and follow a rule across reordering. */
 function buschSmartRuleUiNode(oldRule,oldUi,newRule,newId){
@@ -6341,6 +6411,7 @@ function buschSmartRuleUiList(oldRules=[],oldUi=[],newRules=[],newId){
 }
 /* Recursive typed object editor: no YAML and no required source-code editing. */
 function buschSmartObject(parent,value,change,t,label=t.value){
+  const publish=change;change=(next,render=true)=>{const result=BuschUI.validateConfig(next);if(result.ok)publish(result.value,render);};
   const node=buschSmartElement('div');node.className='node';parent.append(node);
   const kind=Array.isArray(value)?'array':value===null?'null':typeof value;
   const row=buschSmartElement('div');row.className='row';node.append(row);
@@ -6446,15 +6517,15 @@ class BuschSmartEntitiesEditor extends BuschEditorBase {
   setConfig(config){const previous=this._config;if(!this._acceptConfig(config||BuschSmartEntities.getStubConfig()))return;this._syncRuleUi(previous,this._config);this._render();}
   set hass(hass){const changed=buschSprache(this._hass)!==buschSprache(hass);this._hass=hass;if(!this.shadowRoot||changed)this._render();else for(const form of this.shadowRoot.querySelectorAll('ha-form,hui-entities-card-editor'))form.hass=hass;}
   _emit(config,render=true){const previous=this._config;this._publishConfig(config);this._syncRuleUi(previous,this._config);if(render)this._render();}
-  _section(title,group='more',defaultOpen=false){const details=buschSmartElement('details');details.className='editor-section';details.dataset.group=group;details.dataset.section=title;details.open=this._sectionOpen?.get(title)??defaultOpen;details.append(buschSmartElement('summary',title));const body=buschSmartElement('div');body.className='body';details.append(body);this.shadowRoot.append(details);return body;}
-  _form(parent,names,data,change){const t=this._t,form=buschSmartElement('ha-form');form.computeLabel=s=>t.labels[s.name]||s.name;form.computeHelper=s=>t.helpers[s.name]||'';form.hass=this._hass;form.schema=buschSchemaMitTexten(SCHEMA_BUSCH_SMART_ENTITIES.filter(f=>names.includes(f.name)),t);
+  _section(title,group='more',defaultOpen=false){const body=buschSmartElement('div');body.className='body';const details=BuschUI.section({title,content:body,open:this._sectionOpen?.get(title)??defaultOpen});details.className+=' editor-section';details.dataset.group=group;details.dataset.section=title;this.shadowRoot.append(details);return body;}
+  _form(parent,names,data,change){const t=this._t,form=buschSmartElement('ha-form');form.computeLabel=s=>BuschUI.fieldText(TEXTE_BUSCH_SMART_ENTITIES,this._hass,s.name,{legacy:true}).label;form.computeHelper=s=>BuschUI.fieldText(TEXTE_BUSCH_SMART_ENTITIES,this._hass,s.name,{legacy:true}).helper;form.hass=this._hass;form.schema=buschSchemaMitTexten(SCHEMA_BUSCH_SMART_ENTITIES.filter(f=>names.includes(f.name)),t);
     if(names.includes('attribute')) {
       const attrs=new Set();const walk=(obj,prefix='',depth=0)=>{if(depth>4||!obj||typeof obj!=='object')return;for(const [key,value]of Object.entries(obj)){const path=prefix?prefix+'.'+key:key;attrs.add(path);if(attrs.size<300)walk(value,path,depth+1);}};
       for(const state of Object.values(this._hass.states||{})){walk(state.attributes);if(attrs.size>=300)break;}
       form.schema=form.schema.map(f=>f.name==='attribute'?{...f,selector:{select:{custom_value:true,options:[...attrs].sort().map(value=>({value,label:value}))}}}:f);
-    }form.data=data;form.computeLabel=s=>t.labels[s.name]||s.name;form.computeHelper=s=>t.helpers[s.name]||'';form.addEventListener('value-changed',event=>{event.stopPropagation();change(event.detail.value);});parent.append(form);return form;}
+    }form.data=data;form.computeLabel=s=>BuschUI.fieldText(TEXTE_BUSCH_SMART_ENTITIES,this._hass,s.name,{legacy:true}).label;form.computeHelper=s=>BuschUI.fieldText(TEXTE_BUSCH_SMART_ENTITIES,this._hass,s.name,{legacy:true}).helper;form.addEventListener('value-changed',event=>{event.stopPropagation();change(event.detail.value);});parent.append(form);return form;}
   _render(){
-    if(!this._hass||!this._config)return;if(!this.shadowRoot)this.attachShadow({mode:'open'});this._t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);const t=this._t,c=this._config;
+    if(!this._hass||!this._config)return;this.classList?.add('busch-ui-editor');if(!this.shadowRoot)this.attachShadow({mode:'open'});this._t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);const t=this._t,c=this._config;
     this._sectionOpen=new Map([...this.shadowRoot.querySelectorAll('.editor-section')].map(e=>[e.dataset.section,e.open]));this.shadowRoot.replaceChildren(buschSmartElement('style',BUSCH_SMART_EDITOR_CSS));
     const nav=buschSmartElement('div');nav.className='tabs';nav.setAttribute('role','tablist');nav.setAttribute('aria-label',t.navigation);this.shadowRoot.append(nav);
     for(const [group,label]of [['filters',t.filters],['card',t.target],['more',t.more]]){const button=buschSmartButton(label,()=>this._showGroup(group));button.dataset.group=group;button.setAttribute('role','tab');button.id='tab-'+group;button.setAttribute('aria-controls','panel-'+group);nav.append(button);}
@@ -6478,7 +6549,7 @@ class BuschSmartEntitiesEditor extends BuschEditorBase {
     const sortNames=['method','reverse','ignore_case','numeric','ip','sort_attribute','first','count'];this._form(this._section(t.sortSection),sortNames,{method:'none',first:0,...c.sort,sort_attribute:c.sort?.attribute||''},v=>{const sort={...v};sort.attribute=sort.sort_attribute;delete sort.sort_attribute;if(sort.method==='none')delete sort.method;this._emit({...this._config,sort},false);});
     const display=this._section(t.display);this._form(display,['show_empty','unique','debug'],{show_empty:c.show_empty!==false,unique:String(c.unique||false),debug:!!c.debug},v=>this._emit({...this._config,show_empty:v.show_empty,unique:v.unique==='true'?true:v.unique==='false'?false:v.unique,debug:v.debug},false));buschSmartObject(display,c.else||null,(v,render=true)=>{const next={...this._config};if(v===null)delete next.else;else next.else=v;this._emit(next,render);},t,'else');
     buschSmartObject(this._section(t.advanced),c,(v,render=true)=>this._emit(buschSmartConfig(v),render),t);
-    const importer=this._section(t.import);importer.append(buschSmartElement('p',t.importHelp));const input=buschSmartElement('textarea');input.setAttribute('aria-label',t.import);importer.append(input);const error=buschSmartElement('p');importer.append(buschSmartButton(t.import,()=>{try{this._emit(buschSmartConfig(JSON.parse(input.value)));}catch(e){error.textContent=t.invalid;}}),error);
+    const importer=this._section(t.import);importer.append(buschSmartElement('p',t.importHelp));const input=buschSmartElement('textarea');input.setAttribute('aria-label',t.import);importer.append(input);const error=buschSmartElement('p');error.className='busch-ui-validation';error.setAttribute('role','alert');importer.append(buschSmartButton(t.import,()=>{const result=BuschUI.validateConfig(input.value,{parse:true,normalize:buschSmartConfig});input.setAttribute('aria-invalid',String(!result.ok));error.textContent=result.ok?'':t.invalid;if(result.ok)this._emit(result.value);}),error);
     for(const group of ['filters','card','more']){const panel=buschSmartElement('div');panel.id='panel-'+group;panel.dataset.panel=group;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','tab-'+group);for(const section of [...this.shadowRoot.querySelectorAll('.editor-section')])if(section.dataset.group===group)panel.append(section);if(group==='filters'){const include=[...panel.children].find(e=>e.dataset.section===t.include);if(include)panel.prepend(include);}this.shadowRoot.append(panel);}
     this._showGroup(this._activeGroup||'filters');
   }
@@ -6875,7 +6946,7 @@ function buschUnraidSchema(core,config,kind){
   return field;
  });
 }
-const BUSCH_UNRAID_STYLE = `
+const BUSCH_UNRAID_STYLE = BuschUI.cardStyles + `
 :host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);--unraid-space:${BuschUI.tokens.space4};--unraid-small:${BuschUI.tokens.space2};--unraid-metric-min:100px}
 *{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--unraid-space);font-family:inherit;color:var(--primary-text-color);background:var(--card-background-color)}
 h2,.name{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500)}
@@ -6907,11 +6978,11 @@ class BuschUnraidBaseCard extends HTMLElement {
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
  getCardSize(){return this._kind==='stack'&&this._expanded?4:2;}
  getGridOptions(){return {columns:12,min_columns:3};}
- _button(parent,text,action,disabled=false,destructive=false){const button=buschUnraidNode('button',text,destructive?'danger':'');button.type='button';button.disabled=disabled;button.addEventListener('click',action);parent.appendChild(button);return button;}
+ _button(parent,text,action,disabled=false,destructive=false){const button=BuschUI.action({label:text,text,onClick:action,disabled,variant:destructive?'danger':'secondary'});if(destructive)button.className+=' danger';parent.appendChild(button);return button;}
  _actions(parent,row,t){const actions=buschUnraidNode('div',undefined,'actions');
   if(this._config.show_controls&&row.switch){const running=row.status==='running'||row.status==='partial'||(this._kind!=='vm'&&row.switch.state==='on');this._button(actions,running?t.stop:t.start,()=>this._action(running?'stop':'start',row),this._busy||!buschUnraidAvailable(row.switch)||(this._kind==='vm'&&!['running','stopped'].includes(row.status)),running);}
   if(this._config.show_controls&&this._config.show_restart&&row.restart)this._button(actions,t.restart,()=>this._action('restart',row),this._busy||row.restart.state==='unavailable'||(this._kind==='vm'&&row.status!=='running'));
-  if(row.switch){const details=this._button(actions,t.details,()=>this._action('details',row));details.className='quiet';}
+  if(row.switch){const details=this._button(actions,t.details,()=>this._action('details',row));details.className+=' quiet';}
   if(this._config.show_updates&&row.update?.state==='on')this._button(actions,t.update,()=>this._action('update',row));
   if(actions.childNodes.length)parent.appendChild(actions);
  }
@@ -6937,12 +7008,12 @@ class BuschUnraidBaseCard extends HTMLElement {
   }else{
    if(this._config.show_status){header.appendChild(buschUnraidBadge(m.status,(m.status==='failed'?t.failed_state:t[m.status])||t.unknown));main.appendChild(buschUnraidNode('p',t.running_count.replace('{running}',m.running).replace('{total}',m.total),'detail'));}
    this._actions(header,{...m,name:title},t);card.appendChild(buschUnraidMetrics(m,this._config,t,this._hass?.locale?.language));if(!m.switch&&!m.containers.length)message(t.metadata);
-   if(this._config.show_containers&&m.containers.length){const expand=this._button(card,t.container_group.replace('{count}',m.containers.length),()=>{this._expanded=!this._expanded;this._render();});expand.className='disclosure';expand.setAttribute('aria-expanded',String(this._expanded));expand.setAttribute('aria-label',this._expanded?t.collapse:t.expand);
+   if(this._config.show_containers&&m.containers.length){const expand=this._button(card,t.container_group.replace('{count}',m.containers.length),()=>{this._expanded=!this._expanded;this._render();});expand.className+=' disclosure';expand.setAttribute('aria-expanded',String(this._expanded));expand.setAttribute('aria-label',this._expanded?t.collapse:t.expand);
     if(this._expanded){const rows=buschUnraidNode('div',undefined,'rows'),visible=m.containers.filter(c=>this._config.state_filter==='all'||c.status===this._config.state_filter);if(!visible.length)rows.appendChild(buschUnraidNode('p',t.none,'message'));for(const row of visible){const item=buschUnraidNode('div',undefined,'row'),identity=buschUnraidNode('div',undefined,'row-identity'),texts=buschUnraidNode('div',undefined,'row-text');texts.appendChild(buschUnraidNode('div',row.name,'name'));if(row.image)texts.appendChild(buschUnraidNode('p',row.image,'detail'));identity.appendChild(buschMedia(this._config,row,'mdi:cube-outline','row-icon'));identity.appendChild(texts);item.appendChild(identity);if(this._config.show_status)item.appendChild(buschUnraidBadge(row.status,(row.status==='failed'?t.failed_state:t[row.status])||t.unknown));item.appendChild(buschUnraidMetrics(row,this._config,t,this._hass?.locale?.language));this._actions(item,row,t);rows.appendChild(item);}card.appendChild(rows);}
    }
   }
   if(this._config.debug){const debug=buschUnraidNode('p',JSON.stringify({device_id:m.device?.id,control:m.selected?.switch?.entity_id||m.switch?.entity_id,restart:m.selected?.restart?.entity_id||m.restart?.entity_id}),'message detail');card.appendChild(debug);}
-  if(this._error){const error=buschUnraidNode('p',this._error,'message error');error.setAttribute('role','alert');card.appendChild(error);}this.shadowRoot.replaceChildren(style,card);
+  if(this._error){const error=buschUnraidNode('p',this._error,'message error');error.setAttribute('role','alert');card.appendChild(error);}BuschUI.header({node:header,titleNode});this.shadowRoot.replaceChildren(style,card);
  }
 }
 class BuschUnraidStackCard extends BuschUnraidBaseCard {
