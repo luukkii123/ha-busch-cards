@@ -1,3 +1,132 @@
+/* BEGIN BUSCH SHARED UI 0.2.0 sha256:31637c8f3ea97a0a56d0de9264e5991aedd7ea0d7c3c747d08afff93fcc4e492 */
+/** Busch UI 0.2.0 — standalone Vanilla source. Synchronized verbatim, never imported at runtime. */
+const BuschUI = (() => {
+  const sourceVersion = '0.2.0';
+  const cloneConfig = value => Array.isArray(value) ? value.map(cloneConfig)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key,item]) => [key,cloneConfig(item)])) : value;
+  function configsEqual(a,b) {
+    if (Object.is(a,b)) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a)!==Array.isArray(b)) return false;
+    if (Array.isArray(a) && a.length!==b.length) return false;
+    const keys=Object.keys(a);
+    return keys.length===Object.keys(b).length && keys.every(key=>Object.hasOwn(b,key)&&configsEqual(a[key],b[key]));
+  }
+  const validKey = key => !['__proto__','prototype','constructor'].includes(String(key));
+  function updateConfig(config,patch) {
+    const next=cloneConfig(config||{});
+    for (const [key,value] of Object.entries(patch||{})) {
+      if (!validKey(key)) throw new Error('Invalid editor config key');
+      if (value===undefined) delete next[key]; else next[key]=cloneConfig(value);
+    }
+    return next;
+  }
+  function updateConfigPath(config,path,value) {
+    const parts=Array.isArray(path)?path:String(path).split('.');
+    if (!parts.length || parts.some(key=>!String(key)||!validKey(key))) throw new Error('Invalid editor config path');
+    const next=cloneConfig(config||{});let node=next;
+    for (let i=0;i<parts.length-1;i++) {const key=parts[i];if (!Object.hasOwn(node,key)||!node[key]||typeof node[key]!=='object') node[key]=typeof parts[i+1]==='number'?[]:{};node=node[key];}
+    const key=parts.at(-1);
+    if (value===undefined) {if (Array.isArray(node)&&typeof key==='number') node.splice(key,1);else delete node[key];} else node[key]=cloneConfig(value);
+    return next;
+  }
+  const deleteConfigPath=(config,path)=>updateConfigPath(config,path,undefined);
+  function emitConfigChanged(editor,config) {
+    editor.dispatchEvent(new CustomEvent('config-changed',{detail:{config:cloneConfig(config)},bubbles:true,composed:true}));
+  }
+  function guardEditorKeys(root) {
+    root.addEventListener?.('keydown',event=>event.stopPropagation());
+    root.addEventListener?.('keyup',event=>event.stopPropagation());
+  }
+  class EditorBase extends (typeof HTMLElement==='undefined'?class{}:HTMLElement) {
+    constructor() {super();guardEditorKeys(this);}
+    _acceptConfig(config,normalize=cloneConfig) {
+      const next=cloneConfig(normalize(config));
+      if (configsEqual(next,this._config)) return false;
+      this._config=next;return true;
+    }
+    _publishConfig(config) {
+      const next=cloneConfig(config);this._config=next;emitConfigChanged(this,next);return next;
+    }
+  }
+  // HA supplies no echo ID: match the earliest unacknowledged equal snapshot.
+  const createEchoState=()=>({pending:[],received:new Set(),stale:[]});
+  function queueEcho(state,config) {state.pending.push(cloneConfig(config));}
+  function acceptEcho(state,next,current) {
+    const pending=state.pending.findIndex(value=>!state.received.has(value)&&configsEqual(value,next));
+    if (pending!==-1) {
+      if (pending<state.pending.length-1) {state.received.add(state.pending[pending]);return false;}
+      state.stale.push(...state.pending.slice(0,-1).filter(value=>!state.received.has(value)));
+      state.pending=[];state.received.clear();
+    } else {
+      if (configsEqual(current,next)||state.pending.some(value=>state.received.has(value)&&configsEqual(value,next))) return false;
+      const stale=state.stale.findIndex(value=>configsEqual(value,next));
+      if (stale!==-1) {state.stale.splice(stale,1);return false;}
+      state.pending=[];state.received.clear();state.stale=[];
+    }
+    return !configsEqual(current,next);
+  }
+  function resolveMedia(config={},metadata={},defaultIcon='mdi:devices') {
+    const safe=value=>typeof value==='string'&&value.trim()&&!/^(?:javascript|vbscript|file):/i.test(value.trim())?value.trim():null;
+    const available=[metadata.entity_picture,metadata.device_picture,metadata.picture].map(safe).filter(Boolean),custom=safe(config.image),mode=config.display_mode||'auto';
+    const images=mode==='icon'?[]:[...new Set((mode==='image'?[custom,...available]:[...available,custom]).filter(Boolean))];
+    return {image:images[0]||null,images,icon:config.icon||metadata.icon||defaultIcon};
+  }
+  function media(config,metadata,defaultIcon,className='card-icon') {
+    const resolved=resolveMedia(config,metadata,defaultIcon),holder=document.createElement('span');
+    holder.className='busch-media '+className;holder.setAttribute('aria-hidden','true');let index=0;
+    const next=()=>{
+      if (index>=resolved.images.length) {const icon=ha.icon(resolved.icon);holder.replaceChildren(icon);return;}
+      const img=document.createElement('img');img.setAttribute('src',resolved.images[index++]);img.setAttribute('alt','');img.setAttribute('loading','lazy');
+      img.addEventListener('error',next,{once:true});holder.replaceChildren(img);
+    };
+    next();return holder;
+  }
+  function statusSemantic(status) {
+    return ({success:'success',running:'success',online:'success',connected:'success',on:'success',idle:'warning',warning:'warning',partial:'warning',starting:'warning',stopping:'warning',paused:'warning',blocked:'warning',suspended:'warning',error:'error',failed:'error',neutral:'neutral',stopped:'neutral',offline:'neutral',disconnected:'neutral',off:'neutral',unavailable:'unavailable',unknown:'unknown'})[status]||'unknown';
+  }
+  function statusBadge(status,text,classPrefix='status-') {
+    const badge=document.createElement('span');badge.className='status-badge '+classPrefix+statusSemantic(status);badge.textContent=text;return badge;
+  }
+  function formatNumber(value,locale,options={maximumFractionDigits:1}) {
+    return !['number','string'].includes(typeof value)||(typeof value==='string'&&!value.trim())||!Number.isFinite(Number(value))?null:new Intl.NumberFormat(locale||'en',options).format(Number(value));
+  }
+  function metric(label,value,ratio) {
+    const node=document.createElement('div');node.className='metric';
+    const caption=document.createElement('span');caption.className='metric-label';caption.textContent=label;
+    const text=document.createElement('strong');text.className='metric-value';text.textContent=value;node.appendChild(caption);node.appendChild(text);
+    if (ratio!==undefined&&Number.isFinite(ratio)) {const bar=document.createElement('progress');bar.max=100;bar.value=Math.min(100,Math.max(0,ratio*100));bar.setAttribute('aria-label',label);node.appendChild(bar);}return node;
+  }
+  let helperPromise=null;
+  const ha = {
+    form() {
+      const form=document.createElement('ha-form');
+      // HA lazy-loads ha-form. Retain its real selector contract and replay
+      // properties after upgrade; a free-text replacement would lose selectors.
+      if (typeof customElements!=='undefined' && customElements.get && !customElements.get('ha-form') && customElements.whenDefined) {
+        customElements.whenDefined('ha-form').then(()=>{
+          const props=['hass','schema','data','computeLabel','computeHelper','computeError','disabled'].filter(key=>Object.hasOwn(form,key)).map(key=>[key,form[key]]);
+          for (const [key] of props) delete form[key];
+          customElements.upgrade?.(form);
+          for (const [key,value] of props) form[key]=value;
+        });
+      }
+      return form;
+    },
+    input({native=false}={}) {return document.createElement(!native&&typeof customElements!=='undefined'&&customElements.get?.('ha-input')?'ha-input':'input');},
+    icon(name) {const icon=document.createElement('ha-icon');icon.setAttribute('icon',name);return icon;},
+    async cardHelpers() {
+      if (helperPromise) return helperPromise;
+      if (typeof window==='undefined'||typeof window.loadCardHelpers!=='function') return null;
+      helperPromise=Promise.resolve().then(()=>window.loadCardHelpers()).then(helpers=>helpers&&typeof helpers.createCardElement==='function'?helpers:null).catch(()=>null);
+      const helpers=await helperPromise;if (!helpers) helperPromise=null;return helpers;
+    },
+  };
+  const tokens=Object.freeze({space1:'var(--ha-space-1, 4px)',space2:'var(--ha-space-2, 8px)',space3:'var(--ha-space-3, 12px)',space4:'var(--ha-space-4, 16px)',mediaRadius:'var(--ha-card-border-radius, 12px)',controlMinHeight:'44px'});
+  const language=hass=>String(hass?.locale?.language||(typeof navigator!=='undefined'?navigator.language:'en')).startsWith('de')?'de':'en';
+  return Object.freeze({sourceVersion,EditorBase,cloneConfig,configsEqual,updateConfig,updateConfigPath,deleteConfigPath,emitConfigChanged,guardEditorKeys,createEchoState,queueEcho,acceptEcho,resolveMedia,media,statusSemantic,statusBadge,metric,formatNumber,ha,tokens,language});
+})();
+/* END BUSCH SHARED UI */
+
 /**
  * Busch Cards — Lovelace-Karten für Home Assistant.
  *
@@ -90,15 +219,12 @@ function buschCoreKey(value) {
   return JSON.stringify(value);
 }
 /* Shared editor contract for the standalone Busch bundle. */
-function buschEditorCopy(value){return value===undefined?undefined:JSON.parse(JSON.stringify(value));}
-function buschEditorUpdate(config,patch){const next=buschEditorCopy(config||{});for(const [key,value] of Object.entries(patch||{})){if(['__proto__','prototype','constructor'].includes(key))throw new Error('Invalid editor config key');if(value===undefined)delete next[key];else next[key]=buschEditorCopy(value);}return next;}
-function buschEditorUpdatePath(config,path,value){const parts=Array.isArray(path)?path:String(path).split('.');if(!parts.length||parts.some(part=>!String(part)||['__proto__','prototype','constructor'].includes(String(part))))throw new Error('Invalid editor config path');const next=buschEditorCopy(config||{});let node=next;for(let i=0;i<parts.length-1;i++){const part=parts[i];if(!Object.hasOwn(node,part)||!node[part]||typeof node[part]!=='object')node[part]=typeof parts[i+1]==='number'?[]:{};node=node[part];}const key=parts.at(-1);if(value===undefined){if(Array.isArray(node)&&typeof key==='number')node.splice(key,1);else delete node[key];}else node[key]=buschEditorCopy(value);return next;}
-function buschEditorDeletePath(config,path){return buschEditorUpdatePath(config,path,undefined);}
-class BuschEditorBase extends HTMLElement {
-  constructor(){super();this.addEventListener?.('keydown',event=>event.stopPropagation());this.addEventListener?.('keyup',event=>event.stopPropagation());}
-  _acceptConfig(config,normalize=buschEditorCopy){const next=buschEditorCopy(normalize(config));if(buschCoreKey(next)===buschCoreKey(this._config))return false;this._config=next;return true;}
-  _publishConfig(config){const next=buschEditorCopy(config);this._config=next;this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:buschEditorCopy(next)},bubbles:true,composed:true}));return next;}
-}
+function buschEditorCopy(value){return BuschUI.cloneConfig(value);}
+function buschEditorUpdate(config,patch){return BuschUI.updateConfig(config,patch);}
+function buschEditorUpdatePath(config,path,value){return BuschUI.updateConfigPath(config,path,value);}
+function buschEditorDeletePath(config,path){return BuschUI.deleteConfigPath(config,path);}
+class BuschEditorBase extends BuschUI.EditorBase {}
+
 function buschCorePath(object, path) { return String(path).split(/[.:]/).reduce((value, key) => value?.[key], object); }
 function buschCoreMatch(value, pattern) {
   if (typeof pattern !== 'string') return value === pattern;
@@ -2331,7 +2457,7 @@ class BuschScheduleCardEditor extends BuschEditorBase {
 
     if (!this._form) {
       const texte = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD, this._hass);
-      this._form = document.createElement("ha-form");
+      this._form = BuschUI.ha.form();
       this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_SCHEDULE_CARD, texte);
       this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
       this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
@@ -2940,7 +3066,7 @@ function calHoleDialogImporte(hass, entityId) {
     const leer = { ansicht: null, editor: null };
     try {
       if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return leer;
-      const helfer = await window.loadCardHelpers();
+      const helfer = await BuschUI.ha.cardHelpers();
       if (!helfer || typeof helfer.createCardElement !== "function") return leer;
 
       // Der EINZIGE Zweck: HA laedt beim Bauen der eingebauten Kalenderkarte
@@ -3709,7 +3835,7 @@ class BuschCalendarCardEditor extends BuschEditorBase {
     if (!this._form) {
       const texte = buschTexte(TEXTE_BUSCH_CALENDAR_CARD, this._hass);
       this._texte = texte.texte;
-      this._form = document.createElement("ha-form");
+      this._form = BuschUI.ha.form();
       this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_CALENDAR_CARD, texte);
       this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
       this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
@@ -4164,7 +4290,7 @@ class BuschMapCard extends HTMLElement {
     `;
     const wrap = this.shadowRoot.querySelector(".wrap");
     try {
-      const helpers = await window.loadCardHelpers();
+      const helpers = await BuschUI.ha.cardHelpers();
       const inner = await helpers.createCardElement(this._innerConfig());
       this._inner = inner;
       if (this._hass) inner.hass = this._hass;
@@ -4383,7 +4509,7 @@ class BuschMapCardEditor extends BuschEditorBase {
       this._aufgebaut = true;
       const texte = buschTexte(TEXTE_BUSCH_MAP_CARD, this._hass);
       this._texte = texte.texte;
-      this._form = document.createElement("ha-form");
+      this._form = BuschUI.ha.form();
       this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_MAP_CARD, texte);
       this._form.computeLabel = (s) => texte.labels[s.name] || s.name;
       this._form.computeHelper = (s) => texte.helpers[s.name] || "";
@@ -4424,7 +4550,7 @@ class BuschMapCardEditor extends BuschEditorBase {
    *  ein ehrlicher Hinweis statt eines halben Formulars. */
   async _baueInnenEditor() {
     try {
-      const helpers = await window.loadCardHelpers();
+      const helpers = await BuschUI.ha.cardHelpers();
       // Mit der ECHTEN Konfiguration erzeugen, nicht mit `entities: []`: HAs
       // Map-Karte lehnt eine Konfiguration ohne Entitaeten ab, und der ganze
       // Editor fiel deshalb auf den Hinweistext zurueck. Am 06.09.2026 im
@@ -5374,7 +5500,7 @@ function devHelferLaden() {
     devHelferCache = Promise.resolve()
       .then(() => {
         if (typeof window === "undefined" || typeof window.loadCardHelpers !== "function") return null;
-        return window.loadCardHelpers();
+        return BuschUI.ha.cardHelpers();
       })
       .then((h) => (h && typeof h.createCardElement === "function" && typeof h.createRowElement === "function" ? h : null))
       .catch(() => null);
@@ -6053,7 +6179,7 @@ class BuschDeviceCardEditor extends BuschEditorBase {
     if (!this._hass || !this._config) return;
     this._texte = buschTexte(TEXTE_BUSCH_DEVICE_CARD, this._hass);
     if (!this._form) {
-      this._form = document.createElement("ha-form");
+      this._form = BuschUI.ha.form();
       this._form.computeLabel = (s) => this._texte.labels[s.name] || s.name;
       this._form.computeHelper = (s) => this._texte.helpers[s.name] || "";
       this._form.addEventListener("value-changed", (event) => {
@@ -6189,7 +6315,7 @@ Object.assign(TEXTE_BUSCH_SMART_ENTITIES.de, {
 Object.assign(TEXTE_BUSCH_SMART_ENTITIES.en, {texte:{method_device_name:'Device name'},rules:{domain:'Domain',state:'State',entity_id:'Entity ID',name:'Name',group:'Group',area:'Area',floor:'Floor',level:'Level',device:'Device',label:'Label',device_manufacturer:'Manufacturer',device_model:'Model',integration:'Integration',hidden_by:'Hidden by',attributes:'Attributes',last_changed:'Last changed',last_updated:'Last updated',last_triggered:'Last triggered',entity_category:'Entity category',not:'NOT',or:'OR',and:'AND',options:'Row options',type:'Row type',sort:'Local sorting'}});
 const BUSCH_SMART_EDITOR_CSS = `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:var(--primary-color)}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}
 [hidden]{display:none!important}.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--ha-space-1,4px);margin-block:var(--ha-space-2,8px)}.tabs button{border-radius:var(--ha-card-border-radius,12px);min-height:48px;overflow-wrap:anywhere}.tabs [aria-selected=true]{border-color:var(--primary-color);background:var(--secondary-background-color);font-weight:600}.editor-section{border-bottom:1px solid var(--divider-color)}.rule-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;padding-block:var(--ha-space-2,8px)}.rule-row label{display:grid;gap:var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px)}.rule-row select,.rule-row input{width:100%;min-height:44px;font-size:var(--ha-font-size-m,14px)}.rule-value{grid-column:1/-1}.rule-row .rule-operator{grid-column:1/-1}.node{margin-inline-start:0}.node .node{padding-inline-start:var(--ha-space-2,8px);border-inline-start:1px solid var(--divider-color)}button:focus-visible,summary:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}`;
-function buschSmartElement(tag,text){const element=document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
+function buschSmartElement(tag,text){const element=tag==='ha-form'?BuschUI.ha.form():tag==='input'?BuschUI.ha.input({native:true}):document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
 function buschSmartButton(text,action){const b=buschSmartElement('button',text);b.type='button';b.addEventListener('click',action);return b;}
 function buschSmartSelect(options,value,onchange,label){const select=buschSmartElement('select');select.setAttribute('aria-label',label);for(const [v,text]of options){const o=buschSmartElement('option',text);o.value=v;select.append(o);}select.value=String(value);select.addEventListener('change',()=>onchange(select.value));return select;}
 /* UI identities live beside the JSON config and follow a rule across reordering. */
@@ -6280,7 +6406,7 @@ class BuschSmartEntities extends HTMLElement {
     if(this.hidden===visible){this.hidden=!visible;this.dispatchEvent(new Event('card-visibility-changed',{bubbles:true}));}
     const signature=buschCoreKey(target);if(signature===this._signature){this._debug();return;}
     try{
-      const helpers=await window.loadCardHelpers();if(generation!==this._generation)return;
+      const helpers=await BuschUI.ha.cardHelpers();if(generation!==this._generation)return;
       if(!this.shadowRoot)this.attachShadow({mode:'open'});
       if(this._child&&this._childType===target.type)this._child.setConfig(target);else{
         const child=await helpers.createCardElement(target);if(generation!==this._generation)return;
@@ -6357,7 +6483,7 @@ class BuschSmartEntitiesEditor extends BuschEditorBase {
     this._showGroup(this._activeGroup||'filters');
   }
   _showGroup(group){this._activeGroup=group;for(const tab of this.shadowRoot.querySelectorAll('[role=tab]')){const selected=tab.dataset.group===group;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;}for(const panel of this.shadowRoot.querySelectorAll('[role=tabpanel]'))panel.hidden=panel.dataset.panel!==group;if(group==='card'&&this._pendingTarget){const {host,config}=this._pendingTarget;this._pendingTarget=null;this._targetEditor(host,config);}}
-  async _targetEditor(host,config){try{const helpers=await window.loadCardHelpers(),parameter=this._config.card_param||'entities',preview={...config,[parameter]:config[parameter]||[]};const card=await helpers.createCardElement(preview);if(!host.isConnected||!card.constructor.getConfigElement)return;const editor=await card.constructor.getConfigElement();if(!host.isConnected)return;editor.hass=this._hass;editor.setConfig(preview);editor.addEventListener('config-changed',event=>{event.stopPropagation();const target={...event.detail.config};if(!Object.hasOwn(config,parameter)&&Array.isArray(target[parameter])&&!target[parameter].length)delete target[parameter];this._emit({...this._config,card:target},false);});host.append(editor);}catch(error){/* The typed object editor remains available. */}}
+  async _targetEditor(host,config){try{const helpers=await BuschUI.ha.cardHelpers(),parameter=this._config.card_param||'entities',preview={...config,[parameter]:config[parameter]||[]};const card=await helpers.createCardElement(preview);if(!host.isConnected||!card.constructor.getConfigElement)return;const editor=await card.constructor.getConfigElement();if(!host.isConnected)return;editor.hass=this._hass;editor.setConfig(preview);editor.addEventListener('config-changed',event=>{event.stopPropagation();const target={...event.detail.config};if(!Object.hasOwn(config,parameter)&&Array.isArray(target[parameter])&&!target[parameter].length)delete target[parameter];this._emit({...this._config,card:target},false);});host.append(editor);}catch(error){/* The typed object editor remains available. */}}
 }
 if (!customElements.get?.("busch-smart-entities")) customElements.define("busch-smart-entities", BuschSmartEntities);
 if (!customElements.get?.("busch-smart-entities-editor")) customElements.define("busch-smart-entities-editor", BuschSmartEntitiesEditor);
@@ -6491,16 +6617,8 @@ for(const dictionary of [TEXTE_BUSCH_UNRAID_STACK_CARD,TEXTE_BUSCH_UNRAID_CONTAI
 /* Reusable BuschMedia API: metadata accepts entity_picture/device_picture/picture,
  * never image (the Docker image:tag field). Auto prefers suitable metadata.
  * Picture URLs use safe browser image schemes; failed loads fall back to icon. */
-function buschMediaResolve(config={},metadata={},defaultIcon='mdi:devices'){
- const safe=value=>typeof value==='string'&&value.trim()&&!/^(?:javascript|vbscript|file):/i.test(value.trim())?value.trim():null;
- const available=safe(metadata.entity_picture)||safe(metadata.device_picture)||safe(metadata.picture),custom=safe(config.image),mode=config.display_mode||'auto';
- return {image:mode==='icon'?null:mode==='image'?(custom||available):(available||custom),icon:config.icon||metadata.icon||defaultIcon};
-}
-function buschMedia(config,metadata,defaultIcon,className='card-icon'){
- const resolved=buschMediaResolve(config,metadata,defaultIcon),holder=document.createElement('span');holder.className='busch-media '+className;holder.setAttribute('aria-hidden','true');
- const fallback=()=>{const icon=document.createElement('ha-icon');icon.setAttribute('icon',resolved.icon);holder.replaceChildren(icon);};
- if(resolved.image){const img=document.createElement('img');img.setAttribute('src',resolved.image);img.setAttribute('alt','');img.setAttribute('loading','lazy');img.addEventListener('error',fallback,{once:true});holder.appendChild(img);}else fallback();return holder;
-}
+function buschMediaResolve(config={},metadata={},defaultIcon='mdi:devices'){return BuschUI.resolveMedia(config,metadata,defaultIcon);}
+function buschMedia(config,metadata,defaultIcon,className='card-icon'){return BuschUI.media(config,metadata,defaultIcon,className);}
 function buschUnraidMetricValue(entities,role){const values=entities.filter(e=>e.domain==='sensor'&&e.attributes.role===role);if(values.length!==1||!buschUnraidAvailable(values[0])||String(values[0].state).trim()==='')return null;const n=Number(values[0].state);return Number.isFinite(n)&&n>=0?n:null;}
 function buschUnraidResources(entities,kind,running){
  const read=role=>running?buschUnraidMetricValue(entities,role):null,cpu=read('cpu'),used=read('ram_used'),allocated=kind==='vm'?read('ram_allocated'):null,ram=used??allocated;
@@ -6509,8 +6627,8 @@ function buschUnraidResources(entities,kind,running){
  return {cpu,ram,ram_label,ram_total:limit>0?limit:null};
 }
 function buschUnraidMetrics(row,config,t,locale){
- const root=buschUnraidNode('div',undefined,'metrics'),format=n=>new Intl.NumberFormat(locale||'en',{maximumFractionDigits:1}).format(n),bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let unit=0;while(n>=1024&&unit<units.length-1){n/=1024;unit++;}return format(n)+' '+units[unit];};
- const add=(label,value,ratio)=>{const metric=buschUnraidNode('div',undefined,'metric');metric.appendChild(buschUnraidNode('span',label,'metric-label'));metric.appendChild(buschUnraidNode('strong',value,'metric-value'));if(ratio!==undefined){const bar=buschUnraidNode('progress');bar.max=100;bar.value=Math.min(100,Math.max(0,ratio*100));bar.setAttribute('aria-label',label);metric.appendChild(bar);}root.appendChild(metric);};
+ const root=buschUnraidNode('div',undefined,'metrics'),format=n=>BuschUI.formatNumber(n,locale,{maximumFractionDigits:1}),bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let unit=0;while(n>=1024&&unit<units.length-1){n/=1024;unit++;}return format(n)+' '+units[unit];};
+ const add=(label,value,ratio)=>root.appendChild(BuschUI.metric(label,value,ratio));
  if(config.show_cpu)add('CPU',row.cpu===null||row.cpu===undefined?t.unavailable:format(row.cpu)+' %');
  if(config.show_ram)add(t[row.ram_label]||'RAM',row.ram===null||row.ram===undefined?t.unavailable:bytes(row.ram)+(row.ram_total?' / '+bytes(row.ram_total):''),row.ram!==null&&row.ram!==undefined&&row.ram_total?row.ram/row.ram_total:undefined);
  return root;
@@ -6758,7 +6876,7 @@ function buschUnraidSchema(core,config,kind){
  });
 }
 const BUSCH_UNRAID_STYLE = `
-:host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);--unraid-space:var(--ha-space-4,16px);--unraid-small:var(--ha-space-2,8px);--unraid-metric-min:100px}
+:host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);--unraid-space:${BuschUI.tokens.space4};--unraid-small:${BuschUI.tokens.space2};--unraid-metric-min:100px}
 *{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--unraid-space);font-family:inherit;color:var(--primary-text-color);background:var(--card-background-color)}
 h2,.name{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500)}
 p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail{color:var(--secondary-text-color)}
@@ -6776,16 +6894,8 @@ button{font:inherit;color:var(--primary-color);background:var(--secondary-backgr
 `;
 function buschUnraidNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
 /* Busch HA UI 0.1.0: domain states map to the same semantic badge roles. */
-function buschUiStatusSemantic(status){
- const state=String(status||'').toLowerCase();
- if(['running','online','connected','on'].includes(state))return 'success';
- if(['partial','paused','starting','stopping','blocked','suspended','idle'].includes(state))return 'warning';
- if(['failed','error'].includes(state))return 'error';
- if(state==='unavailable')return 'unavailable';
- if(['stopped','offline','disconnected','off'].includes(state))return 'neutral';
- return 'unknown';
-}
-function buschUnraidBadge(status,text){return buschUnraidNode('span',text,'status-badge status-'+buschUiStatusSemantic(status));}
+function buschUiStatusSemantic(status){return BuschUI.statusSemantic(String(status||'').toLowerCase());}
+function buschUnraidBadge(status,text){return BuschUI.statusBadge(status,text);}
 function buschUnraidIcon(name,className){const holder=buschUnraidNode('span',undefined,className),icon=buschUnraidNode('ha-icon');holder.setAttribute('aria-hidden','true');icon.setAttribute('icon',name);holder.appendChild(icon);return holder;}
 class BuschUnraidBaseCard extends HTMLElement {
  constructor(){super();this.attachShadow({mode:'open'});this._config={...BUSCH_UNRAID_DEFAULTS};this._expanded=true;this._generation=0;}
@@ -6856,7 +6966,7 @@ class BuschUnraidBaseEditor extends BuschEditorBase {
  connectedCallback(){this._connect();this._render();}
  disconnectedCallback(){this._release?.();this._unwatch?.();this._release=this._unwatch=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
- _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=document.createElement('ha-form');this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};let structural=false;if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};if(structural)this._render();});this.appendChild(this._form);}
+ _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=BuschUI.ha.form();this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};let structural=false;if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};if(structural)this._render();});this.appendChild(this._form);}
   this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);const fields=this._kind==='vm'?buschTexte(TEXTE_BUSCH_UNRAID_VM_CARD,this._hass):t;this._form.computeLabel=s=>fields.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:fields.helpers[s.name]||'';
  }
 }
