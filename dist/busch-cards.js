@@ -6164,7 +6164,7 @@ if (!customElements.get?.("busch-smart-entities")) customElements.define("busch-
 if (!customElements.get?.("busch-smart-entities-editor")) customElements.define("busch-smart-entities-editor", BuschSmartEntitiesEditor);
 if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))window.customCards.push({type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
 /* Unraid cards: joins are exclusively backend metadata + registry scope. */
-const BUSCH_UNRAID_DEFAULTS = { title: '', config_entry_id: '', device_id: '', container_key: '', switch_entity: '', update_entity: '', layout: 'detailed', show_status: true, show_controls: true, show_containers: true, show_updates: true, state_filter: 'all', sort: 'name', show_restart: true, confirm_stop: true, confirm_restart: true, start_expanded: true };
+const BUSCH_UNRAID_DEFAULTS = { display_mode:'auto', image:'', icon:'', show_cpu:true, show_ram:true, show_uptime:true, show_ip:true, show_disk:true, debug:false, title: '', config_entry_id: '', device_id: '', container_key: '', switch_entity: '', update_entity: '', layout: 'detailed', show_status: true, show_controls: true, show_containers: true, show_updates: true, state_filter: 'all', sort: 'name', show_restart: true, confirm_stop: true, confirm_restart: true, start_expanded: true };
 const TEXTE_BUSCH_UNRAID_STACK_CARD = {
  de: {
   labels: {title:'Titel',config_entry_id:'Unraid-Instanz',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
@@ -6193,13 +6193,137 @@ const TEXTE_BUSCH_UNRAID_CONTAINER_CARD = {
   stack:'Unraid stack',container:'Unraid container',stack_description:'Controls an Unraid Compose stack and its containers.',container_description:'Displays and controls an Unraid container.',empty:'No matching Unraid device found.',metadata:'No unambiguous mapping available. Update the backend or select a switch in the editor.',choose:'Select a container in the editor.',none:'No containers match this filter.',start:'Start',stop:'Stop',restart:'Restart',details:'Details',update:'Update',running:'Running',stopped:'Stopped',partial:'Partially running',unavailable:'Unavailable',unknown:'Unknown',paused:'Paused',standalone:'Standalone container',expand:'Expand containers',collapse:'Collapse containers',running_count:'{running} of {total} running',confirm_stop:'Stop “{name}”?',confirm_restart:'Restart “{name}”?',failed:'Action failed. Check the current state and permissions.',restart_missing:'Native restart is unavailable. The updated Unraid backend is required. Enabled by default.'
  }
 };
+const TEXTE_BUSCH_UNRAID_VM_CARD = {
+ de: {
+  labels: {
+   title: "Titel",
+   config_entry_id: "Unraid-Instanz",
+   device_id: "Virtuelle Maschine",
+   layout: "Darstellung",
+   display_mode: "Medienanzeige",
+   image: "Eigenes Bild",
+   icon: "Eigenes Icon",
+   debug: "Debug",
+   show_status: "Status anzeigen",
+   show_controls: "Steuerung anzeigen",
+   show_restart: "Neustart anzeigen",
+   confirm_stop: "Stoppen bestätigen",
+   confirm_restart: "Neustart bestätigen",
+   show_cpu: "CPU anzeigen",
+   show_ram: "RAM anzeigen",
+   show_uptime: "Betriebszeit anzeigen",
+   show_ip: "IP anzeigen",
+   show_disk: "Datenträger anzeigen"
+  },
+  helpers: {
+   title: "Optionaler eigener Titel; leer verwendet den VM-Namen.",
+   config_entry_id: "Begrenzt die Geräteauswahl auf diese Instanz; leer zeigt alle.",
+   device_id: "Wählt ein echtes VM-Gerät der Integration; ungültige IDs werden nicht ersetzt.",
+   layout: "Kompakt oder ausführlich; Vorgabe ist ausführlich.",
+   display_mode: "Automatisch bevorzugt verfügbare Bilder; Bild bevorzugt das eigene Bild, Icon zeigt nur das Icon. Vorgabe: automatisch.",
+   image: "Optionale Bild-URL; leer verwendet vorhandenes Bild oder Icon.",
+   icon: "Optionales mdi:-Icon für Anzeige und Bildfehler; leer verwendet das VM-Icon.",
+   debug: "Zeigt zugeordnete IDs zur lokalen Diagnose; Vorgabe: aus.",
+   show_status: "Zeigt den belegten Betriebszustand; Vorgabe: ein.",
+   show_controls: "Zeigt unterstützte Aktionen; Vorgabe: ein.",
+   show_restart: "Nur mit nativem Backendbutton verfügbar; Vorgabe: ein.",
+   confirm_stop: "Fragt vor dem Stoppen nach; Vorgabe: ein.",
+   confirm_restart: "Fragt vor dem Neustart nach; Vorgabe: ein.",
+   show_cpu: "Zeigt CPU in Prozent je Kern; über 100 % ist möglich. Fehlende Werte sind nicht verfügbar. Vorgabe: ein.",
+   show_ram: "Zeigt Gastverbrauch, sonst ausdrücklich zugewiesenen RAM; Host-RSS ist kein Gastverbrauch. Vorgabe: ein.",
+   show_uptime: "Zeigt belastbare zugeordnete Werte; fehlende Daten bleiben ausgeblendet. Vorgabe: ein.",
+   show_ip: "Zeigt belastbare zugeordnete Werte; fehlende Daten bleiben ausgeblendet. Vorgabe: ein.",
+   show_disk: "Zeigt belastbare zugeordnete Werte; fehlende Daten bleiben ausgeblendet. Vorgabe: ein."
+  }
+ },
+ en: {
+  labels: {
+   title: "Title",
+   config_entry_id: "Unraid instance",
+   device_id: "Virtual machine",
+   layout: "Layout",
+   display_mode: "Media display",
+   image: "Custom picture",
+   icon: "Custom icon",
+   debug: "Debug",
+   show_status: "Show status",
+   show_controls: "Show controls",
+   show_restart: "Show restart",
+   confirm_stop: "Confirm stop",
+   confirm_restart: "Confirm restart",
+   show_cpu: "Show CPU",
+   show_ram: "Show RAM",
+   show_uptime: "Show UPTIME",
+   show_ip: "Show IP",
+   show_disk: "Show DISK"
+  },
+  helpers: {
+   title: "Optional title; empty uses the VM name.",
+   config_entry_id: "Limits device choices to this instance; empty shows all.",
+   device_id: "Selects an integration VM device; invalid IDs are never substituted.",
+   layout: "Compact or detailed; defaults to detailed.",
+   display_mode: "Auto prefers available pictures; image prefers your picture; icon only shows the icon. Default: auto.",
+   image: "Optional picture URL; empty uses an existing picture or icon.",
+   icon: "Optional mdi: icon for display and picture failures; empty uses the VM icon.",
+   debug: "Shows matched IDs for local diagnostics; default: off.",
+   show_status: "Shows the verified VM state; default: on.",
+   show_controls: "Shows supported actions; default: on.",
+   show_restart: "Requires a native backend button; default: on.",
+   confirm_stop: "Asks before stopping; default: on.",
+   confirm_restart: "Asks before restarting; default: on.",
+   show_cpu: "Shows CPU percent per core; values above 100 % are valid. Missing values are unavailable. Default: on.",
+   show_ram: "Shows guest usage, otherwise explicitly allocated RAM; host RSS is not guest usage. Default: on.",
+   show_uptime: "Shows reliable matched values; missing data stays hidden. Default: on.",
+   show_ip: "Shows reliable matched values; missing data stays hidden. Default: on.",
+   show_disk: "Shows reliable matched values; missing data stays hidden. Default: on."
+  }
+ }
+};
 const BUSCH_UNRAID_TEXT = TEXTE_BUSCH_UNRAID_STACK_CARD;
+// All Unraid editors share one field contract, with complete translated help.
+for(const dictionary of [TEXTE_BUSCH_UNRAID_STACK_CARD,TEXTE_BUSCH_UNRAID_CONTAINER_CARD])for(const lang of ['de','en']){
+ const t=dictionary[lang],de=lang==='de';
+ Object.assign(t,{vm:de?'Unraid-VM':'Unraid VM',vm_description:de?'Zeigt und steuert eine virtuelle Unraid-Maschine.':'Displays and controls an Unraid virtual machine.',vm_subtitle:de?'Virtuelle Maschine':'Virtual machine',ram_used:de?'RAM (Gastverbrauch)':'RAM (guest used)',ram_allocated:de?'RAM (zugewiesen)':'RAM (allocated)',idle:de?'Leerlauf':'Idle',blocked:de?'Blockiert':'Blocked',suspended:de?'Ruhezustand':'Suspended',starting:de?'Startet':'Starting',stopping:de?'Stoppt':'Stopping',failed_state:de?'Fehler':'Failed'});
+ const fields={display_mode:[de?'Medienanzeige':'Media display',de?'Automatisch bevorzugt vorhandene Bilder, dann eigenes Bild und Icon. Vorgabe: automatisch.':'Auto prefers available pictures, then your picture and icon. Default: auto.'],image:[de?'Eigenes Bild':'Custom picture',de?'Optionale Bild-URL, kein Docker-Image-Tag. Im Bildmodus wird dieses Bild bevorzugt. Leer verwendet verfügbare Metadaten.':'Optional picture URL, not a Docker image tag. Image mode prefers this picture. Empty uses available metadata.'],icon:[de?'Eigenes Icon':'Custom icon',de?'Optionales mdi:-Icon; bei fehlendem oder fehlerhaftem Bild als Ersatz. Leer verwendet das passende Standardicon.':'Optional mdi: icon; fallback for missing or failed pictures. Empty uses a semantic default.'],debug:['Debug',de?'Zeigt die zugeordneten Entity-IDs zur lokalen Diagnose. Vorgabe: aus.':'Shows matched entity IDs for local diagnostics. Default: off.']};
+ for(const key of ['cpu','ram','uptime','ip','disk'])fields['show_'+key]=[(de?'Anzeigen: ':'Show: ')+key.toUpperCase(),de?'Zeigt zuverlässig zugeordnete Werte; fehlende Daten werden nicht erfunden. Vorgabe: ein.':'Shows reliably matched values; missing data is not fabricated. Default: on.'];
+ for(const [key,[label,help]] of Object.entries(fields)){t.labels[key]=label;t.helpers[key]=help;}
+ Object.assign(t.texte,{display_mode_auto:de?'Automatisch':'Auto',display_mode_image:de?'Bild':'Image',display_mode_icon:de?'Icon':'Icon'});
+}
+/* Reusable BuschMedia API: metadata accepts entity_picture/device_picture/picture,
+ * never image (the Docker image:tag field). Auto prefers suitable metadata.
+ * Picture URLs use safe browser image schemes; failed loads fall back to icon. */
+function buschMediaResolve(config={},metadata={},defaultIcon='mdi:devices'){
+ const safe=value=>typeof value==='string'&&value.trim()&&!/^(?:javascript|vbscript|file):/i.test(value.trim())?value.trim():null;
+ const available=safe(metadata.entity_picture)||safe(metadata.device_picture)||safe(metadata.picture),custom=safe(config.image),mode=config.display_mode||'auto';
+ return {image:mode==='icon'?null:mode==='image'?(custom||available):(available||custom),icon:config.icon||metadata.icon||defaultIcon};
+}
+function buschMedia(config,metadata,defaultIcon,className='card-icon'){
+ const resolved=buschMediaResolve(config,metadata,defaultIcon),holder=document.createElement('span');holder.className='busch-media '+className;holder.setAttribute('aria-hidden','true');
+ const fallback=()=>{const icon=document.createElement('ha-icon');icon.setAttribute('icon',resolved.icon);holder.replaceChildren(icon);};
+ if(resolved.image){const img=document.createElement('img');img.setAttribute('src',resolved.image);img.setAttribute('alt','');img.setAttribute('loading','lazy');img.addEventListener('error',fallback,{once:true});holder.appendChild(img);}else fallback();return holder;
+}
+function buschUnraidMetricValue(entities,role){const values=entities.filter(e=>e.domain==='sensor'&&e.attributes.role===role);if(values.length!==1||!buschUnraidAvailable(values[0])||String(values[0].state).trim()==='')return null;const n=Number(values[0].state);return Number.isFinite(n)&&n>=0?n:null;}
+function buschUnraidResources(entities,kind,running){
+ const read=role=>running?buschUnraidMetricValue(entities,role):null,cpu=read('cpu'),used=read('ram_used'),allocated=kind==='vm'?read('ram_allocated'):null,ram=used??allocated;
+ const ram_label=kind==='vm'&&used===null?'ram_allocated':kind==='vm'?'ram_used':'ram';
+ const limit=kind==='vm'?(used!==null?allocated:read('ram_max')):read('ram_limit');
+ return {cpu,ram,ram_label,ram_total:limit>0?limit:null};
+}
+function buschUnraidMetrics(row,config,t,locale){
+ const root=buschUnraidNode('div',undefined,'metrics'),format=n=>new Intl.NumberFormat(locale||'en',{maximumFractionDigits:1}).format(n),bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let unit=0;while(n>=1024&&unit<units.length-1){n/=1024;unit++;}return format(n)+' '+units[unit];};
+ const add=(label,value,ratio)=>{const metric=buschUnraidNode('div',undefined,'metric');metric.appendChild(buschUnraidNode('span',label,'metric-label'));metric.appendChild(buschUnraidNode('strong',value,'metric-value'));if(ratio!==undefined){const bar=buschUnraidNode('progress');bar.max=100;bar.value=Math.min(100,Math.max(0,ratio*100));bar.setAttribute('aria-label',label);metric.appendChild(bar);}root.appendChild(metric);};
+ if(config.show_cpu)add('CPU',row.cpu===null||row.cpu===undefined?t.unavailable:format(row.cpu)+' %');
+ if(config.show_ram)add(t[row.ram_label]||'RAM',row.ram===null||row.ram===undefined?t.unavailable:bytes(row.ram)+(row.ram_total?' / '+bytes(row.ram_total):''),row.ram!==null&&row.ram!==undefined&&row.ram_total?row.ram/row.ram_total:undefined);
+ return root;
+}
+
 function buschUnraidDevices(core,kind,entry) {
  if(!core) return [];
- return [...core.devices.values()].filter(d=>(kind==='stack'?d.model==='Compose stack':['Compose stack','Docker container'].includes(d.model))&&(!entry||(d.config_entries||[]).includes(entry))&&core.getDeviceEntities(d.id).some(e=>e.platform==='unraid_ssh'&&(!entry||e.config_entry_id===entry))).sort((a,b)=>String(a.name_by_user||a.name||a.id).localeCompare(String(b.name_by_user||b.name||b.id)));
+ return [...core.devices.values()].filter(d=>(kind==='vm'?d.model==='Virtual machine':kind==='stack'?d.model==='Compose stack':['Compose stack','Docker container'].includes(d.model))&&(!entry||(d.config_entries||[]).includes(entry))&&core.getDeviceEntities(d.id).some(e=>e.platform==='unraid_ssh'&&(!entry||e.config_entry_id===entry))).sort((a,b)=>String(a.name_by_user||a.name||a.id).localeCompare(String(b.name_by_user||b.name||b.id)));
 }
 function buschUnraidAvailable(entity){return !!entity&&!['unavailable','unknown',undefined].includes(entity.state);}
-function buschUnraidStatus(entity){if(!entity||entity.state==='unavailable')return 'unavailable';if(entity.state==='on')return 'running';if(entity.state==='off')return 'stopped';return 'unknown';}
+function buschUnraidStatus(entity){if(!entity||entity.state==='unavailable')return 'unavailable';if(entity.state==='on')return 'running';if(entity.state==='off')return 'stopped';return ['running','stopped','starting','stopping','failed','paused'].includes(entity.state)?entity.state:'unknown';}
+function buschUnraidVmStatus(value){return ({'running':'running','shut off':'stopped','shutoff':'stopped','shut_off':'stopped','idle':'idle','paused':'paused','blocked':'blocked','in shutdown':'stopping','in_shutdown':'stopping','crashed':'failed','pmsuspended':'suspended'})[String(value||'').toLowerCase()]||'unknown';}
 function buschUnraidLegacy(entries){
  return entries.map(e=>{
   if(e.attributes.kind&&e.attributes.role)return e;
@@ -6224,11 +6348,19 @@ function buschUnraidModel(core,config,kind) {
  const entries=buschUnraidLegacy(core.getDeviceEntities(device.id).filter(e=>e.platform==='unraid_ssh'&&(!config.config_entry_id||e.config_entry_id===config.config_entry_id)&&!e.registry?.disabled_by));
  const unique=rows=>rows.length===1?rows[0]:null;
  const explicit=(id,domain)=>unique(entries.filter(e=>e.entity_id===id&&e.domain===domain));
+ if(kind==='vm'){
+  const sw=unique(entries.filter(e=>e.domain==='switch'&&e.attributes.kind==='vm'&&e.attributes.role==='control'&&e.attributes.vm_key&&(!e.attributes.config_entry_id||e.attributes.config_entry_id===e.config_entry_id)));
+  if(sw){const a=sw.attributes,related=entries.filter(e=>e.config_entry_id===sw.config_entry_id&&e.attributes.kind==='vm'&&e.attributes.vm_key===a.vm_key&&(!e.attributes.config_entry_id||e.attributes.config_entry_id===e.config_entry_id));
+   const state=unique(related.filter(e=>e.domain==='sensor'&&e.attributes.role==='state'));
+   model.selected={key:a.vm_key,name:a.vm_name||device.name_by_user||device.name,switch:sw,restart:unique(related.filter(e=>e.domain==='button'&&e.attributes.role==='restart')),status:!buschUnraidAvailable(sw)?buschUnraidStatus(sw):state&&buschUnraidAvailable(state)?buschUnraidVmStatus(state.state):a.vm_state?buschUnraidVmStatus(a.vm_state):buschUnraidStatus(sw),...buschUnraidResources(related,'vm',sw.state==='on'),entity_picture:a.entity_picture,device_picture:device.entity_picture};
+   model.switch=sw;model.restart=model.selected.restart;model.status=model.selected.status;
+  }return model;
+ }
  const controls=entries.filter(e=>e.domain==='switch'&&e.attributes.kind==='container'&&e.attributes.role==='control'&&e.attributes.container_key);
  const keys=new Set(controls.map(e=>e.config_entry_id+'\0'+e.attributes.container_key));
  for(const key of keys){const candidates=controls.filter(e=>e.config_entry_id+'\0'+e.attributes.container_key===key),sw=unique(candidates);if(!sw)continue;
   const a=sw.attributes,related=entries.filter(e=>e.config_entry_id===sw.config_entry_id&&e.attributes.kind==='container'&&e.attributes.container_key===a.container_key);
-  model.containers.push({key:a.container_key,name:a.container_name||sw.attributes.friendly_name||sw.entity_id,stack:a.stack_name||a.stack_key||(device.model==='Compose stack'?(device.name_by_user||device.name):null),image:a.image||'',switch:sw,restart:unique(related.filter(e=>e.domain==='button'&&e.attributes.role==='restart')),update:unique(related.filter(e=>e.domain==='update'&&e.attributes.role==='update')),status:a.container_state==='paused'?'paused':buschUnraidStatus(sw)});
+  model.containers.push({key:a.container_key,name:a.container_name||sw.attributes.friendly_name||sw.entity_id,stack:a.stack_name||a.stack_key||(device.model==='Compose stack'?(device.name_by_user||device.name):null),image:a.image||'',entity_picture:a.entity_picture,device_picture:device.entity_picture,...buschUnraidResources(related,'container',sw.state==='on'&&a.container_state!=='paused'),switch:sw,restart:unique(related.filter(e=>e.domain==='button'&&e.attributes.role==='restart')),update:unique(related.filter(e=>e.domain==='update'&&e.attributes.role==='update')),status:a.container_state==='paused'?'paused':buschUnraidStatus(sw)});
  }
  const stack=unique(entries.filter(e=>e.domain==='switch'&&e.attributes.kind==='stack'&&e.attributes.role==='control'&&e.attributes.stack_key));
  model.switch=stack||explicit(config.switch_entity,'switch');
@@ -6240,10 +6372,11 @@ function buschUnraidModel(core,config,kind) {
  if(!(Number.isFinite(reportedRunning)&&Number.isFinite(reportedTotal))&&model.containers.some(c=>['unavailable','unknown'].includes(c.status)))model.status=model.containers.some(c=>c.status==='unavailable')?'unavailable':'unknown';
  if(model.switch?.state==='unavailable')model.status='unavailable';
  if(kind==='container'){
-  model.selected=config.container_key?model.containers.find(c=>c.key===config.container_key)||null:model.containers.length===1?model.containers[0]:null;
+  model.selected=config.container_key?unique(model.containers.filter(c=>c.key===config.container_key)):model.containers.length===1?model.containers[0]:null;
   if(!model.selected&&config.switch_entity){const sw=explicit(config.switch_entity,'switch');if(sw)model.selected={key:sw.entity_id,name:sw.attributes.friendly_name||device.name||sw.entity_id,switch:sw,restart:null,update:explicit(config.update_entity,'update'),status:buschUnraidStatus(sw),stack:device.model==='Compose stack'?(device.name_by_user||device.name):null};}
  }
  if(kind==='container'&&model.selected&&config.update_entity)model.selected={...model.selected,update:explicit(config.update_entity,'update')};
+ const active=model.containers.filter(c=>c.status==='running');const complete=model.total===model.containers.length&&!model.containers.some(c=>['unknown','unavailable','paused'].includes(c.status));const sum=key=>complete&&active.length&&active.every(c=>c[key]!==null&&c[key]!==undefined)?active.reduce((n,c)=>n+c[key],0):null;model.cpu=sum('cpu');model.ram=sum('ram');model.ram_total=null;
  model.containers.sort((a,b)=>config.sort==='state'?a.status.localeCompare(b.status)||a.name.localeCompare(b.name):a.name.localeCompare(b.name));
  return model;
 }
@@ -6279,9 +6412,145 @@ const SCHEMA_BUSCH_UNRAID_CONTAINER_CARD = [
  {name: "confirm_stop", "selector": {"boolean": {}}},
  {name: "confirm_restart", "selector": {"boolean": {}}}
 ];
+const BUSCH_UNRAID_MEDIA_SCHEMA=[{name:'display_mode',selector:{select:{options:['auto','image','icon'].map(value=>({value}))}}},{name:'image',selector:{text:{}}},{name:'icon',selector:{icon:{}}}];
+const SCHEMA_BUSCH_UNRAID_VM_CARD = [
+ {
+  name: "title",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "config_entry_id",
+  selector: {
+   config_entry: {
+    integration: "unraid_ssh"
+   }
+  }
+ },
+ {
+  name: "device_id",
+  selector: {
+   select: {
+    options: []
+   }
+  }
+ },
+ {
+  name: "layout",
+  selector: {
+   select: {
+    options: [
+     {
+      value: "compact"
+     },
+     {
+      value: "detailed"
+     }
+    ]
+   }
+  }
+ },
+ {
+  name: "display_mode",
+  selector: {
+   select: {
+    options: [
+     {
+      value: "auto"
+     },
+     {
+      value: "image"
+     },
+     {
+      value: "icon"
+     }
+    ]
+   }
+  }
+ },
+ {
+  name: "image",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "icon",
+  selector: {
+   icon: {}
+  }
+ },
+ {
+  name: "debug",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_status",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_controls",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_restart",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_stop",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_restart",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_cpu",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_ram",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_uptime",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_ip",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_disk",
+  selector: {
+   boolean: {}
+  }
+ }
+];
 function buschUnraidSchema(core,config,kind){
- const model=buschUnraidModel(core,config,kind),base=kind==='stack'?SCHEMA_BUSCH_UNRAID_STACK_CARD:SCHEMA_BUSCH_UNRAID_CONTAINER_CARD;
- return base.map(field=>{
+ const model=buschUnraidModel(core,config,kind),base=kind==='stack'?SCHEMA_BUSCH_UNRAID_STACK_CARD:kind==='vm'?SCHEMA_BUSCH_UNRAID_VM_CARD:SCHEMA_BUSCH_UNRAID_CONTAINER_CARD;
+ return (kind==='vm'?base:[...base,...BUSCH_UNRAID_MEDIA_SCHEMA,...SCHEMA_BUSCH_UNRAID_VM_CARD.filter(f=>['show_cpu','show_ram','debug'].includes(f.name))]).map(field=>{
   if(field.name==='device_id')return {...field,selector:{select:{options:buschUnraidDevices(core,kind,config.config_entry_id).map(d=>({value:d.id,label:d.name_by_user||d.name||d.id}))}}};
   if(field.name==='container_key')return {...field,selector:{select:{options:model.containers.map(c=>({value:c.key,label:c.name}))}}};
   if(field.name==='switch_entity'||field.name==='update_entity')return {...field,selector:{entity:{filter:{integration:'unraid_ssh',domain:field.name==='switch_entity'?'switch':'update',...(model.device?{device_id:model.device.id}:{})}}}};
@@ -6290,7 +6559,7 @@ function buschUnraidSchema(core,config,kind){
  });
 }
 const BUSCH_UNRAID_STYLE = `
-:host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);--unraid-space:var(--ha-space-4,16px);--unraid-small:var(--ha-space-2,8px)}
+:host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);--unraid-space:var(--ha-space-4,16px);--unraid-small:var(--ha-space-2,8px);--unraid-metric-min:100px}
 *{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--unraid-space);font-family:inherit;color:var(--primary-text-color);background:var(--card-background-color)}
 h2,.name{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500)}
 p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail{color:var(--secondary-text-color)}
@@ -6303,7 +6572,7 @@ p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-
 button{font:inherit;color:var(--primary-color);background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--unraid-small) var(--ha-space-3,12px);min-height:44px;cursor:pointer;overflow-wrap:anywhere;max-width:100%}button:disabled{color:var(--disabled-text-color);cursor:default}button:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}.danger{color:var(--error-color);border-color:color-mix(in srgb,var(--error-color) 35%,var(--divider-color));background:color-mix(in srgb,var(--error-color) 7%,var(--card-background-color))}.quiet{background:var(--card-background-color)}
 .disclosure{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:var(--unraid-small);text-align:start;color:var(--primary-text-color);background:var(--secondary-background-color)}.disclosure::after{content:'⌄';font-size:1.25em;line-height:1}.disclosure[aria-expanded=false]::after{transform:rotate(-90deg)}
 .rows{display:grid;margin-top:var(--unraid-small);border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);overflow:hidden}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--unraid-small);align-items:center;padding:var(--ha-space-3,12px)}.row+.row{border-top:1px solid var(--divider-color)}.row-identity{display:flex;align-items:center;gap:var(--ha-space-3,12px);min-width:0}.row-text{display:grid;gap:var(--ha-space-1,4px);min-width:0}.row .name{font-size:var(--ha-font-size-m,14px)}.row>.actions{grid-column:1/-1;justify-content:flex-end}.row .detail{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.message{margin-top:var(--unraid-space)}.error{color:var(--error-color)}.compact .detail{display:none}
+.busch-media{overflow:hidden}.busch-media img{display:block;width:100%;height:100%;object-fit:contain}.metrics{display:flex;flex-wrap:wrap;gap:var(--unraid-space);padding-bottom:var(--unraid-small)}.metric{display:grid;gap:var(--ha-space-1,4px);flex:1 1 0;min-width:min(100%,var(--unraid-metric-min,100px))}.metric-label{color:var(--secondary-text-color);font-size:var(--ha-font-size-s,12px);overflow-wrap:anywhere}.metric-value{font-size:var(--ha-font-size-m,14px);overflow-wrap:anywhere}.metric progress{max-width:100%;width:100%;accent-color:var(--primary-color)}.row>.metrics{grid-column:1/-1}.message{margin-top:var(--unraid-space)}.error{color:var(--error-color)}.compact .detail{display:none}
 @container (max-width:440px){.header{grid-template-columns:40px minmax(0,1fr);column-gap:var(--unraid-small);row-gap:var(--unraid-small);padding-bottom:var(--unraid-small)}.card-icon{width:40px;height:40px}.header>.status-badge{grid-column:2;justify-self:start}.header>.actions{grid-column:1/-1;justify-content:flex-start}.row>.status-badge{grid-column:1;justify-self:start}.row>.actions{justify-content:flex-start}.actions button{flex:1 1 0;padding-inline:var(--unraid-small);font-size:var(--ha-font-size-m,14px)}.actions:has(>button:nth-child(4)) button{flex-basis:calc(50% - var(--unraid-small))}.disclosure{margin-top:0}}
 `;
 function buschUnraidNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
@@ -6311,7 +6580,7 @@ function buschUnraidNode(tag,text,className){const node=document.createElement(t
 function buschUiStatusSemantic(status){
  const state=String(status||'').toLowerCase();
  if(['running','online','connected','on'].includes(state))return 'success';
- if(['partial','paused'].includes(state))return 'warning';
+ if(['partial','paused','starting','stopping','blocked','suspended','idle'].includes(state))return 'warning';
  if(['failed','error'].includes(state))return 'error';
  if(state==='unavailable')return 'unavailable';
  if(['stopped','offline','disconnected','off'].includes(state))return 'neutral';
@@ -6331,8 +6600,8 @@ class BuschUnraidBaseCard extends HTMLElement {
  getGridOptions(){return {columns:12,min_columns:3};}
  _button(parent,text,action,disabled=false,destructive=false){const button=buschUnraidNode('button',text,destructive?'danger':'');button.type='button';button.disabled=disabled;button.addEventListener('click',action);parent.appendChild(button);return button;}
  _actions(parent,row,t){const actions=buschUnraidNode('div',undefined,'actions');
-  if(this._config.show_controls&&row.switch){const running=row.status==='running'||row.status==='partial'||row.switch.state==='on';this._button(actions,running?t.stop:t.start,()=>this._action(running?'stop':'start',row),this._busy||!buschUnraidAvailable(row.switch),running);}
-  if(this._config.show_controls&&this._config.show_restart&&row.restart)this._button(actions,t.restart,()=>this._action('restart',row),this._busy||row.restart.state==='unavailable');
+  if(this._config.show_controls&&row.switch){const running=row.status==='running'||row.status==='partial'||(this._kind!=='vm'&&row.switch.state==='on');this._button(actions,running?t.stop:t.start,()=>this._action(running?'stop':'start',row),this._busy||!buschUnraidAvailable(row.switch)||(this._kind==='vm'&&!['running','stopped'].includes(row.status)),running);}
+  if(this._config.show_controls&&this._config.show_restart&&row.restart)this._button(actions,t.restart,()=>this._action('restart',row),this._busy||row.restart.state==='unavailable'||(this._kind==='vm'&&row.status!=='running'));
   if(row.switch){const details=this._button(actions,t.details,()=>this._action('details',row));details.className='quiet';}
   if(this._config.show_updates&&row.update?.state==='on')this._button(actions,t.update,()=>this._action('update',row));
   if(actions.childNodes.length)parent.appendChild(actions);
@@ -6340,7 +6609,7 @@ class BuschUnraidBaseCard extends HTMLElement {
  async _action(action,row){
   const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);
   if(action==='details'||action==='update'){const entity=action==='update'?row.update:row.switch;if(entity)this.dispatchEvent(new CustomEvent('hass-more-info',{detail:{entityId:entity.entity_id},bubbles:true,composed:true}));return;}
-  if(this._busy)return;const entity=action==='restart'?row.restart:row.switch;
+  if(this._busy||(this._kind==='vm'&&((action==='start'&&row.status!=='stopped')||(['restart','stop'].includes(action)&&row.status!=='running'))))return;const entity=action==='restart'?row.restart:row.switch;
   if(!entity||entity.state==='unavailable'||(action!=='restart'&&!buschUnraidAvailable(entity)))return;
   if((action==='stop'&&this._config.confirm_stop)||(action==='restart'&&this._config.confirm_restart))if(!window.confirm(t['confirm_'+action].replace('{name}',row.name||'')))return;
   const generation=this._generation;this._busy=true;this._error=null;this._render();
@@ -6351,18 +6620,19 @@ class BuschUnraidBaseCard extends HTMLElement {
  _render(){if(!this.shadowRoot||!this._config)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass),m=buschUnraidModel(this._core,this._config,this._kind);if(this.isConnected&&this._watchDeviceId!==m.device?.id){this._unwatchDevice?.();this._watchDeviceId=m.device?.id;this._unwatchDevice=this._watchDeviceId?this._core.watchDevice?.(this._watchDeviceId,()=>this._render()):null;}const signature=JSON.stringify([this._config,m,this._expanded,!!this._busy,this._error,t]);if(signature===this._renderSignature)return;this._renderSignature=signature;const card=buschUnraidNode('ha-card'),style=buschUnraidNode('style',BUSCH_UNRAID_STYLE);card.className=this._config.layout;
   const header=buschUnraidNode('div',undefined,'header'),title=this._config.title||m.device?.name_by_user||m.device?.name||t[this._kind];
   const main=buschUnraidNode('div',undefined,'header-main'),titleNode=buschUnraidNode('h2',title);
-  main.appendChild(titleNode);header.appendChild(buschUnraidIcon(this._kind==='stack'?'mdi:docker':'mdi:cube-outline','card-icon'));header.appendChild(main);card.appendChild(header);
+  main.appendChild(titleNode);header.appendChild(buschMedia(this._config,m.selected||m.device||{},this._kind==='vm'?'mdi:monitor':this._kind==='stack'?'mdi:docker':'mdi:cube-outline','card-icon'));header.appendChild(main);card.appendChild(header);
   const message=text=>card.appendChild(buschUnraidNode('p',text,'message'));
   if(!m.device)message(t.empty);
-  else if(this._kind==='container'){
-   const row=m.selected;if(!row)message(m.containers.length?t.choose:t.metadata);else{if(!this._config.title)titleNode.textContent=row.name;if(this._config.show_status)header.appendChild(buschUnraidBadge(row.status,t[row.status]||t.unknown));main.appendChild(buschUnraidNode('p',row.stack||t.standalone,'detail'));if(row.image)main.appendChild(buschUnraidNode('p',row.image,'detail'));this._actions(header,row,t);}
+  else if(this._kind==='container'||this._kind==='vm'){
+   const row=m.selected;if(!row)message(m.containers.length?t.choose:t.metadata);else{if(!this._config.title)titleNode.textContent=row.name;if(this._config.show_status)header.appendChild(buschUnraidBadge(row.status,(row.status==='failed'?t.failed_state:t[row.status])||t.unknown));main.appendChild(buschUnraidNode('p',this._kind==='vm'?t.vm_subtitle:row.stack||t.standalone,'detail'));card.appendChild(buschUnraidMetrics(row,this._config,t,this._hass?.locale?.language));if(row.image)main.appendChild(buschUnraidNode('p',row.image,'detail'));this._actions(header,row,t);}
   }else{
-   if(this._config.show_status){header.appendChild(buschUnraidBadge(m.status,t[m.status]||t.unknown));main.appendChild(buschUnraidNode('p',t.running_count.replace('{running}',m.running).replace('{total}',m.total),'detail'));}
-   this._actions(header,{...m,name:title},t);if(!m.switch&&!m.containers.length)message(t.metadata);
+   if(this._config.show_status){header.appendChild(buschUnraidBadge(m.status,(m.status==='failed'?t.failed_state:t[m.status])||t.unknown));main.appendChild(buschUnraidNode('p',t.running_count.replace('{running}',m.running).replace('{total}',m.total),'detail'));}
+   this._actions(header,{...m,name:title},t);card.appendChild(buschUnraidMetrics(m,this._config,t,this._hass?.locale?.language));if(!m.switch&&!m.containers.length)message(t.metadata);
    if(this._config.show_containers&&m.containers.length){const expand=this._button(card,t.container_group.replace('{count}',m.containers.length),()=>{this._expanded=!this._expanded;this._render();});expand.className='disclosure';expand.setAttribute('aria-expanded',String(this._expanded));expand.setAttribute('aria-label',this._expanded?t.collapse:t.expand);
-    if(this._expanded){const rows=buschUnraidNode('div',undefined,'rows'),visible=m.containers.filter(c=>this._config.state_filter==='all'||c.status===this._config.state_filter);if(!visible.length)rows.appendChild(buschUnraidNode('p',t.none,'message'));for(const row of visible){const item=buschUnraidNode('div',undefined,'row'),identity=buschUnraidNode('div',undefined,'row-identity'),texts=buschUnraidNode('div',undefined,'row-text');texts.appendChild(buschUnraidNode('div',row.name,'name'));if(row.image)texts.appendChild(buschUnraidNode('p',row.image,'detail'));identity.appendChild(buschUnraidIcon('mdi:cube-outline','row-icon'));identity.appendChild(texts);item.appendChild(identity);if(this._config.show_status)item.appendChild(buschUnraidBadge(row.status,t[row.status]||t.unknown));this._actions(item,row,t);rows.appendChild(item);}card.appendChild(rows);}
+    if(this._expanded){const rows=buschUnraidNode('div',undefined,'rows'),visible=m.containers.filter(c=>this._config.state_filter==='all'||c.status===this._config.state_filter);if(!visible.length)rows.appendChild(buschUnraidNode('p',t.none,'message'));for(const row of visible){const item=buschUnraidNode('div',undefined,'row'),identity=buschUnraidNode('div',undefined,'row-identity'),texts=buschUnraidNode('div',undefined,'row-text');texts.appendChild(buschUnraidNode('div',row.name,'name'));if(row.image)texts.appendChild(buschUnraidNode('p',row.image,'detail'));identity.appendChild(buschMedia(this._config,row,'mdi:cube-outline','row-icon'));identity.appendChild(texts);item.appendChild(identity);if(this._config.show_status)item.appendChild(buschUnraidBadge(row.status,(row.status==='failed'?t.failed_state:t[row.status])||t.unknown));item.appendChild(buschUnraidMetrics(row,this._config,t,this._hass?.locale?.language));this._actions(item,row,t);rows.appendChild(item);}card.appendChild(rows);}
    }
   }
+  if(this._config.debug){const debug=buschUnraidNode('p',JSON.stringify({device_id:m.device?.id,control:m.selected?.switch?.entity_id||m.switch?.entity_id,restart:m.selected?.restart?.entity_id||m.restart?.entity_id}),'message detail');card.appendChild(debug);}
   if(this._error){const error=buschUnraidNode('p',this._error,'message error');error.setAttribute('role','alert');card.appendChild(error);}this.shadowRoot.replaceChildren(style,card);
  }
 }
@@ -6376,14 +6646,19 @@ class BuschUnraidContainerCard extends BuschUnraidBaseCard {
  static getConfigElement(){return document.createElement('busch-unraid-container-card-editor');}
  static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-container-card'};const core=ensureBuschCore(1);core.attach(hass);const model=buschUnraidModel(core,{},'container');return {type:'custom:busch-unraid-container-card',...(model.device?{device_id:model.device.id}:{}),...(model.containers[0]?{container_key:model.containers[0].key}:{})};}
 }
+class BuschUnraidVmCard extends BuschUnraidBaseCard {
+ get _kind(){return 'vm';}
+ static getConfigElement(){return document.createElement('busch-unraid-vm-card-editor');}
+ static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-vm-card'};const core=ensureBuschCore(1);core.attach(hass);const device=buschUnraidDevices(core,'vm')[0];return {type:'custom:busch-unraid-vm-card',...(device?{device_id:device.id}:{})};}
+}
 class BuschUnraidBaseEditor extends BuschEditorBase {
  setConfig(config){if(!this._acceptConfig(config))return;this._render();}
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
  connectedCallback(){this._connect();this._render();}
  disconnectedCallback(){this._release?.();this._unwatch?.();this._release=this._unwatch=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
- _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=document.createElement('ha-form');this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};let structural=false;if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);if(structural)this._render();});this.appendChild(this._form);}
-  this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);this._form.computeLabel=s=>t.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:t.helpers[s.name]||'';
+ _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=document.createElement('ha-form');this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};let structural=false;if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};if(structural)this._render();});this.appendChild(this._form);}
+  this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);const fields=this._kind==='vm'?buschTexte(TEXTE_BUSCH_UNRAID_VM_CARD,this._hass):t;this._form.computeLabel=s=>fields.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:fields.helpers[s.name]||'';
  }
 }
 class BuschUnraidStackEditor extends BuschUnraidBaseEditor {get _kind(){return 'stack';}}
@@ -6395,3 +6670,8 @@ if(!customElements.get?.('busch-unraid-container-card-editor'))customElements.de
 window.customCards=window.customCards||[];
 if(!window.customCards.some(c=>c.type==='busch-unraid-stack-card'))window.customCards.push({type:'busch-unraid-stack-card',name:buschTexte(TEXTE_BUSCH_UNRAID_STACK_CARD).stack,description:buschTexte(TEXTE_BUSCH_UNRAID_STACK_CARD).stack_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
 if(!window.customCards.some(c=>c.type==='busch-unraid-container-card'))window.customCards.push({type:'busch-unraid-container-card',name:buschTexte(TEXTE_BUSCH_UNRAID_CONTAINER_CARD).container,description:buschTexte(TEXTE_BUSCH_UNRAID_CONTAINER_CARD).container_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+
+class BuschUnraidVmEditor extends BuschUnraidBaseEditor {get _kind(){return 'vm';}}
+if(!customElements.get?.('busch-unraid-vm-card'))customElements.define('busch-unraid-vm-card',BuschUnraidVmCard);
+if(!customElements.get?.('busch-unraid-vm-card-editor'))customElements.define('busch-unraid-vm-card-editor',BuschUnraidVmEditor);
+if(!window.customCards.some(c=>c.type==='busch-unraid-vm-card'))window.customCards.push({type:'busch-unraid-vm-card',name:buschTexte(BUSCH_UNRAID_TEXT).vm,description:buschTexte(BUSCH_UNRAID_TEXT).vm_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});

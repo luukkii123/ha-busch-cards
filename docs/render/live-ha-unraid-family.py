@@ -1,0 +1,27 @@
+"""Read-only native Unraid editor probe with synthetic device identities.
+Credentials JSON stays outside Git; no service calls or dashboard saves.
+"""
+import json,sys,pathlib
+from playwright.sync_api import sync_playwright
+
+def run():
+ private=json.loads(pathlib.Path(sys.argv[2]).read_text());base=private['base_url'].rstrip('/')
+ auth={'hassUrl':base,'clientId':base+'/','expires':4102444800000,'expires_in':315360000,'refresh_token':'','access_token':private['token']}
+ source=pathlib.Path(sys.argv[1]).read_text().replace('busch-','task2-busch-').replace('ensureBuschCore(1)','window.__task2Core')
+ with sync_playwright() as p:
+  browser=p.chromium.launch(headless=True);context=browser.new_context(ignore_https_errors=True,viewport={'width':1000,'height':1200});context.add_init_script('localStorage.setItem("hassTokens",JSON.stringify(%s))'%json.dumps(auth));page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append({'type':type(e).__name__,'script':__import__('re').findall(r'/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)',e.stack or '')}))
+  page.goto(base+'/profile',wait_until='domcontentloaded',timeout=30000)
+  page.wait_for_function("!!document.querySelector('home-assistant')?.hass && !!customElements.get('ha-form')",timeout=30000)
+  page.add_script_tag(content='(function(){'+source+'})();')
+  page.evaluate('''()=>{window.__task2Core={devices:new Map([['vm',{id:'vm',name:'Synthetic VM',model:'Virtual machine',config_entries:['synthetic']}],['stack',{id:'stack',name:'Synthetic stack',model:'Compose stack',config_entries:['synthetic']}]]),getDeviceEntities(id){return [{entity_id:'switch.synthetic_'+id,domain:'switch',platform:'unraid_ssh',config_entry_id:'synthetic',device_id:id,state:'on',attributes:{kind:id==='vm'?'vm':'stack',role:'control',vm_key:'Guest',vm_name:'Guest',vm_state:'running',stack_key:'media'}}]},attach(){},retain(){return()=>{}},watch(){return()=>{}}};const host=document.createElement('main');host.style.cssText='position:fixed;left:-10000px;top:0;width:320px';document.querySelector('home-assistant').shadowRoot.querySelector('home-assistant-main').shadowRoot.append(host);window.__probe={host,editors:[],events:[],leaks:[]};for(const kind of ['stack','container','vm']){const editor=document.createElement('task2-busch-unraid-'+kind+'-card-editor');editor.style.cssText='display:block;width:100%';editor.hass=document.querySelector('home-assistant').hass;editor.setConfig({type:'custom:task2-busch-unraid-'+kind+'-card',device_id:kind==='vm'?'vm':'stack'});editor.addEventListener('config-changed',e=>{__probe.events.push(e.detail.config);editor.setConfig(JSON.parse(JSON.stringify(e.detail.config)))});host.append(editor);__probe.editors.push(editor);}document.addEventListener('keydown',e=>__probe.leaks.push(e.key));}''')
+  page.wait_for_function("__probe.editors.every(e=>!!e.querySelector('ha-form')?.shadowRoot)",timeout=20000)
+  page.wait_for_function("""()=>{const deep=root=>{for(const el of root.querySelectorAll('*')){if(el.tagName==='INPUT'&&el.type==='text')return el;if(el.shadowRoot){const found=deep(el.shadowRoot);if(found)return found;}}};return !!deep(__probe.editors[2].querySelector('ha-form').shadowRoot)}""",timeout=20000)
+  page.evaluate('''()=>{const editor=__probe.editors[2],form=editor.querySelector('ha-form');const deep=(root)=>{for(const el of root.querySelectorAll('*')){if(el.tagName==='INPUT'&&el.type==='text')return el;if(el.shadowRoot){const v=deep(el.shadowRoot);if(v)return v;}}};const input=deep(form.shadowRoot);if(!input)throw Error('native title input absent');__probe.input=input;input.focus();input.select();}''')
+  page.keyboard.type('Synthetic title',delay=10);page.wait_for_timeout(300)
+  result=page.evaluate('''()=>{const p=__probe,editor=p.editors[2],form=editor.querySelector('ha-form');form.dispatchEvent(new CustomEvent('value-changed',{detail:{value:{show_cpu:false,image:'',confirm_restart:false}},bubbles:true,composed:true}));const latest=p.events.at(-1),saved=JSON.parse(JSON.stringify(latest));editor.setConfig(saved);for(const modifier of ['ctrlKey','metaKey'])p.input.dispatchEvent(new KeyboardEvent('keydown',{key:'k',[modifier]:true,bubbles:true,composed:true,cancelable:true}));const widths=[320,480,960].map(width=>{p.host.style.width=width+'px';return {width,overflow:p.editors.filter(e=>e.scrollWidth>e.clientWidth+1).length}});return {editors:p.editors.length,nativeForms:p.editors.every(e=>e.querySelector('ha-form').shadowRoot),typedTitle:latest.title==='Synthetic title',falseSaved:form.data.show_cpu===false&&form.data.confirm_restart===false,emptySaved:form.data.image==='',allVMFields:['display_mode','image','icon','show_cpu','show_ram','show_uptime','show_ip','show_disk','debug'].every(name=>form.schema.some(s=>s.name===name)),deviceChoices:form.schema.find(s=>s.name==='device_id').selector.select.options.length,widths,shortcutLeaks:p.leaks.length};}''')
+  page.wait_for_timeout(300);result['pageErrors']=len(errors);result['errorLocations']=errors;browser.close()
+ return result
+try:
+ result=run();pathlib.Path(sys.argv[3]).write_text(json.dumps(result,indent=2));print(json.dumps(result));assert result['nativeForms'] and result['typedTitle'] and result['falseSaved'] and result['emptySaved'] and result['allVMFields'] and result['deviceChoices']==1 and not result['shortcutLeaks'] and not result['pageErrors'] and not any(x['overflow'] for x in result['widths'])
+except Exception as e:
+ print(json.dumps({'probeFailed':type(e).__name__}));sys.exit(1)

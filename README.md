@@ -18,6 +18,7 @@ Unraid-Steuerung benötigt die zugehörige `unraid_ssh`-Integration.
 | `busch-smart-entities` | dynamische Filter, Zielkarte und konfigurierbare Wertausgabe |
 | `busch-unraid-stack-card` | Compose-Stack mit Containersteuerung und Updates |
 | `busch-unraid-container-card` | einzelner Standalone- oder Compose-Container |
+| `busch-unraid-vm-card` | virtuelle Maschine mit CPU/RAM und nativen Aktionen |
 
 ![Die Zeitplan-Karte im hellen Theme](docs/preview.png)
 
@@ -929,6 +930,48 @@ Das passende `unraid_ssh`-Backend enthält native Docker-/Compose-Restarts und
 stabile Composeidentitäten aus Stack, Service und Replikaindex. Vor dessen
 Liveinstallation muss ein abweichender installierter Quellstand abgeglichen
 werden. Bestehende Containerentities werden nicht automatisch gelöscht.
+
+## `busch-unraid-vm-card` (lokaler UPDATED-Stand)
+
+```yaml
+type: custom:busch-unraid-vm-card
+device_id: YOUR_VM_DEVICE_ID
+```
+
+Im Editor ein Gerät vom Backendmodell `Virtual machine` und optional die
+Unraid-Instanz auswählen. Die Zuordnung verwendet ausschließlich Registry,
+`kind`, `role`, `config_entry_id` und `vm_key`; mehrdeutige oder ungültige
+IDs erzeugen keine Ersatzzuordnung. Start/Stop verwenden den VM-Schalter,
+Neustart ausschließlich den nativen Rebootbutton. Stop und Neustart werden
+standardmäßig bestätigt; pausierte, blockierte und herunterfahrende VMs
+bekommen keine ungeeigneten Start-/Neustartaktionen.
+
+Alle drei Unraid-Karten unterstützen `show_cpu`, `show_ram`, `display_mode`
+(`auto`, `image`, `icon`), eigenes Bild `image`, eigenes Icon `icon`,
+`layout` (`compact`, `detailed`) und `debug`. Auto bevorzugt vorhandene
+Entity-/Devicebilder, dann eigenes Bild und Icon. Bildmodus bevorzugt das
+eigene Bild. Ladefehler wechseln zum Icon. Das Backendattribut `image`
+bleibt ausschließlich Docker-Image/Tag und wird als Text gezeigt.
+
+CPU wird als Prozent je Kern angezeigt und darf über 100 % liegen.
+RAM wird binär als KiB/MiB/GiB formatiert. Containerlimits stammen nur aus
+konfiguriertem Docker-Memorylimit. Ohne Limit gibt es keinen Balken.
+VM-Gastverbrauch wird nur mit belastbarem `ram_used` gezeigt; sonst wird
+explizit „RAM (zugewiesen)“ aus `ram_allocated` gezeigt. Host-RSS wird nie
+als Gastverbrauch umgedeutet. Gastverbrauch wird gegen zugewiesenen RAM,
+zugewiesener RAM gegen Maximum dargestellt. Stack-Aggregate zählen nur
+vollständig gemessene aktive Mitglieder; fehlende Werte bleiben nicht
+verfügbar. Containerlimits werden nie zu einem Stackbudget addiert.
+
+VM-Optionen `show_uptime`, `show_ip`, `show_disk` sind im Editor vorhanden.
+Das aktuelle Backend liefert dafür keine zuverlässigen Gastdaten; die Karte
+blendet diese Metriken deshalb aus und erfindet keine Werte.
+
+Prüfskripte: `docs/render/unraid-updated-family.py` (synthetische Matrix,
+320/480/960, hell/dunkel, normale/fehlende/nicht verfügbare Werte, Bildfehler,
+kompakte Darstellung) und `docs/render/live-ha-unraid-family.py`
+(authentifizierte, lesende native HA-Editorprobe mit synthetischen Geräte-IDs;
+keine Dienstaufrufe oder Dashboardspeicherung).
 
 ## Direkte Geräteauswahl
 
