@@ -5850,7 +5850,7 @@ class BuschDeviceCard extends HTMLElement {
           output=document.createElement('output');output.className='dev-quick-value';wrap.appendChild(output);
           el.addEventListener('input',()=>{output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);});
         }
-        else if(c.kind==='select'){for(const value of c.options){const option=document.createElement('option');option.value=value;option.textContent=this._hass.localize?.('component.climate.entity_component._.state.'+value)||value;el.appendChild(option);}}
+        else if(c.kind==='select'){for(const value of c.options){const option=document.createElement('option');option.value=value;option.textContent=(c.id==='hvac_mode'?this._hass.localize?.('component.climate.entity_component._.state.'+value):undefined)||value;el.appendChild(option);}}
         else{el.type='button';el.textContent=label;}
         el.addEventListener(c.kind?'change':'click',()=>this._quickAction(c.id,c.kind==='range'?Number(el.value):el.value));
         wrap.appendChild(el);this._quick.appendChild(wrap);this._quickNodes.push(el);this._quickOutputs.push(output);
