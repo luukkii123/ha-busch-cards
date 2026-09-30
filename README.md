@@ -40,7 +40,7 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung für `0.15.2`: Home Assistant **2026.9.3** oder neuer. Die
+Voraussetzung für `0.16.0`: Home Assistant **2026.9.3** oder neuer. Die
 Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
 für diesen Stand nicht freigegeben.
 
@@ -1280,3 +1280,12 @@ konflikt auf; vollständige fehlerfreie Portal-/IME-Abnahme wird deshalb nicht
 behauptet. Neue Backendrollen müssen nach regulärem Backendupdate geprüft werden.
 
 Prüfbundle SHA256: `9d933d7064e7ecf57f03d50a8eaa8c4efe49de363c0124a312dce682339e5fa8`.
+
+### Geprüft: Release 0.16.0, 30.09.2026
+
+Diese Fassung enthält den oben geprüften UPDATED-Kandidaten mit gemeinsamer
+UI-Quelle 0.3.2. Gegenüber den geprüften Bundlebytes wurde ausschließlich
+`CARD_VERSION` erhöht. Die native Familienabnahme umfasst 17 Editoren mit
+Speichern und Wiederöffnen; lokale Suiten und Darstellungsmatrizen sind oben
+dokumentiert. Der vorhandene native Pickerkonflikt bleibt eine benannte Grenze.
+Keine produktiven Geräteaktionen wurden für die Abnahme ausgeführt.
