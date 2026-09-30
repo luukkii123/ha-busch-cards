@@ -1122,6 +1122,11 @@ HA-Core-2026.9-Unique-ID-Vertrag. Entity-Namen werden nicht als Rollen gelesen.
 Bei Mehrdeutigkeit stehen für jede Funktion manuelle Entity-Selektoren bereit;
 diese werden weiterhin auf Gerät, Integration, Instanz und Domain geprüft.
 
+WAN-Link und WAN-Erreichbarkeit werden im Statusheader getrennt angezeigt.
+Ein vorhandener Link behauptet keine Internetverbindung; fehlende Rollen
+werden nicht ersetzt. `show_status` steuert beide Statusanzeigen unabhängig
+von `show_metrics`.
+
 WAN-Verbindung, aktuelle/maximale Übertragungsraten, externe IPs, Volumina,
 Geräte-/WAN-Laufzeit, CPU-**Temperatur**, WLAN-Switches und Firmware erscheinen
 nur bei vorhandenen Daten. Sensor-Einheiten bleiben erhalten; Laufzeit-Sensoren

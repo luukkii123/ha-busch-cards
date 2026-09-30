@@ -7276,6 +7276,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
   cpu_temperature: "CPU-Temperatur",
   connection: "WAN-Verbindung",
   link: "WAN-Link",
+  link_on: "Link vorhanden",
+  link_off: "Kein Link",
   days: "Tage",
   hours: "Stunden",
   minutes: "Minuten",
@@ -7440,7 +7442,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
   },
   rules: {
    domain: "Domain",
-   state: "Status anzeigen",
+   state: "Zustand",
    entity_id: "Entity-ID",
    name: "Name",
    group: "Gruppe",
@@ -7464,7 +7466,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
    options: "Zeilenoptionen",
    type: "Zeilentyp",
    sort: "Lokale Sortierung",
-   status: "Status anzeigen",
+   status: "Status",
    ip: "IP-Adresse",
    ip_range: "IPv4-Bereich",
    cidr: "IPv4 CIDR",
@@ -7578,6 +7580,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
   cpu_temperature: "CPU temperature",
   connection: "WAN connection",
   link: "WAN link",
+  link_on: "Link up",
+  link_off: "Link down",
   days: "days",
   hours: "hours",
   minutes: "minutes",
@@ -7742,7 +7746,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
   },
   rules: {
    domain: "Domain",
-   state: "Show status",
+   state: "State",
    entity_id: "Entity ID",
    name: "Name",
    group: "Group",
@@ -7766,7 +7770,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
    options: "Row options",
    type: "Row type",
    sort: "Local sorting",
-   status: "Show status",
+   status: "Status",
    ip: "IP address",
    ip_range: "IPv4 range",
    cidr: "IPv4 CIDR",
@@ -7882,6 +7886,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   cpu_temperature: "CPU-Temperatur",
   connection: "WAN-Verbindung",
   link: "WAN-Link",
+  link_on: "Link vorhanden",
+  link_off: "Kein Link",
   days: "Tage",
   hours: "Stunden",
   minutes: "Minuten",
@@ -8046,7 +8052,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   },
   rules: {
    domain: "Domain",
-   state: "Status anzeigen",
+   state: "Zustand",
    entity_id: "Entity-ID",
    name: "Name",
    group: "Gruppe",
@@ -8070,7 +8076,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    options: "Zeilenoptionen",
    type: "Zeilentyp",
    sort: "Lokale Sortierung",
-   status: "Status anzeigen",
+   status: "Status",
    ip: "IP-Adresse",
    ip_range: "IPv4-Bereich",
    cidr: "IPv4 CIDR",
@@ -8184,6 +8190,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   cpu_temperature: "CPU temperature",
   connection: "WAN connection",
   link: "WAN link",
+  link_on: "Link up",
+  link_off: "Link down",
   days: "days",
   hours: "hours",
   minutes: "minutes",
@@ -8348,7 +8356,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   },
   rules: {
    domain: "Domain",
-   state: "Show status",
+   state: "State",
    entity_id: "Entity ID",
    name: "Name",
    group: "Group",
@@ -8372,7 +8380,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    options: "Row options",
    type: "Row type",
    sort: "Local sorting",
-   status: "Show status",
+   status: "Status",
    ip: "IP address",
    ip_range: "IPv4 range",
    cidr: "IPv4 CIDR",
@@ -9236,10 +9244,10 @@ function buschNetworkTimestamp(stamp,hass,t){return stamp?new Date(stamp).toLoca
 class BuschNetworkBaseCard extends HTMLElement {
  constructor(){super();this.attachShadow({mode:'open'});this._config=buschNetworkConfig({});this._rows=[];this._rowNodes=new Map();this._sectionOpen=new Map();this._registryDrafts=new Map();this._generation=0;}
  get _kind(){return 'network';}
- setConfig(config){try{this._config=buschNetworkConfig(config,this._kind);this._configError=null;}catch(error){this._configError=error.message;this._unsubscribe?.();this._unsubscribe=null;this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._query=null;this._rows=[];}this._generation++;this._visible=this._config.count;this._configureQuery();this._render();}
+ setConfig(config){try{const accepted=buschNetworkConfig(config,this._kind),key=buschCoreKey(accepted);if(!this._configError&&key===this._acceptedConfigKey)return;this._acceptedConfigKey=key;this._config=accepted;this._configError=null;}catch(error){this._configError=error.message;this._unsubscribe?.();this._unsubscribe=null;this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._query=null;this._rows=[];}this._generation++;this._visible=this._config.count;this._configureQuery();this._render();}
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}get hass(){return this._hass;}
  connectedCallback(){this._connect();this._configureQuery();this._render();}
- disconnectedCallback(){this._generation++;this._unsubscribe?.();this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._unwatch?.();this._unwatchDevice?.();this._release?.();this._unsubscribe=this._unwatch=this._unwatchDevice=this._release=null;this._query=null;this._rowNodes.clear();for(const cleanup of this._gestures?.values()||[])cleanup();this._gestures?.clear();}
+ disconnectedCallback(){this._generation++;this._unsubscribe?.();this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._unwatch?.();this._unwatchDevice?.();this._deviceWatchId=null;this._release?.();this._unsubscribe=this._unwatch=this._unwatchDevice=this._release=null;this._query=null;this._shellSignature=null;this._rowNodes.clear();for(const cleanup of this._gestures?.values()||[])cleanup();this._gestures?.clear();}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>{this._configureQuery();this._render();});this._configureQuery();}
  _scopeConfig(){if(this._kind==='network')return this._config;const m=buschFritzModel(this._core,this._config);return {...this._config,platform:'fritz',config_entry_id:m.config_entry_id||'__no_selected_fritz_entry__'};}
  _configureQuery(){if(!this._core||this._configError)return;try{const spec=this._scopeConfig(),query=new BuschNetworkQueries(this._core).query(spec);this._queryError=null;if(query!==this._query){this._unsubscribe?.();this._query=query;this._rows=query.result;this._unsubscribe=this._core.subscribe(query,rows=>{this._rows=rows;this._renderClients();});}const timed=this._kind==='fritz'&&this._config.show_metrics&&Object.entries(buschFritzModel(this._core,this._config).roles).some(([role,e])=>['uptime','wan_uptime'].includes(role)&&e);if(timed&&!this._unsubscribeClock){this._clockQuery=new BuschNetworkClock(this._core).query();this._unsubscribeClock=this._core.subscribe(this._clockQuery,result=>{this._clockEpoch=result[0];this._render();});}else if(!timed&&this._unsubscribeClock){this._unsubscribeClock();this._unsubscribeClock=null;this._clockQuery=null;}if(this._deviceWatchId!==this._config.device_id){this._unwatchDevice?.();this._deviceWatchId=this._config.device_id;this._unwatchDevice=this._deviceWatchId?this._core.watchDevice(this._deviceWatchId,()=>this._render()):null;}}catch(error){this._queryError=error.message;this._rows=[];}}
@@ -9284,7 +9292,7 @@ class BuschNetworkBaseCard extends HTMLElement {
  _renderClients(){if(!this._clientBody)return;const c=this._config,t=this._text(),rows=c.count?this._rows.slice(0,this._visible??c.count):this._rows;if(this._clientBody.style.getPropertyValue?.('--network-columns')!==String(c.columns))this._clientBody.style.setProperty?.('--network-columns',String(c.columns));const used=new Set(),nodes=[];for(const row of rows){used.add(row.entity_id);const signature=buschCoreKey({info:row.info.stateObject,registry:row.info.registry,name:row.name,ap:row.network_name,internet:row.internet?.state,wol:row.wol?.state,locale:BuschUI.language(this._hass),admin:this._hass?.user?.is_admin,busy:this._busy,labelChoices:c.label_ids.map(id=>this._core.labels.get(id)),config:c});let item=this._rowNodes.get(row.entity_id);if(!item||item.signature!==signature){item={signature,node:this._clientNode(row)};this._rowNodes.set(row.entity_id,item);}nodes.push(item.node);}for(const id of this._rowNodes.keys())if(!used.has(id))this._rowNodes.delete(id);if(!rows.length&&c.show_empty){this._emptyNode||=buschNetworkNode('p',t.empty,'message');if(this._emptyNode.textContent!==t.empty)this._emptyNode.textContent=t.empty;nodes.push(this._emptyNode);}if(rows.length<this._rows.length){const key=t.more+'|'+this._busy;if(this._moreNodeKey!==key){this._moreNodeKey=key;this._moreNode=buschNetworkNode('div',undefined,'actions');this._button(this._moreNode,t.more,()=>{this._visible=Math.min(this._rows.length,(this._visible??this._config.count)+this._config.count);this._renderClients();},'quiet');}nodes.push(this._moreNode);}if(this._clientBody.children.length!==nodes.length||nodes.some((n,i)=>this._clientBody.children[i]!==n))this._clientBody.replaceChildren(...nodes);if(this._clientBody.isConnected)this._pruneGestures();if(this._clientSection?.firstChild){const text=t.clients+' ('+this._rows.length+')';if(this._clientSection.firstChild.textContent!==text)this._clientSection.firstChild.textContent=text;}}
  _render(){if(!this._hass||!this._config)return;const t=this._text(),c=this._config;let model;try{model=this._kind==='fritz'&&this._core?buschFritzModel(this._core,c):null;}catch(error){this._queryError=error.message;}const signature=buschCoreKey({config:c,clock:this._clockEpoch,locale:BuschUI.language(this._hass),model:model?{device:model.device,roles:Object.fromEntries(Object.entries(model.roles).map(([k,e])=>[k,e?.stateObject])),wlan:model.wlan.map(e=>e.stateObject),ambiguous:model.ambiguous}:null,busy:this._busy,error:this._error,configError:this._configError,queryError:this._queryError,registryError:[...(this._core?.lastErrors?.keys()||[])],admin:this._hass.user?.is_admin});if(signature===this._shellSignature){this._renderClients();return;}this._shellSignature=signature;
   const style=buschNetworkNode('style',BUSCH_NETWORK_STYLE),card=buschNetworkNode('ha-card'),name=c.title||model?.name||t[this._kind];
-  if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title});card.appendChild(header);}
+  if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}if(c.show_status&&model?.roles.link){const state=model.roles.link.state,label=state==='on'?t.link_on:state==='off'?t.link_off:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'online':state==='off'?'offline':state,t.link+': '+label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title});card.appendChild(header);}
   if(this._kind==='network'&&!this._core)card.appendChild(buschNetworkNode('p',t.loading,'message'));
   const error=this._configError||this._queryError||this._error;if(error){const message=buschNetworkNode('p',t[error]||t.invalid_config,'message error');message.setAttribute('role','alert');card.appendChild(message);}if(this._core?.lastErrors?.size)card.appendChild(buschNetworkNode('p',t.registry_error,'message error'));
   if(this._kind==='fritz'&&!this._configError){
