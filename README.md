@@ -1061,3 +1061,32 @@ das Produkt hat weiterhin keinen Buildschritt.
 Browserharness: `docs/render/smart-entities.py` und `docs/render/unraid-cards.py`,
 jeweils mit Bundlepfad und privatem Ausgabeordner. Sie testen synthetische
 Daten und Schaltaufrufe über Attrappen, keine produktiven Containeraktionen.
+
+### Gerätekarte: optionale Schnellsteuerung (lokaler UPDATED-Stand)
+
+`quick_controls: true` aktiviert direkte Steuerung in der Kopfzeile, auch
+zugeklappt. Vorgabe ist aus; bestehende Geräte-ID-, Entitäts-, Filter- und
+Tile-Konfigurationen bleiben gültig. Das Hauptbedienelement folgt weiterhin
+der ausgewählten Entität beziehungsweise der automatischen Geräteauswahl.
+Licht/Schalter, Lüfter, Cover, Schloss, Klima, Medienplayer und Buttons bieten
+nur passende HA-Funktionen an. Slider zeigen den aktuellen Wert mit Einheit;
+beim Ziehen aktualisiert sich die Anzeige, erst die abgeschlossene Änderung
+sendet einen Dienstaufruf. Nicht verfügbare Entitäten sind gesperrt.
+Schlösser mit notwendiger Codeeingabe und Klima-Temperaturbereiche bleiben
+über HAs native Details/Tile bedienbar. Ein explizit gewählter Button mit
+Zustand `unknown` bleibt ausführbar. Geräte ohne Hauptentität zeigen keine
+Schnellsteuerung.
+
+Der Editor bietet `quick_controls` sowie `display_mode: auto|image|icon`,
+`image` und `icon` mit deutschen und englischen Erklärungen. Media verwendet
+wie die Unraid-Familie den gemeinsamen Resolver: vorhandenes geeignetes Bild,
+dann eigenes Bild, eigenes beziehungsweise semantisches Icon; Bildfehler
+fallen auf das Icon zurück. `image` ist eine Bildadresse, kein Image-Tag.
+
+Geprüft am 30.09.2026 im lokalen Worktree: 48 synthetische Gerätefälle bei
+320/480/960 px in beiden Themes, Tastatur-/Pointer-Abgrenzung, Touchziele,
+Fokuserhalt, Mediafehler und Editor-Roundtrip; native HA 2026.9.3/2026.9.4
+mit echten Form-/Tile-Komponenten und ausschließlich gemockten Diensten.
+Skripte: `docs/render/device-quick-controls.py` und
+`docs/render/live-ha-device-controls.py`. Keine Veröffentlichung oder
+produktiven Schaltversuche in diesem Durchlauf.

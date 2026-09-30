@@ -36,6 +36,7 @@ const {
 
 /** Spec Abschnitt 8, woertlich. */
 const OPTIONEN_DER_SPEC = [
+  "quick_controls", "display_mode", "image", "icon",
   "filter", "device_id", "entity", "title", "template", "labels", "labels_hide", "groups", "groups_open",
   "show_subtitle", "start_expanded", "tap_action", "hold_action",
   "row_tap_action", "row_hold_action",

@@ -4515,6 +4515,10 @@ const DEV_STANDARD = {
   labels_hide: [],
   groups: ["control", "sensor", "config", "diagnostic"],
   groups_open: ["control"],
+  quick_controls: false,
+  display_mode: "auto",
+  image: "",
+  icon: "",
   show_subtitle: true,
   start_expanded: false,
   tap_action: { action: "expand" },
@@ -4914,6 +4918,10 @@ function devStrukturStempel(deviceId, vorlage, gruppen, konfig) {
 }
 
 const SCHEMA_BUSCH_DEVICE_CARD = [
+  {name:"quick_controls",selector:{boolean:{}}},
+  {name:"display_mode",selector:{select:{mode:"dropdown",options:["auto","image","icon"]}}},
+  {name:"image",selector:{text:{}}},
+  {name:"icon",selector:{icon:{}}},
   { name: "filter", selector: { object: {} } },
   { name: "device_id", selector: { device: {} } },
   { name: "entity", selector: { entity: {} } },
@@ -5032,6 +5040,11 @@ const TEXTE_BUSCH_DEVICE_CARD = {
     name: "Busch Gerät",
     description: "Zeigt zu einer Entität ihr ganzes Gerät: Kopfzeile, Bedienelement und alle Entitäten, gruppiert wie auf der Geräteseite.",
     labels: {
+      quick_controls: "Schnellsteuerung",
+      display_mode: "Medienanzeige",
+      image: "Eigenes Bild",
+      icon: "Eigenes Icon",
+
       filter: "Filter",
       device_id: "Gerät",
       entity: "Entität",
@@ -5051,6 +5064,11 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Halten auf einer Zeile",
     },
     helpers: {
+      quick_controls: "Unterstützte Aktionen direkt in der Kopfzeile bedienen. Vorgabe: aus.",
+      display_mode: "Automatisch bevorzugt vorhandene Bilder, dann eigenes Bild und Icon. Vorgabe: automatisch.",
+      image: "Optionales eigenes Bild; im Bildmodus bevorzugt. Vorgabe: leer.",
+      icon: "Optionales mdi:-Icon, auch als Ersatz bei Bildfehlern. Vorgabe: automatisch.",
+
       filter: "Include-/Exclude-Regeln für Entities dieses Geräts, auch für das Hauptbedienelement. Vorgabe: keine zusätzlichen Regeln.",
       device_id: "Gerät direkt auswählen; weitere Entitäten sind nicht erforderlich. Vorgabe: Auswahl über die Entität.",
       entity: "Optionale Hauptentität des Geräts. Die Karte sucht daraus das Gerät und zeigt diese Entität oben als Bedienelement.",
@@ -5070,6 +5088,27 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Dasselbe für das Halten auf einer Zeile. Vorgabe: nichts.",
     },
     texte: {
+      display_mode_auto: "Automatisch",
+      display_mode_image: "Bild",
+      display_mode_icon: "Icon",
+      power_on: "Einschalten",
+      power_off: "Ausschalten",
+      brightness: "Helligkeit",
+      percentage: "Geschwindigkeit",
+      preset_mode: "Lüftermodus",
+      open_cover: "Öffnen",
+      stop_cover: "Stoppen",
+      close_cover: "Schließen",
+      position: "Position",
+      lock: "Verriegeln",
+      unlock: "Entriegeln",
+      temperature: "Solltemperatur",
+      hvac_mode: "Betriebsart",
+      play: "Wiedergabe",
+      pause: "Pause",
+      volume: "Lautstärke",
+      press: "Ausführen",
+
       filterBereich: "Filter",
       filterHilfe: "Regeln innerhalb eines Filters sind UND-verknüpft. Mehrere Include-Filter sind ODER-verknüpft; Exclude hat Vorrang. Ohne Include-Regel bleiben alle sichtbaren Geräte-Entities zugelassen. Label-Filter wirken zusätzlich auf die Liste.",
       filterFehler: "Die Entitätenauswahl konnte nicht ausgewertet werden. Regeln im Editor prüfen.",
@@ -5157,6 +5196,11 @@ const TEXTE_BUSCH_DEVICE_CARD = {
     name: "Busch device",
     description: "Shows the whole device behind an entity: header, control and every entity, grouped like the device page.",
     labels: {
+      quick_controls: "Quick controls",
+      display_mode: "Media display",
+      image: "Custom picture",
+      icon: "Custom icon",
+
       filter: "Filters",
       device_id: "Device",
       entity: "Entity",
@@ -5176,6 +5220,11 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Hold on a row",
     },
     helpers: {
+      quick_controls: "Use supported actions directly in the header. Default: off.",
+      display_mode: "Auto prefers available pictures, then your picture and icon. Default: auto.",
+      image: "Optional custom picture; preferred in image mode. Default: empty.",
+      icon: "Optional mdi: icon, also used when pictures fail. Default: automatic.",
+
       filter: "Include/exclude rules for this device’s entities, including its main control. Default: no additional rules.",
       device_id: "Select a device directly; no entity is required. Default: resolve the entity’s device.",
       entity: "Any entity of the device. The card finds the device from it and shows this entity as the control at the top.",
@@ -5195,6 +5244,27 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "The same for holding a row. Default: nothing.",
     },
     texte: {
+      display_mode_auto: "Auto",
+      display_mode_image: "Image",
+      display_mode_icon: "Icon",
+      power_on: "Turn on",
+      power_off: "Turn off",
+      brightness: "Brightness",
+      percentage: "Speed",
+      preset_mode: "Fan preset",
+      open_cover: "Open",
+      stop_cover: "Stop",
+      close_cover: "Close",
+      position: "Position",
+      lock: "Lock",
+      unlock: "Unlock",
+      temperature: "Target temperature",
+      hvac_mode: "HVAC mode",
+      play: "Play",
+      pause: "Pause",
+      volume: "Volume",
+      press: "Execute",
+
       filterBereich: "Filters",
       filterHilfe: "Rules within a filter use AND. Multiple include filters use OR; exclude takes precedence. Without include rules, all visible device entities are allowed. Label filters additionally apply to the list.",
       filterFehler: "The entity selection could not be evaluated. Check the rules in the editor.",
@@ -5317,6 +5387,20 @@ const DEV_STIL = `
   busch-device-card { display:block; container-type:inline-size; }
   busch-device-card > ha-card { display:block; overflow:hidden; color:var(--primary-text-color);
     background:var(--card-background-color); }
+  busch-device-card { --dev-control-size:44px; --dev-range-width:var(--ha-space-20,80px); }
+  .dev-media { display:grid;place-items:center;width:100%;height:100%;overflow:hidden;border-radius:var(--ha-card-border-radius,var(--ha-space-3,12px));background:var(--secondary-background-color); }
+  .dev-media img { width:100%;height:100%;object-fit:contain; }
+  .dev-quick { display:flex;align-items:center;flex-wrap:wrap;gap:var(--ha-space-2,8px);min-width:0; }
+  .dev-quick[hidden] { display:none; }
+  .dev-quick-item { display:grid;gap:var(--ha-space-1,4px);min-width:0; }
+  .dev-quick-value { font-size:var(--ha-font-size-m,14px);overflow-wrap:anywhere; }
+  .dev-quick-item span { font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0; }
+  .dev-quick button,.dev-quick input,.dev-quick select { box-sizing:border-box;min-height:var(--dev-control-size);min-width:var(--dev-control-size);max-width:100%;border:0;border-radius:var(--ha-card-border-radius,var(--ha-space-3,12px));background:var(--secondary-background-color);color:var(--primary-text-color);font:inherit;accent-color:var(--primary-color); }
+  .dev-quick button,.dev-quick select { padding-inline:var(--ha-space-2,8px); }
+  .dev-quick input { width:var(--dev-range-width); }
+  .dev-quick :disabled { opacity:var(--disabled-opacity,.5);cursor:default; }
+  .dev-quick :focus-visible { outline:2px solid var(--primary-color);outline-offset:var(--ha-space-1,4px); }
+  @container (max-width:600px) { .dev-kopf:has(.dev-quick:not([hidden])) { flex-wrap:wrap; } .dev-kopf:has(.dev-quick:not([hidden])) .dev-titel { flex-basis:calc(100% - var(--dev-control-size) * 3); } .dev-quick:not([hidden]) { order:4;flex:1 1 100%; } }
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
     padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
     user-select:none; -webkit-user-select:none; min-width:0; }
@@ -5383,6 +5467,47 @@ const DEV_STIL = `
     .dev-liste { padding-inline:var(--ha-space-3, 12px); }
   }
 `;
+
+/** Quick-control capabilities from HA Core 2026.9.3 components' feature enums.
+ * Light brightness follows supported_color_modes, not removed legacy flags.
+ * No lock code entry: code-required locks retain HA's native detail dialog. */
+function devQuickControls(state) {
+  if (!state?.entity_id) return [];
+  const domain=state.entity_id.split('.')[0],a=state.attributes||{},f=Number(a.supported_features)||0;
+  const unavailable=state.state==='unavailable'||(state.state==='unknown'&&domain!=='button');
+  const out=[],has=flag=>(f&flag)===flag,number=n=>typeof n==='number'&&Number.isFinite(n);
+  const add=(id,service,extra={})=>out.push({id,service,disabled:unavailable,...extra});
+  const power=(on,off)=>{if(state.state==='off'?on:off)add('power',state.state==='off'?'turn_on':'turn_off',{label:state.state==='off'?'power_on':'power_off'});};
+  const range=(id,service,param,value,min,max,step=1)=>{if(number(value)&&number(min)&&number(max)&&max>=min)add(id,service,{kind:'range',param,value,min,max,step:number(step)&&step>0?step:1});};
+  const select=(id,service,param,value,options)=>{if(Array.isArray(options)&&options.length)add(id,service,{kind:'select',param,value,options:options.filter(v=>typeof v==='string')});};
+  if(domain==='light'||domain==='switch'){
+    power(true,true);
+    if(domain==='light'&&Array.isArray(a.supported_color_modes)&&a.supported_color_modes.some(m=>['brightness','color_temp','hs','xy','rgb','rgbw','rgbww','white'].includes(m)))range('brightness','turn_on','brightness',a.brightness,0,255);
+  }else if(domain==='fan'){
+    power(has(32),has(16));
+    if(has(1))range('percentage','set_percentage','percentage',a.percentage,0,100,a.percentage_step);
+    if(has(1)||has(8))select('preset_mode','set_preset_mode','preset_mode',a.preset_mode,a.preset_modes);
+  }else if(domain==='cover'){
+    if(has(1))add('open_cover','open_cover');
+    if(has(8))add('stop_cover','stop_cover');
+    if(has(2))add('close_cover','close_cover');
+    if(has(4))range('position','set_cover_position','position',a.current_position,0,100);
+  }else if(domain==='lock'&&!a.code_format){
+    if(state.state==='locked')add('unlock','unlock');
+    if(state.state==='unlocked')add('lock','lock');
+  }else if(domain==='climate'){
+    if(has(1))range('temperature','set_temperature','temperature',a.temperature,a.min_temp,a.max_temp,a.target_temp_step??(a.temperature_unit==='°F'?1:.5));
+    if(out[0]?.id==='temperature')out[0].unit=a.temperature_unit;
+    select('hvac_mode','set_hvac_mode','hvac_mode',state.state,a.hvac_modes);
+  }else if(domain==='media_player'){
+    power(has(128),has(256));
+    if(state.state!=='off'){
+      if(state.state==='playing'?has(1):has(16384))add('playback',state.state==='playing'?'media_pause':'media_play',{label:state.state==='playing'?'pause':'play'});
+      if(has(4))range('volume','volume_set','volume_level',a.volume_level,0,1,.01);
+    }
+  }else if(domain==='button')add('press','press');
+  return out;
+}
 
 class BuschDeviceCard extends HTMLElement {
   static getConfigElement() {
@@ -5472,7 +5597,10 @@ class BuschDeviceCard extends HTMLElement {
     pfeilIcon.setAttribute("icon", "mdi:chevron-down");
     pfeilIcon.icon = "mdi:chevron-down";
     this._pfeil.appendChild(pfeilIcon);
-    this._kopf.append(this._icon, this._titel, this._pfeil);
+    this._quick=document.createElement("div");
+    this._quick.className="dev-quick";
+    for(const event of ['pointerdown','pointerup','pointermove','pointercancel','click','dblclick','keydown','keyup','input','change','hass-more-info','action'])this._quick.addEventListener(event,e=>e.stopPropagation());
+    this._kopf.append(this._icon, this._titel, this._quick, this._pfeil);
 
     this._chips = document.createElement("div");
     this._chips.className = "dev-chips";
@@ -5577,7 +5705,7 @@ class BuschDeviceCard extends HTMLElement {
     let start = null;
     const abbrechen = () => { if (timer) { clearTimeout(timer); timer = null; } };
     this._kopf.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".dev-pfeil")) return;
+      if (e.target.closest(".dev-pfeil, .dev-quick")) return;
       gehalten = false;
       start = { x: e.clientX, y: e.clientY };
       abbrechen();
@@ -5590,7 +5718,7 @@ class BuschDeviceCard extends HTMLElement {
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) abbrechen();
     });
     this._kopf.addEventListener("pointerup", (e) => {
-      if (e.target.closest(".dev-pfeil")) return;
+      if (e.target.closest(".dev-pfeil, .dev-quick")) return;
       const warTimer = Boolean(timer);
       abbrechen();
       if (!gehalten && warTimer) {
@@ -5605,7 +5733,7 @@ class BuschDeviceCard extends HTMLElement {
     this._kopf.setAttribute("role", "button");
     this._kopf.tabIndex = 0;
     this._kopf.addEventListener("keydown", (e) => {
-      if (e.target.closest(".dev-pfeil")) return;
+      if (e.target.closest(".dev-pfeil, .dev-quick")) return;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         devFuehreAus(this, this._hass, this._config.tap_action, this._kopfKontext());
@@ -5640,6 +5768,7 @@ class BuschDeviceCard extends HTMLElement {
       this._icon.textContent = "";
       this._icon.hidden = true;
       this._pfeil.hidden = true;
+      this._quick.hidden = true;
       this._chips.textContent = "";
       this._tileBehaelter.textContent = "";
       this._liste.textContent = "";
@@ -5673,6 +5802,8 @@ class BuschDeviceCard extends HTMLElement {
     if (this._name.textContent !== (this._config.title || a.name)) this._name.textContent = this._config.title || a.name;
     if (this._unterText.textContent !== a.untertitel) this._unterText.textContent = a.untertitel;
     this._reicheHassDurch();
+    this._zeichneQuick();
+    this._zeichneMedia(a);
     this._zeigeListe();
     if(this._filterQuery?.error){this._hinweis.textContent=t.filterFehler;this._hinweis.className='dev-hinweis dev-fehler';this._hinweis.hidden=false;this._filterErrorVisible=true;}else if(this._filterErrorVisible){this._hinweis.hidden=true;this._filterErrorVisible=false;}
   }
@@ -5688,12 +5819,61 @@ class BuschDeviceCard extends HTMLElement {
       this._brand.hidden = true;
     }
     this._icon.textContent = "";
+    this._mediaKey=null;
     this._icon.hidden = false;
-    const icon = document.createElement("ha-state-icon");
-    if (a.eintrag.icon) icon.icon = a.eintrag.icon;
-    this._stateIcon = icon;
-    this._icon.appendChild(icon);
     this._hinweis.hidden = true;
+  }
+
+  _zeichneMedia(a) {
+    const state=this._hass.states[this._entityId],metadata={...(state?.attributes||{}),device_picture:a.geraet.picture,icon:a.eintrag?.icon||state?.attributes?.icon};
+    const fallback=({light:'mdi:lightbulb',switch:'mdi:toggle-switch',fan:'mdi:fan',cover:'mdi:window-shutter',lock:'mdi:lock',climate:'mdi:thermostat',media_player:'mdi:speaker',button:'mdi:gesture-tap-button'})[devDomain(this._entityId)]||'mdi:devices';
+    const key=JSON.stringify(buschMediaResolve(this._config,metadata,fallback));
+    if(key!==this._mediaKey){this._mediaKey=key;this._icon.replaceChildren(buschMedia(this._config,metadata,fallback,'dev-media'));}
+  }
+
+  _zeichneQuick() {
+    const state=this._hass.states[this._entityId];
+    const controls=this._config.quick_controls&&this._filterShowPrimary?devQuickControls(state?{...state,entity_id:this._entityId}:null):[];
+    this._quick.hidden=!controls.length;
+    const key=JSON.stringify(controls.map(({value,disabled,...c})=>c));
+    if(key!==this._quickKey){
+      this._quickKey=key;this._quick.replaceChildren();this._quickNodes=[];this._quickOutputs=[];
+      for(const c of controls){
+        const wrap=document.createElement('label'),label=this._texte[c.label||c.id];
+        wrap.className='dev-quick-item';
+        const el=document.createElement(c.kind==='select'?'select':c.kind==='range'?'input':'button');
+        el.dataset.control=c.id;el.setAttribute('aria-label',label);el.title=label;
+        if(c.kind){const text=document.createElement('span');text.textContent=label;wrap.appendChild(text);}
+        let output;
+        if(c.kind==='range'){
+          el.type='range';el.min=c.min;el.max=c.max;el.step=c.step;
+          output=document.createElement('output');output.className='dev-quick-value';wrap.appendChild(output);
+          el.addEventListener('input',()=>{output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);});
+        }
+        else if(c.kind==='select'){for(const value of c.options){const option=document.createElement('option');option.value=value;option.textContent=this._hass.localize?.('component.climate.entity_component._.state.'+value)||value;el.appendChild(option);}}
+        else{el.type='button';el.textContent=label;}
+        el.addEventListener(c.kind?'change':'click',()=>this._quickAction(c.id,c.kind==='range'?Number(el.value):el.value));
+        wrap.appendChild(el);this._quick.appendChild(wrap);this._quickNodes.push(el);this._quickOutputs.push(output);
+      }
+    }
+    controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.kind&&document.activeElement!==el)el.value=c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});
+  }
+
+  _quickValue(control,value) {
+    const percent=['brightness','percentage','position','volume'].includes(control.id);
+    const n=control.id==='brightness'?value/255*100:control.id==='volume'?value*100:value;
+    const unit=percent?'%':control.unit||this._hass?.config?.unit_system?.temperature||'';
+    return new Intl.NumberFormat(this._hass?.locale?.language||'en',{maximumFractionDigits:percent?0:1}).format(n)+(unit?' '+unit:'');
+  }
+
+  async _quickAction(id,value) {
+    if(!this._config.quick_controls||!this._filterShowPrimary)return;
+    const state=this._hass?.states?.[this._entityId],c=devQuickControls(state?{...state,entity_id:this._entityId}:null).find(c=>c.id===id);
+    if(!c||c.disabled)return;
+    const data={entity_id:this._entityId};
+    if(c.kind==='range'){if(typeof value!=='number'||!Number.isFinite(value)||value<c.min||value>c.max)return;data[c.param]=value;}
+    if(c.kind==='select'){if(!c.options.includes(value))return;data[c.param]=value;}
+    try{await this._hass.callService(this._entityId.split('.')[0],c.service,data);}catch(error){this._zeigeDienstFehler(error);}
   }
 
   _zeichneChips() {
@@ -5910,9 +6090,9 @@ class BuschDeviceCardEditor extends BuschEditorBase {
       else if (devArtVon(neu[feld]) !== "ha") neu[feld] = { action: "more-info" };
       delete neu[geste + "_kind"];
     }
-    // Vorgaben wandern nicht in die Konfiguration.
+    // Explicit opt-in false is persisted; defaults for older fields stay compact.
     for (const [schluessel, vorgabe] of Object.entries(DEV_STANDARD)) {
-      if (JSON.stringify(neu[schluessel]) === JSON.stringify(vorgabe)) delete neu[schluessel];
+      if (!["quick_controls","display_mode","image","icon"].includes(schluessel) && JSON.stringify(neu[schluessel]) === JSON.stringify(vorgabe)) delete neu[schluessel];
     }
     this._emit(neu);
   }
