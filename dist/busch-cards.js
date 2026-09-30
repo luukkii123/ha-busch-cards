@@ -7055,3 +7055,2296 @@ class BuschUnraidVmEditor extends BuschUnraidBaseEditor {get _kind(){return 'vm'
 if(!customElements.get?.('busch-unraid-vm-card'))customElements.define('busch-unraid-vm-card',BuschUnraidVmCard);
 if(!customElements.get?.('busch-unraid-vm-card-editor'))customElements.define('busch-unraid-vm-card-editor',BuschUnraidVmEditor);
 if(!window.customCards.some(c=>c.type==='busch-unraid-vm-card'))window.customCards.push({type:'busch-unraid-vm-card',name:buschTexte(BUSCH_UNRAID_TEXT).vm,description:buschTexte(BUSCH_UNRAID_TEXT).vm_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+
+/* FRITZ Core 2026.9 adapter: registry identities, never display-name heuristics. */
+const BUSCH_FRITZ_ROLES={connection:['binary_sensor','is_connected'],link:['binary_sensor','is_linked'],external_ip:['sensor','external_ip'],external_ipv6:['sensor','external_ipv6'],wan_uptime:['sensor','connection_uptime'],uptime:['sensor','device_uptime'],download:['sensor','kb_s_received'],upload:['sensor','kb_s_sent'],max_download:['sensor','max_kb_s_received'],max_upload:['sensor','max_kb_s_sent'],received:['sensor','gb_received'],sent:['sensor','gb_sent'],cpu_temperature:['sensor','cpu_temperature'],reboot:['button','reboot'],reconnect:['button','reconnect'],update:['update','update']};
+function buschNetworkAvailable(info){return !!info?.stateObject&&!info.registry?.disabled_by&&info.state!=='unavailable'&&!info.attributes?.restored;}
+function buschFritzDevices(core,entry){return [...(core?.devices?.values()||[])].filter(d=>core.getDeviceEntities(d.id).some(e=>e.platform==='fritz'&&!e.registry?.disabled_by&&e.domain!=='device_tracker'&&(!entry||e.config_entry_id===entry)&&(d.identifiers||[]).some(([namespace,id])=>namespace==='fritz'&&e.registry?.unique_id?.startsWith(id+'-'))));}
+function buschFritzModel(core,config){
+ const device=core?.devices?.get(config.device_id);if(!device)return {device:null,roles:{},wlan:[],ambiguous:[],config_entry_id:null};
+ const infos=core.getDeviceEntities(device.id).filter(e=>e.platform==='fritz'&&!e.registry?.disabled_by&&device.config_entries?.includes(e.config_entry_id)),entries=[...new Set(infos.map(e=>e.config_entry_id).filter(Boolean))];
+ if(!entries.length)return {device,roles:Object.fromEntries(Object.keys(BUSCH_FRITZ_ROLES).map(k=>[k,null])),wlan:[],ambiguous:[],config_entry_id:null,name:device.name_by_user||device.name};
+ const entry=config.config_entry_id|| (entries.length===1?entries[0]:null);if(!entry||!entries.includes(entry))throw new Error('instance_ambiguous');
+ const rows=infos.filter(e=>e.config_entry_id===entry),identifiers=(device.identifiers||[]).filter(([n])=>n==='fritz').map(([,id])=>id),roles={cpu:null},ambiguous=[];
+ for(const [role,[domain,key]]of Object.entries(BUSCH_FRITZ_ROLES)){
+  const manual=config.roles?.[role];let matches;
+  if(manual){const selected=rows.find(e=>e.entity_id===manual&&e.domain===domain);if(!selected)throw new Error('role_scope');matches=[selected];}
+  else matches=rows.filter(e=>e.domain===domain&&identifiers.some(id=>e.registry?.unique_id===id+'-'+key));
+  roles[role]=matches.length===1?matches[0]:null;if(matches.length>1)ambiguous.push(role);
+ }
+ const wlan=config.roles?.wlan?config.roles.wlan.map(id=>{const row=rows.find(e=>e.entity_id===id&&e.domain==='switch');if(!row)throw new Error('role_scope');return row;}):rows.filter(e=>e.domain==='switch'&&identifiers.some(id=>e.registry?.unique_id?.startsWith(id+'-wi_fi_')));
+ return {device,roles,wlan,ambiguous,config_entry_id:entry,name:device.name_by_user||device.name||device.id};
+}
+function buschNetworkIPv4(value){if(typeof value!=='string'||! /^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(value))return null;const parts=value.split('.').map(Number);return parts.some(n=>n>255)?null:parts.reduce((n,p)=>n*256+p,0);}
+function buschNetworkCIDR(value){const match=typeof value==='string'&&value.match(/^(.+)\/(0|[1-9]\d?)$/),ip=match?buschNetworkIPv4(match[1]):null,prefix=match?Number(match[2]):33;if(ip===null||prefix>32)throw new Error('invalid_cidr');const size=2**(32-prefix),start=Math.floor(ip/size)*size;return value=>{const n=buschNetworkIPv4(value);return n!==null&&n>=start&&n<start+size;};}
+function buschNetworkTime(value,now=Date.now()){if(typeof value!=='string'||!value.trim())return null;const stamp=Date.parse(value);return Number.isFinite(stamp)&&stamp<=now?now-stamp:null;}
+function buschNetworkMac(value){const compact=typeof value==='string'?value.replace(/[:-]/g,'').toLowerCase():'';return /^[0-9a-f]{12}$/.test(compact)?compact:null;}
+class BuschNetworkClientResolver {
+ constructor(core){this.core=core;}
+ resolve(id,now=Date.now()){
+  const info=this.core.getEntity(id);if(!info||info.domain!=='device_tracker'||!info.stateObject||info.registry?.disabled_by)return null;
+  const a=info.attributes,mac=buschNetworkMac(a.mac),uid=String(info.registry?.unique_id||''),native=info.platform==='fritz'&&uid.endsWith('_tracker')&&buschNetworkMac(uid.slice(0,-8))===mac&&mac!==null;
+  const same=this.core.getDeviceEntities(info.device_id).filter(e=>e.platform==='fritz'&&e.config_entry_id===info.config_entry_id&&!e.registry?.disabled_by),capability=(suffix,domain)=>{const matches=native?same.filter(e=>e.domain===domain&&String(e.registry?.unique_id||'').endsWith(suffix)&&buschNetworkMac(e.registry.unique_id.slice(0,-suffix.length))===mac):[];return matches.length===1?matches[0]:null;};
+  const resolved=(a.resolution_status===undefined||['resolved','known','verified'].includes(a.resolution_status))&&!['stale','expired','unknown'].includes(a.freshness);
+  const device=this.core.devices.get(info.device_id),ap=resolved&&typeof a.connected_via_device_id==='string'&&this.core.devices.has(a.connected_via_device_id)?a.connected_via_device_id:null;
+  const restored=!!a.restored,status=restored?'unknown':['home','not_home','unknown','unavailable'].includes(info.state)?info.state:'unknown';
+  return {entity_id:id,info,device_id:info.device_id,config_entry_id:info.config_entry_id,platform:info.platform,name:info.registry?.name||a.friendly_name||device?.name_by_user||device?.name||id,hostname:a.host_name||'',ip:a.ip||'',mac:a.mac||'',status,network_device:ap,network_name:ap?(this.core.devices.get(ap).name_by_user||this.core.devices.get(ap).name||ap):null,connection_type:a.connection_type||null,ssid:a.ssid||null,unverified_connection:a.connected_to||null,last_changed:buschNetworkTime(info.stateObject.last_changed,now)===null?null:info.stateObject.last_changed,last_time_reachable:buschNetworkTime(a.last_time_reachable,now)===null?null:a.last_time_reachable,internet:capability('_internet_access','switch'),wol:capability('_wake_on_lan','button'),manufacturer:info.manufacturer||'',labels:info.labels||[],media:a};
+ }
+}
+/* Network criteria wrap the declarative Core rule compiler; Smart compatibility stays unchanged. */
+function buschNetworkRule(rule){
+ if(!rule||typeof rule!=='object'||Array.isArray(rule))throw new Error('invalid_rule');const tests=[],times=[];
+ for(const [key,value]of Object.entries(rule)){
+  if(key==='and'||key==='or'){if(!Array.isArray(value)||!value.length)throw new Error('invalid_rule');const nested=value.map(buschNetworkRule);times.push(...nested.flatMap(n=>n.times));tests.push((row,now)=>key==='and'?nested.every(n=>n.test(row,now)):nested.some(n=>n.test(row,now)));}
+  else if(key==='not'){const n=buschNetworkRule(value);times.push(...n.times);tests.push((row,now)=>!n.test(row,now));}
+  else if(key==='cidr'){const test=buschNetworkCIDR(value);tests.push(row=>test(row.ip));}
+  else if(key==='ip_range'){const from=buschNetworkIPv4(value?.from),to=buschNetworkIPv4(value?.to);if(from===null||to===null||from>to)throw new Error('invalid_range');tests.push(row=>{const ip=buschNetworkIPv4(row.ip);return ip!==null&&ip>=from&&ip<=to;});}
+  else if(['last_changed','last_time_reachable'].includes(key)){
+   const m=String(value).match(/^\s*(<=|>=|!=|==|<|>|=)?\s*(\d+(?:\.\d+)?)\s*(m|h|d)?(?:\s+ago)?\s*$/i);if(!m)throw new Error('invalid_time');const duration=Number(m[2])*({m:60000,h:3600000,d:86400000}[(m[3]||'m').toLowerCase()]);times.push({key,duration});tests.push((row,now)=>{const age=buschNetworkTime(row[key],now);return age!==null&&buschCoreMatch(age,(m[1]||'=')+' '+duration);});
+  }else if(['status','ip','hostname','host_name','mac','network_device','connected_via_device_id'].includes(key)){const field=key==='host_name'?'hostname':key==='connected_via_device_id'?'network_device':key;buschSmartMatch('',value);tests.push((row,now)=>row[field]!==null&&buschSmartMatch(row[field],value,now));}
+  else {
+   const alias=key==='manufacturer'?'device_manufacturer':key,adapt=value;
+   if(alias==='attributes'){buschCompileRule({attributes:adapt});for(const pattern of Object.values(adapt))buschSmartMatch('',pattern);tests.push((row,now)=>Object.entries(adapt).every(([path,pattern])=>buschSmartMatch(buschCorePath(row.info.attributes,path.split(' ')[0]),pattern,now)));}
+   else {buschCompileRule({[alias]:adapt});const field=alias==='name'?'name':BUSCH_QUERY_FIELDS[alias];tests.push((row,now)=>alias==='label'?row.info.labels.some(v=>buschSmartMatch(v,adapt,now)):buschSmartMatch(alias==='name'?row.name:row.info[field],adapt,now)||(alias==='integration'&&buschSmartMatch(row.config_entry_id,adapt,now)));}
+  }
+ }
+ return {test:(row,now=Date.now())=>!!row&&tests.every(fn=>fn(row,now)),times};
+}
+function buschNetworkIPVersion(value){
+ if(buschNetworkIPv4(value)!==null)return 0;
+ if(typeof value!=='string'||!value.includes(':')||value.includes(':::'))return 2;
+ let address=value;
+ if(address.includes('.')){const pos=address.lastIndexOf(':'),v4=address.slice(pos+1);if(buschNetworkIPv4(v4)===null)return 2;address=address.slice(0,pos+1)+'0:0';}
+ const split=address.split('::');if(split.length>2)return 2;
+ const parts=split.flatMap(v=>v?v.split(':'):[]);
+ if(parts.some(p=>! /^[0-9a-f]{1,4}$/i.test(p)))return 2;
+ return (split.length===2?parts.length<8:parts.length===8)?1:2;
+}
+function buschNetworkCompare(a,b,sort={}){
+ const method=sort.method||'name',direction=sort.reverse?-1:1,tie=()=>a.entity_id.localeCompare(b.entity_id),empty=v=>v===null||v===undefined||v==='';
+ if(method==='ip'){
+  const version=r=>buschNetworkIPVersion(r.ip),va=version(a),vb=version(b);if(va!==vb)return va-vb;if(va===2)return tie();const n=va===0?buschNetworkIPv4(a.ip)-buschNetworkIPv4(b.ip):a.ip.localeCompare(b.ip);return n*direction||tie();
+ }
+ const field=method==='state'?'status':method==='network_device'?'network_name':method,va=a[field],vb=b[field];if(empty(va)!==empty(vb))return empty(va)?1:-1;
+ const delta=['last_changed','last_time_reachable'].includes(field)?(Date.parse(va)-Date.parse(vb)):String(va??'').localeCompare(String(vb??''),undefined,{numeric:true,sensitivity:'base'});return delta*direction||tie();
+}
+class BuschNetworkQueries {
+ startTemplate(){}
+ stop(){}
+ constructor(core){this.core=core;this.resolver=new BuschNetworkClientResolver(core);}
+ query(config={}){
+  const spec=buschNetworkConfig(config),cacheSpec={config_entry_id:spec.config_entry_id,platform:spec.platform,source_type:spec.source_type,include_unavailable:spec.include_unavailable,filter:spec.filter,sort:spec.sort},key='network:'+buschCoreKey(cacheSpec),engine=this.core.engine;if(engine.cache.has(key))return engine.cache.get(key);
+  const query={key,spec,smart:this,include:(spec.filter.include||[]).map(buschNetworkRule),exclude:(spec.filter.exclude||[]).map(buschNetworkRule),rows:new Map(),result:Object.freeze([]),subscribers:new Set(),nextDeadline:Infinity,deadlines:new Map(),metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}};engine.cache.set(key,query);this.calculate(query);engine.evict();return query;
+ }
+ scope(query,info){return !!info&&info.domain==='device_tracker'&&!!info.stateObject&&!info.registry?.disabled_by&&(!query.spec.config_entry_id||info.config_entry_id===query.spec.config_entry_id)&&(!query.spec.platform||info.platform===query.spec.platform)&&(!query.spec.source_type||info.attributes.source_type===query.spec.source_type)&&(query.spec.include_unavailable||!['unknown','unavailable'].includes(info.state));}
+ changed(query,{id,old,next}){
+  if(this.scope(query,old)||this.scope(query,next))this.calculate(query,[id]);
+  else if([old,next].some(e=>e?.platform==='fritz'&&['switch','button'].includes(e.domain))){const ids=[...(this.core.index.indices.device.get(next?.device_id||old?.device_id)||[])].filter(id=>query.rows.has(id));if(ids.length)this.calculate(query,ids);else this.core.metrics.queriesSkipped++;}
+  else this.core.metrics.queriesSkipped++;
+ }
+ calculate(query,ids){
+  const start=performance.now(),now=Date.now();query.metrics.calculations++;this.core.metrics.queriesRecalculated++;
+  const candidates=ids||[...(this.core.index.indices.domain.get('device_tracker')||[])];if(!ids){query.rows.clear();query.deadlines.clear();}query.metrics.candidates=candidates.length;
+  for(const id of candidates){query.metrics.evaluated++;query.deadlines.delete(id);if(!this.scope(query,this.core.getEntity(id))){query.rows.delete(id);continue;}const row=this.resolver.resolve(id,now),match=(!query.include.length||query.include.some(r=>r.test(row,now)))&&!query.exclude.some(r=>r.test(row,now));if(match)query.rows.set(id,row);else query.rows.delete(id);
+   let deadline=Infinity;for(const t of [...query.include,...query.exclude].flatMap(r=>r.times)){const stamp=Date.parse(t.key==='last_changed'?row?.info.stateObject.last_changed:row?.info.attributes.last_time_reachable);if(Number.isFinite(stamp))for(const at of [stamp,stamp+t.duration,stamp+t.duration+1])if(at>now)deadline=Math.min(deadline,at);}if(Number.isFinite(deadline))query.deadlines.set(id,deadline);
+  }
+  query.nextDeadline=Infinity;for(const at of query.deadlines.values())query.nextDeadline=Math.min(query.nextDeadline,at);
+  const rows=[...query.rows.values()].sort((a,b)=>buschNetworkCompare(a,b,query.spec.sort)),signature=buschCoreKey(rows.map(r=>({id:r.entity_id,state:r.info.stateObject,registry:r.info.registry,name:r.name,manufacturer:r.manufacturer,labels:r.labels,ap:r.network_name,internet:r.internet?.state,wol:r.wol?.state})));
+  if(signature!==query.signature){query.signature=signature;query.result=Object.freeze(rows);this.core.metrics.resultChanges++;for(const fn of query.subscribers){try{fn(query.result);}catch(error){console.warn('Busch Network subscriber failed',error?.name);}}}query.metrics.executionMs=performance.now()-start;
+ }
+}
+/* A minute clock lives in the existing Core engine: one scheduler for all cards. */
+class BuschNetworkClock {
+ constructor(core){this.core=core;}
+ query(){const key='network-clock',engine=this.core.engine;if(engine.cache.has(key))return engine.cache.get(key);const query={key,smart:this,result:Object.freeze([]),subscribers:new Set(),nextDeadline:Infinity,metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}};engine.cache.set(key,query);this.calculate(query);engine.evict();return query;}
+ startTemplate(){}stop(){}
+ changed(){this.core.metrics.queriesSkipped++;}
+ calculate(query){const now=Date.now(),minute=Math.floor(now/60000);query.metrics.calculations++;query.nextDeadline=(minute+1)*60000;if(query.result[0]!==minute){query.result=Object.freeze([minute]);for(const callback of query.subscribers){try{callback(query.result);}catch(error){console.warn('Busch Network clock subscriber failed',error?.name);}}}}
+}
+const BUSCH_NETWORK_DEFAULTS={display_mode:'auto',layout:'detailed',show_header:true,show_status:true,show_details:true,show_clients:true,start_expanded:true,show_controls:true,show_wlan:true,show_reboot:true,show_reconnect:true,show_update:true,show_metrics:true,show_empty:true,include_unavailable:true,source_type:'router',show_ip:true,show_mac:true,show_hostname:true,show_network_device:true,show_last_changed:true,show_last_time_reachable:true,time_fallback:false,show_internet:true,show_wol:true,show_rename:false,show_labels:false,label_ids:[],confirm_reboot:true,confirm_reconnect:true,confirm_internet:true,count:20,columns:1,filter:{include:[],exclude:[]},sort:{method:'name',reverse:false},actions:[],roles:{},debug:false};
+function buschNetworkConfig(config={},kind='network'){
+ const result=BuschUI.validateConfig(config,{normalize:copy=>({...BUSCH_NETWORK_DEFAULTS,...copy,filter:{include:[],exclude:[],...copy.filter},sort:{method:'name',reverse:false,...copy.sort},roles:{...copy.roles}})});if(!result.ok)throw result.error;const value=result.value;
+ if(!['auto','image','icon'].includes(value.display_mode)||!['compact','detailed'].includes(value.layout)||!Number.isInteger(value.count)||value.count<0||![1,2,3].includes(value.columns))throw new Error('invalid_config');
+ if(!Array.isArray(value.filter.include)||!Array.isArray(value.filter.exclude)||Object.keys(value.filter).some(k=>!['include','exclude'].includes(k)))throw new Error('invalid_rule');[...value.filter.include,...value.filter.exclude].forEach(buschNetworkRule);
+ if(!['name','hostname','status','state','ip','mac','manufacturer','last_changed','last_time_reachable','network_device'].includes(value.sort.method))throw new Error('invalid_sort');
+ if(!Array.isArray(value.actions)||!Array.isArray(value.label_ids)||Object.keys(value.roles).some(k=>!Object.hasOwn(BUSCH_FRITZ_ROLES,k)&&k!=='wlan'))throw new Error('invalid_config');
+ if(value.label_ids.some(id=>typeof id!=='string'||!id))throw new Error('invalid_config');
+ for(const action of value.actions){if(action?.variant&&!['primary','secondary','danger','quiet','icon-only','overflow'].includes(action.variant))throw new Error('invalid_action');if(!action||typeof action!=='object'||typeof action.name!=='string'||!action.name.trim())throw new Error('invalid_action');for(const key of ['tap_action','hold_action','double_tap_action'])if(action[key])buschNetworkValidateAction(action[key]);}
+ for(const key of ['tap_action','hold_action','double_tap_action'])if(value[key])buschNetworkValidateAction(value[key]);return value;
+}
+function buschNetworkValidateAction(action){if(!action||typeof action!=='object'||!['none','more-info','toggle','perform-action','call-service','navigate','url','assist'].includes(action.action))throw new Error('invalid_action');if(['perform-action','call-service'].includes(action.action)){const service=action.perform_action||action.service;if(!/^[a-z0-9_]+\.[a-z0-9_]+$/.test(service||''))throw new Error('invalid_action');}if(action.target&&Object.keys(action.target).some(k=>!['entity_id','device_id','area_id','label_id','floor_id'].includes(k)))throw new Error('invalid_action');}
+const TEXTE_BUSCH_NETWORK_CARD={
+ de: {
+ image: "Bild", icon: "Icon", primary: "Primär", secondary: "Sekundär", danger: "Destruktiv", quiet: "Ruhig", "icon-only": "Nur Icon", overflow: "Menü",
+  network: "Netzwerk",
+  fritz: "FRITZ! Gerät",
+  network_description: "Zeigt Netzwerkclients mit belegten Zuordnungen und konfigurierbaren Aktionen.",
+  fritz_description: "Zeigt eine FRITZ!Box oder einen Repeater mit nativen Funktionen und Clients.",
+  home: "Anwesend gemeldet",
+  not_home: "Abwesend gemeldet",
+  connected: "Verbunden",
+  disconnected: "Getrennt",
+  unknown: "Unbekannt",
+  unavailable: "Nicht verfügbar",
+  loading: "Geräteinformationen werden geladen.",
+  empty: "Keine passenden Netzwerkclients.",
+  choose: "Wähle ein FRITZ! Gerät im Editor.",
+  failed: "Aktion fehlgeschlagen. Prüfe Zustand und Berechtigungen.",
+  invalid_config: "Die Konfiguration ist ungültig.",
+  invalid_cidr: "CIDR benötigt eine gültige IPv4-Adresse und ein Präfix von 0 bis 32.",
+  invalid_range: "Der IPv4-Bereich benötigt gültige Grenzen: Anfang muss kleiner oder gleich Ende sein.",
+  invalid_rule: "Die Filterregel ist ungültig oder enthält ein unbekanntes Feld.",
+  invalid_time: "Zeitfilter benötigen einen Vergleich und eine Dauer in m, h oder d.",
+  invalid_sort: "Wähle eine unterstützte Sortierung.",
+  invalid_action: "Die Aktion oder ihr Ziel ist ungültig.",
+  instance_ambiguous: "Wähle eine eindeutige FRITZ! Instanz im Editor.",
+  role_scope: "Die manuelle Entität gehört nicht zur gewählten Gerätefunktion und Instanz.",
+  ambiguous: "Mehrdeutige Funktionen: Wähle deren Entitäten im Editor.",
+  registry_error: "Registrydaten konnten nicht geladen werden. Prüfe die Verbindung zu Home Assistant.",
+  ap_unknown: "Verbindungspunkt unbekannt",
+  legacy: "Die berichtende Instanz belegt keinen physischen Verbindungspunkt. Ohne eindeutige Gerätekennung bleibt er unbekannt.",
+  presence: "Anwesenheit wird von Home Assistant gemeldet und kann eine Karenz enthalten.",
+  clients: "Clients",
+  metrics: "Messwerte",
+  wlan: "WLAN",
+  details: "Details",
+  reboot: "Neu starten",
+  reconnect: "WAN neu verbinden",
+  update: "Aktualisieren",
+  wol: "Aufwecken",
+  internet_on: "Internet erlauben",
+  internet_off: "Internet sperren",
+  rename: "Anzeigename ändern",
+  labels_action: "Labels ändern",
+  apply: "Speichern",
+  cancel: "Abbrechen",
+  confirm: "Aktion bestätigen?",
+  more: "Weitere Clients anzeigen",
+  all: "Alle",
+  auto: "Automatisch",
+  image_mode: "Bild",
+  icon_mode: "Icon",
+  compact: "Kompakt",
+  detailed: "Detailliert",
+  general: "Allgemein",
+  source: "Datenquelle",
+  display: "Anzeige",
+  interaction: "Interaktion",
+  filters: "Filter und Sortierung",
+  advanced: "Erweitert",
+  debug_section: "Diagnose",
+  roles_section: "Manuelle Funktionen",
+  include: "Einschließen",
+  exclude: "Ausschließen",
+  filter_help: "Include-Regeln sind ODER-verknüpft, Felder einer Regel UND. Leeres Include zeigt alle Clients im Scope; Excludes werden danach ausgeschlossen.",
+  add: "Hinzufügen",
+  remove: "Entfernen",
+  field: "Feld",
+  value: "Wert",
+  from: "Anfang",
+  to: "Ende",
+  rule: "Regel",
+  name: "Name",
+  action_name: "Aktionsname",
+  variant: "Darstellung",
+  custom_actions: "Eigene Aktionen",
+  custom_help: "Eigene HA-Aktionen verwenden den aktuellen Client als Standardziel. Native Aktionseditoren speichern Bestätigung und Ziele.",
+  time_unknown: "Zeitpunkt unbekannt",
+  time_fallback_label: "Zustandsänderung (Fallback)",
+  last_changed: "Letzte Zustandsänderung",
+  last_time_reachable: "Zuletzt als erreichbar erkannt",
+  ip: "IP-Adresse",
+  mac: "MAC-Adresse",
+  hostname: "Hostname",
+  network_device: "Verbindungspunkt",
+  internet: "Internetzugang",
+  allowed: "Erlaubt",
+  blocked: "Gesperrt",
+  yes: "Ein",
+  no: "Aus",
+  firmware: "Firmware",
+  uptime: "Gerätelaufzeit",
+  wan_uptime: "WAN-Verbindungsdauer",
+  external_ip: "Externe IPv4",
+  external_ipv6: "Externe IPv6",
+  download: "Download",
+  upload: "Upload",
+  max_download: "Maximaler Download",
+  max_upload: "Maximaler Upload",
+  received: "Empfangen",
+  sent: "Gesendet",
+  cpu_temperature: "CPU-Temperatur",
+  connection: "WAN-Verbindung",
+  link: "WAN-Link",
+  days: "Tage",
+  hours: "Stunden",
+  minutes: "Minuten",
+  boolean: "Wahrheitswert",
+  number: "Zahl",
+  string: "Text",
+  object: "Objekt",
+  array: "Liste",
+  null: "Leerwert",
+  kind: "Werttyp",
+  property: "Eigenschaft",
+  item: "Eintrag",
+  is: "Ist",
+  operator: "Vergleich",
+  scope_error: "Der Client ist nicht mehr im aktuellen Kartenbereich.",
+  name_invalid: "Gib einen Anzeigenamen mit 1 bis 200 Zeichen ein.",
+  label_invalid: "Wähle vorhandene Labels.",
+  registry_readonly: "Anzeigenamen und Labels benötigen Administratorrechte.",
+  labels: {
+   title: "Titel",
+   device_id: "FRITZ! Gerät",
+   config_entry_id: "Berichtende Instanz",
+   platform: "Integration",
+   source_type: "Trackerquelle",
+   image: "Eigenes Bild",
+   icon: "Eigenes Icon",
+   display_mode: "Darstellung",
+   layout: "Layout",
+   count: "Anfangs sichtbare Clients",
+   columns: "Spalten",
+   time_fallback: "Zeitfallback",
+   label_ids: "Angebotene Labels",
+   method: "Sortieren nach",
+   reverse: "Umgekehrte Reihenfolge",
+   name: "Aktionsname",
+   variant: "Aktionsdarstellung",
+   rename_value: "Anzeigename",
+   labels_value: "Labels",
+   show_header: "Kopfzeile anzeigen",
+   show_status: "Status anzeigen",
+   show_details: "Details anzeigen",
+   show_clients: "Clients anzeigen",
+   start_expanded: "Clients aufgeklappt",
+   show_controls: "Aktionen anzeigen",
+   show_wlan: "WLAN-Steuerung",
+   show_reboot: "Neustart anbieten",
+   show_reconnect: "WAN-Verbindung erneuern",
+   show_update: "Update anbieten",
+   show_metrics: "Messwerte anzeigen",
+   show_empty: "Leerzustand anzeigen",
+   include_unavailable: "Unbekannte Clients einschließen",
+   show_ip: "IP anzeigen",
+   show_mac: "MAC anzeigen",
+   show_hostname: "Hostname anzeigen",
+   show_network_device: "Verbindungspunkt anzeigen",
+   show_last_changed: "Zustandsänderung anzeigen",
+   show_last_time_reachable: "Erreichbar-Datum anzeigen",
+   show_internet: "Internetzugang steuern",
+   show_wol: "Aufwecken anbieten",
+   show_rename: "Anzeigenamen ändern",
+   show_labels: "Labels ändern",
+   confirm_reboot: "Neustart bestätigen",
+   confirm_reconnect: "WAN-Aktion bestätigen",
+   confirm_internet: "Internetzugang bestätigen",
+   debug: "Diagnose anzeigen",
+   tap_action: "Antippen",
+   hold_action: "Halten",
+   double_tap_action: "Doppelt antippen",
+   role_connection: "WAN-Verbindung",
+   role_link: "WAN-Link",
+   role_external_ip: "Externe IPv4",
+   role_external_ipv6: "Externe IPv6",
+   role_wan_uptime: "WAN-Verbindungsdauer",
+   role_uptime: "Gerätelaufzeit",
+   role_download: "Download",
+   role_upload: "Upload",
+   role_max_download: "Maximaler Download",
+   role_max_upload: "Maximaler Upload",
+   role_received: "Empfangen",
+   role_sent: "Gesendet",
+   role_cpu_temperature: "CPU-Temperatur",
+   role_reboot: "Neu starten",
+   role_reconnect: "WAN neu verbinden",
+   role_update: "Aktualisieren",
+   role_wlan: "WLAN",
+   filter: "Filter",
+   sort: "Sortierung",
+   actions: "Eigene Aktionen",
+   roles: "Manuelle Funktionen"
+  },
+  helpers: {
+   title: "Leer verwendet den Gerätenamen oder Netzwerk.",
+   device_id: "Wählt ein natives FRITZ! Gerät. Vorgabe: erstes eindeutiges Gerät nur im Kartenvorschlag.",
+   config_entry_id: "Filtert die meldende Integration, nicht den physischen Verbindungspunkt. Leer: automatisch oder alle.",
+   platform: "Filtert die Registryintegration. Leer zeigt alle Routertracker.",
+   source_type: "Filtert source_type. Vorgabe router; leer erlaubt alle Quellen.",
+   image: "Optionales Bild. Automatisch bevorzugt vorhandene Bilder. Vorgabe leer.",
+   icon: "Optionales MDI-Icon. Vorgabe: Router oder Netzwerk.",
+   display_mode: "Automatisch nutzt vorhandenes Bild, eigenes Bild, Icon. Vorgabe automatisch.",
+   layout: "Kompakt reduziert sekundäre Angaben. Vorgabe detailliert.",
+   count: "Begrenzt die anfängliche Liste. 0 zeigt alle. Vorgabe 20.",
+   columns: "Zeigt 1 bis 3 Spalten bei ausreichender Breite. Mobil eine. Vorgabe 1.",
+   time_fallback: "Fehlendes Erreichbar-Datum darf explizit als Zustandsänderung erscheinen. Vorgabe aus.",
+   label_ids: "Vorhandene HA-Labels für die Clientaktion. Vorgabe keine; nur Administratoren.",
+   method: "Sortiert Clients. IPv4 wird numerisch, IPv6 getrennt, fehlende Werte zuletzt sortiert. Vorgabe Name.",
+   reverse: "Kehrt Werte um; fehlende IPs bleiben zuletzt. Vorgabe aus.",
+   name: "Sichtbarer Name der eigenen Aktion. Vorgabe leer.",
+   variant: "Sekundär, ruhig oder destruktiv. Vorgabe sekundär.",
+   rename_value: "Ändert nur den Anzeigenamen, keine Entity-ID. Vorgabe aktueller Name.",
+   labels_value: "Ersetzt die Entitylabels durch vorhandene HA-Labels. Vorgabe aktuelle Labels.",
+   show_header: "Kopfzeile anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_status: "Status anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_details: "Details anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_clients: "Clients anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   start_expanded: "Clients aufgeklappt bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_controls: "Aktionen anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_wlan: "WLAN-Steuerung bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_reboot: "Neustart anbieten bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_reconnect: "WAN-Verbindung erneuern bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_update: "Update anbieten bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_metrics: "Messwerte anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_empty: "Leerzustand anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   include_unavailable: "Unbekannte Clients einschließen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_ip: "IP anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_mac: "MAC anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_hostname: "Hostname anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_network_device: "Verbindungspunkt anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_last_changed: "Zustandsänderung anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_last_time_reachable: "Erreichbar-Datum anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_internet: "Internetzugang steuern bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_wol: "Aufwecken anbieten bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_rename: "Anzeigenamen ändern bei verfügbaren und belegten Daten. Vorgabe aus.",
+   show_labels: "Labels ändern bei verfügbaren und belegten Daten. Vorgabe aus.",
+   confirm_reboot: "Neustart bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   confirm_reconnect: "WAN-Aktion bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   confirm_internet: "Internetzugang bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   debug: "Diagnose anzeigen bei verfügbaren und belegten Daten. Vorgabe aus.",
+   tap_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
+   hold_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
+   double_tap_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
+   role_connection: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_link: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_external_ip: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_external_ipv6: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_wan_uptime: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_uptime: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_download: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_upload: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_max_download: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_max_upload: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_received: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_sent: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_cpu_temperature: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_reboot: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_reconnect: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_update: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_wlan: "Manuelle WLAN-Switches desselben Geräts und Eintrags. Leer verwendet belegte WLAN-IDs.",
+   filter: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch.",
+   sort: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch.",
+   actions: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch.",
+   roles: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch."
+  },
+  rules: {
+   domain: "Domain",
+   state: "Status anzeigen",
+   entity_id: "Entity-ID",
+   name: "Name",
+   group: "Gruppe",
+   area: "Bereich",
+   floor: "Etage",
+   level: "Stockwerk",
+   device: "Gerät",
+   label: "Label",
+   device_manufacturer: "Hersteller",
+   device_model: "Modell",
+   integration: "Integration",
+   hidden_by: "Verborgen durch",
+   attributes: "Attribute",
+   last_changed: "Letzte Zustandsänderung",
+   last_updated: "Letzte Aktualisierung",
+   last_triggered: "Letzte Auslösung",
+   entity_category: "Entity-Kategorie",
+   not: "NICHT",
+   or: "ODER",
+   and: "UND",
+   options: "Zeilenoptionen",
+   type: "Zeilentyp",
+   sort: "Lokale Sortierung",
+   status: "Status anzeigen",
+   ip: "IP-Adresse",
+   ip_range: "IPv4-Bereich",
+   cidr: "IPv4 CIDR",
+   hostname: "Hostname",
+   mac: "MAC-Adresse",
+   network_device: "Verbindungspunkt",
+   config_entry: "Berichtende Instanz",
+   manufacturer: "Hersteller",
+   last_time_reachable: "Zuletzt als erreichbar erkannt"
+  }
+ },
+ en: {
+ image: "Image", icon: "Icon", primary: "Primary", secondary: "Secondary", danger: "Destructive", quiet: "Quiet", "icon-only": "Icon only", overflow: "Menu",
+  network: "Network",
+  fritz: "FRITZ! device",
+  network_description: "Displays network clients with verified mappings and configurable actions.",
+  fritz_description: "Displays a FRITZ!Box or repeater with native capabilities and clients.",
+  home: "Reported present",
+  not_home: "Reported absent",
+  connected: "Connected",
+  disconnected: "Disconnected",
+  unknown: "Unknown",
+  unavailable: "Unavailable",
+  loading: "Loading device information.",
+  empty: "No matching network clients.",
+  choose: "Select a FRITZ! device in the editor.",
+  failed: "Action failed. Check state and permissions.",
+  invalid_config: "The configuration is invalid.",
+  invalid_cidr: "CIDR requires a valid IPv4 address and a prefix from 0 to 32.",
+  invalid_range: "The IPv4 range needs valid boundaries: start must be less than or equal to end.",
+  invalid_rule: "The filter rule is invalid or contains an unsupported field.",
+  invalid_time: "Time filters require a comparison and duration in m, h or d.",
+  invalid_sort: "Select a supported sorting method.",
+  invalid_action: "The action or its target is invalid.",
+  instance_ambiguous: "Select an unambiguous FRITZ! instance in the editor.",
+  role_scope: "The manual entity does not belong to the selected device capability and instance.",
+  ambiguous: "Ambiguous capabilities: select their entities in the editor.",
+  registry_error: "Registry data could not be loaded. Check the Home Assistant connection.",
+  ap_unknown: "Connection point unknown",
+  legacy: "The reporting instance does not prove a physical connection point. It remains unknown without an unambiguous device identifier.",
+  presence: "Presence is reported by Home Assistant and can include a grace period.",
+  clients: "Clients",
+  metrics: "Metrics",
+  wlan: "Wi-Fi",
+  details: "Details",
+  reboot: "Restart",
+  reconnect: "Reconnect WAN",
+  update: "Update",
+  wol: "Wake up",
+  internet_on: "Allow internet",
+  internet_off: "Block internet",
+  rename: "Change display name",
+  labels_action: "Change labels",
+  apply: "Save",
+  cancel: "Cancel",
+  confirm: "Confirm action?",
+  more: "Show more clients",
+  all: "All",
+  auto: "Automatic",
+  image_mode: "Image",
+  icon_mode: "Icon",
+  compact: "Compact",
+  detailed: "Detailed",
+  general: "General",
+  source: "Data source",
+  display: "Display",
+  interaction: "Interaction",
+  filters: "Filters and sorting",
+  advanced: "Advanced",
+  debug_section: "Diagnostics",
+  roles_section: "Manual capabilities",
+  include: "Include",
+  exclude: "Exclude",
+  filter_help: "Include rules are OR-linked, fields within a rule AND-linked. An empty include shows all scoped clients; excludes apply afterwards.",
+  add: "Add",
+  remove: "Remove",
+  field: "Field",
+  value: "Value",
+  from: "Start",
+  to: "End",
+  rule: "Rule",
+  name: "Name",
+  action_name: "Action name",
+  variant: "Presentation",
+  custom_actions: "Custom actions",
+  custom_help: "Custom HA actions use the current client as their default target. Native action editors persist confirmation and targets.",
+  time_unknown: "Time unknown",
+  time_fallback_label: "State change (fallback)",
+  last_changed: "Last state change",
+  last_time_reachable: "Last observed reachable",
+  ip: "IP address",
+  mac: "MAC address",
+  hostname: "Hostname",
+  network_device: "Connection point",
+  internet: "Internet access",
+  allowed: "Allowed",
+  blocked: "Blocked",
+  yes: "On",
+  no: "Off",
+  firmware: "Firmware",
+  uptime: "Device uptime",
+  wan_uptime: "WAN connection duration",
+  external_ip: "External IPv4",
+  external_ipv6: "External IPv6",
+  download: "Download",
+  upload: "Upload",
+  max_download: "Maximum download",
+  max_upload: "Maximum upload",
+  received: "Received",
+  sent: "Sent",
+  cpu_temperature: "CPU temperature",
+  connection: "WAN connection",
+  link: "WAN link",
+  days: "days",
+  hours: "hours",
+  minutes: "minutes",
+  boolean: "Boolean",
+  number: "Number",
+  string: "Text",
+  object: "Object",
+  array: "Array",
+  null: "Null",
+  kind: "Value type",
+  property: "Property",
+  item: "Item",
+  is: "Is",
+  operator: "Comparison",
+  scope_error: "The client is no longer in the current card scope.",
+  name_invalid: "Enter a display name with 1 to 200 characters.",
+  label_invalid: "Select existing labels.",
+  registry_readonly: "Display names and labels require administrator permission.",
+  labels: {
+   title: "Title",
+   device_id: "FRITZ! device",
+   config_entry_id: "Reporting instance",
+   platform: "Integration",
+   source_type: "Tracker source",
+   image: "Custom image",
+   icon: "Custom icon",
+   display_mode: "Media mode",
+   layout: "Layout",
+   count: "Initially visible clients",
+   columns: "Columns",
+   time_fallback: "Time fallback",
+   label_ids: "Offered labels",
+   method: "Sort by",
+   reverse: "Reverse order",
+   name: "Action name",
+   variant: "Action presentation",
+   rename_value: "Display name",
+   labels_value: "Labels",
+   show_header: "Show header",
+   show_status: "Show status",
+   show_details: "Show details",
+   show_clients: "Show clients",
+   start_expanded: "Clients expanded",
+   show_controls: "Show actions",
+   show_wlan: "Wi-Fi controls",
+   show_reboot: "Offer restart",
+   show_reconnect: "Offer WAN reconnect",
+   show_update: "Offer update",
+   show_metrics: "Show metrics",
+   show_empty: "Show empty state",
+   include_unavailable: "Include unknown clients",
+   show_ip: "Show IP",
+   show_mac: "Show MAC",
+   show_hostname: "Show hostname",
+   show_network_device: "Show connection point",
+   show_last_changed: "Show state change",
+   show_last_time_reachable: "Show reachable time",
+   show_internet: "Control internet access",
+   show_wol: "Offer wake up",
+   show_rename: "Edit display names",
+   show_labels: "Edit labels",
+   confirm_reboot: "Confirm restart",
+   confirm_reconnect: "Confirm WAN action",
+   confirm_internet: "Confirm internet access",
+   debug: "Show diagnostics",
+   tap_action: "Tap action",
+   hold_action: "Hold action",
+   double_tap_action: "Double tap action",
+   role_connection: "WAN connection",
+   role_link: "WAN link",
+   role_external_ip: "External IPv4",
+   role_external_ipv6: "External IPv6",
+   role_wan_uptime: "WAN connection duration",
+   role_uptime: "Device uptime",
+   role_download: "Download",
+   role_upload: "Upload",
+   role_max_download: "Maximum download",
+   role_max_upload: "Maximum upload",
+   role_received: "Received",
+   role_sent: "Sent",
+   role_cpu_temperature: "CPU temperature",
+   role_reboot: "Restart",
+   role_reconnect: "Reconnect WAN",
+   role_update: "Update",
+   role_wlan: "Wi-Fi",
+   filter: "Filter",
+   sort: "Sorting",
+   actions: "Custom actions",
+   roles: "Manual capabilities"
+  },
+  helpers: {
+   title: "Empty uses the device name or Network.",
+   device_id: "Selects a native FRITZ! device. Default: first unambiguous device only in the card stub.",
+   config_entry_id: "Filters the reporting integration, not the physical connection point. Empty: automatic or all.",
+   platform: "Filters the registry integration. Empty shows all router trackers.",
+   source_type: "Filters source_type. Default router; empty allows all sources.",
+   image: "Optional image. Automatic prefers existing images. Default empty.",
+   icon: "Optional MDI icon. Default: router or network.",
+   display_mode: "Automatic uses available image, custom image, icon. Default automatic.",
+   layout: "Compact reduces secondary information. Default detailed.",
+   count: "Limits the initial list. 0 shows all. Default 20.",
+   columns: "Shows 1 to 3 columns when space permits. One on mobile. Default 1.",
+   time_fallback: "Missing reachable time may appear explicitly as state change. Default off.",
+   label_ids: "Existing HA labels for client actions. Default none; administrators only.",
+   method: "Sorts clients. IPv4 is numeric, IPv6 separate, missing values last. Default name.",
+   reverse: "Reverses values; missing IPs stay last. Default off.",
+   name: "Visible name of the custom action. Default empty.",
+   variant: "Secondary, quiet or destructive. Default secondary.",
+   rename_value: "Changes the display name only, not entity ID. Default current name.",
+   labels_value: "Replaces entity labels with existing HA labels. Default current labels.",
+   show_header: "Show header when verified data and capabilities are available. Default on.",
+   show_status: "Show status when verified data and capabilities are available. Default on.",
+   show_details: "Show details when verified data and capabilities are available. Default on.",
+   show_clients: "Show clients when verified data and capabilities are available. Default on.",
+   start_expanded: "Clients expanded when verified data and capabilities are available. Default on.",
+   show_controls: "Show actions when verified data and capabilities are available. Default on.",
+   show_wlan: "Wi-Fi controls when verified data and capabilities are available. Default on.",
+   show_reboot: "Offer restart when verified data and capabilities are available. Default on.",
+   show_reconnect: "Offer WAN reconnect when verified data and capabilities are available. Default on.",
+   show_update: "Offer update when verified data and capabilities are available. Default on.",
+   show_metrics: "Show metrics when verified data and capabilities are available. Default on.",
+   show_empty: "Show empty state when verified data and capabilities are available. Default on.",
+   include_unavailable: "Include unknown clients when verified data and capabilities are available. Default on.",
+   show_ip: "Show IP when verified data and capabilities are available. Default on.",
+   show_mac: "Show MAC when verified data and capabilities are available. Default on.",
+   show_hostname: "Show hostname when verified data and capabilities are available. Default on.",
+   show_network_device: "Show connection point when verified data and capabilities are available. Default on.",
+   show_last_changed: "Show state change when verified data and capabilities are available. Default on.",
+   show_last_time_reachable: "Show reachable time when verified data and capabilities are available. Default on.",
+   show_internet: "Control internet access when verified data and capabilities are available. Default on.",
+   show_wol: "Offer wake up when verified data and capabilities are available. Default on.",
+   show_rename: "Edit display names when verified data and capabilities are available. Default off.",
+   show_labels: "Edit labels when verified data and capabilities are available. Default off.",
+   confirm_reboot: "Confirm restart when verified data and capabilities are available. Default on.",
+   confirm_reconnect: "Confirm WAN action when verified data and capabilities are available. Default on.",
+   confirm_internet: "Confirm internet access when verified data and capabilities are available. Default on.",
+   debug: "Show diagnostics when verified data and capabilities are available. Default off.",
+   tap_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
+   hold_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
+   double_tap_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
+   role_connection: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_link: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_external_ip: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_external_ipv6: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_wan_uptime: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_uptime: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_download: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_upload: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_max_download: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_max_upload: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_received: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_sent: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_cpu_temperature: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_reboot: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_reconnect: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_update: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_wlan: "Manual Wi-Fi switches from the same device and entry. Empty uses verified Wi-Fi IDs.",
+   filter: "Configured in the structured editor. Default empty or automatic.",
+   sort: "Configured in the structured editor. Default empty or automatic.",
+   actions: "Configured in the structured editor. Default empty or automatic.",
+   roles: "Configured in the structured editor. Default empty or automatic."
+  },
+  rules: {
+   domain: "Domain",
+   state: "Show status",
+   entity_id: "Entity ID",
+   name: "Name",
+   group: "Group",
+   area: "Area",
+   floor: "Floor",
+   level: "Level",
+   device: "Device",
+   label: "Label",
+   device_manufacturer: "Manufacturer",
+   device_model: "Model",
+   integration: "Integration",
+   hidden_by: "Hidden by",
+   attributes: "Attributes",
+   last_changed: "Last state change",
+   last_updated: "Last updated",
+   last_triggered: "Last triggered",
+   entity_category: "Entity category",
+   not: "NOT",
+   or: "OR",
+   and: "AND",
+   options: "Row options",
+   type: "Row type",
+   sort: "Local sorting",
+   status: "Show status",
+   ip: "IP address",
+   ip_range: "IPv4 range",
+   cidr: "IPv4 CIDR",
+   hostname: "Hostname",
+   mac: "MAC address",
+   network_device: "Connection point",
+   config_entry: "Reporting instance",
+   manufacturer: "Manufacturer",
+   last_time_reachable: "Last observed reachable"
+  }
+ }
+};
+const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
+ de: {
+ image: "Bild", icon: "Icon", primary: "Primär", secondary: "Sekundär", danger: "Destruktiv", quiet: "Ruhig", "icon-only": "Nur Icon", overflow: "Menü",
+  network: "Netzwerk",
+  fritz: "FRITZ! Gerät",
+  network_description: "Zeigt Netzwerkclients mit belegten Zuordnungen und konfigurierbaren Aktionen.",
+  fritz_description: "Zeigt eine FRITZ!Box oder einen Repeater mit nativen Funktionen und Clients.",
+  home: "Anwesend gemeldet",
+  not_home: "Abwesend gemeldet",
+  connected: "Verbunden",
+  disconnected: "Getrennt",
+  unknown: "Unbekannt",
+  unavailable: "Nicht verfügbar",
+  loading: "Geräteinformationen werden geladen.",
+  empty: "Keine passenden Netzwerkclients.",
+  choose: "Wähle ein FRITZ! Gerät im Editor.",
+  failed: "Aktion fehlgeschlagen. Prüfe Zustand und Berechtigungen.",
+  invalid_config: "Die Konfiguration ist ungültig.",
+  invalid_cidr: "CIDR benötigt eine gültige IPv4-Adresse und ein Präfix von 0 bis 32.",
+  invalid_range: "Der IPv4-Bereich benötigt gültige Grenzen: Anfang muss kleiner oder gleich Ende sein.",
+  invalid_rule: "Die Filterregel ist ungültig oder enthält ein unbekanntes Feld.",
+  invalid_time: "Zeitfilter benötigen einen Vergleich und eine Dauer in m, h oder d.",
+  invalid_sort: "Wähle eine unterstützte Sortierung.",
+  invalid_action: "Die Aktion oder ihr Ziel ist ungültig.",
+  instance_ambiguous: "Wähle eine eindeutige FRITZ! Instanz im Editor.",
+  role_scope: "Die manuelle Entität gehört nicht zur gewählten Gerätefunktion und Instanz.",
+  ambiguous: "Mehrdeutige Funktionen: Wähle deren Entitäten im Editor.",
+  registry_error: "Registrydaten konnten nicht geladen werden. Prüfe die Verbindung zu Home Assistant.",
+  ap_unknown: "Verbindungspunkt unbekannt",
+  legacy: "Die berichtende Instanz belegt keinen physischen Verbindungspunkt. Ohne eindeutige Gerätekennung bleibt er unbekannt.",
+  presence: "Anwesenheit wird von Home Assistant gemeldet und kann eine Karenz enthalten.",
+  clients: "Clients",
+  metrics: "Messwerte",
+  wlan: "WLAN",
+  details: "Details",
+  reboot: "Neu starten",
+  reconnect: "WAN neu verbinden",
+  update: "Aktualisieren",
+  wol: "Aufwecken",
+  internet_on: "Internet erlauben",
+  internet_off: "Internet sperren",
+  rename: "Anzeigename ändern",
+  labels_action: "Labels ändern",
+  apply: "Speichern",
+  cancel: "Abbrechen",
+  confirm: "Aktion bestätigen?",
+  more: "Weitere Clients anzeigen",
+  all: "Alle",
+  auto: "Automatisch",
+  image_mode: "Bild",
+  icon_mode: "Icon",
+  compact: "Kompakt",
+  detailed: "Detailliert",
+  general: "Allgemein",
+  source: "Datenquelle",
+  display: "Anzeige",
+  interaction: "Interaktion",
+  filters: "Filter und Sortierung",
+  advanced: "Erweitert",
+  debug_section: "Diagnose",
+  roles_section: "Manuelle Funktionen",
+  include: "Einschließen",
+  exclude: "Ausschließen",
+  filter_help: "Include-Regeln sind ODER-verknüpft, Felder einer Regel UND. Leeres Include zeigt alle Clients im Scope; Excludes werden danach ausgeschlossen.",
+  add: "Hinzufügen",
+  remove: "Entfernen",
+  field: "Feld",
+  value: "Wert",
+  from: "Anfang",
+  to: "Ende",
+  rule: "Regel",
+  name: "Name",
+  action_name: "Aktionsname",
+  variant: "Darstellung",
+  custom_actions: "Eigene Aktionen",
+  custom_help: "Eigene HA-Aktionen verwenden den aktuellen Client als Standardziel. Native Aktionseditoren speichern Bestätigung und Ziele.",
+  time_unknown: "Zeitpunkt unbekannt",
+  time_fallback_label: "Zustandsänderung (Fallback)",
+  last_changed: "Letzte Zustandsänderung",
+  last_time_reachable: "Zuletzt als erreichbar erkannt",
+  ip: "IP-Adresse",
+  mac: "MAC-Adresse",
+  hostname: "Hostname",
+  network_device: "Verbindungspunkt",
+  internet: "Internetzugang",
+  allowed: "Erlaubt",
+  blocked: "Gesperrt",
+  yes: "Ein",
+  no: "Aus",
+  firmware: "Firmware",
+  uptime: "Gerätelaufzeit",
+  wan_uptime: "WAN-Verbindungsdauer",
+  external_ip: "Externe IPv4",
+  external_ipv6: "Externe IPv6",
+  download: "Download",
+  upload: "Upload",
+  max_download: "Maximaler Download",
+  max_upload: "Maximaler Upload",
+  received: "Empfangen",
+  sent: "Gesendet",
+  cpu_temperature: "CPU-Temperatur",
+  connection: "WAN-Verbindung",
+  link: "WAN-Link",
+  days: "Tage",
+  hours: "Stunden",
+  minutes: "Minuten",
+  boolean: "Wahrheitswert",
+  number: "Zahl",
+  string: "Text",
+  object: "Objekt",
+  array: "Liste",
+  null: "Leerwert",
+  kind: "Werttyp",
+  property: "Eigenschaft",
+  item: "Eintrag",
+  is: "Ist",
+  operator: "Vergleich",
+  scope_error: "Der Client ist nicht mehr im aktuellen Kartenbereich.",
+  name_invalid: "Gib einen Anzeigenamen mit 1 bis 200 Zeichen ein.",
+  label_invalid: "Wähle vorhandene Labels.",
+  registry_readonly: "Anzeigenamen und Labels benötigen Administratorrechte.",
+  labels: {
+   title: "Titel",
+   device_id: "FRITZ! Gerät",
+   config_entry_id: "Berichtende Instanz",
+   platform: "Integration",
+   source_type: "Trackerquelle",
+   image: "Eigenes Bild",
+   icon: "Eigenes Icon",
+   display_mode: "Darstellung",
+   layout: "Layout",
+   count: "Anfangs sichtbare Clients",
+   columns: "Spalten",
+   time_fallback: "Zeitfallback",
+   label_ids: "Angebotene Labels",
+   method: "Sortieren nach",
+   reverse: "Umgekehrte Reihenfolge",
+   name: "Aktionsname",
+   variant: "Aktionsdarstellung",
+   rename_value: "Anzeigename",
+   labels_value: "Labels",
+   show_header: "Kopfzeile anzeigen",
+   show_status: "Status anzeigen",
+   show_details: "Details anzeigen",
+   show_clients: "Clients anzeigen",
+   start_expanded: "Clients aufgeklappt",
+   show_controls: "Aktionen anzeigen",
+   show_wlan: "WLAN-Steuerung",
+   show_reboot: "Neustart anbieten",
+   show_reconnect: "WAN-Verbindung erneuern",
+   show_update: "Update anbieten",
+   show_metrics: "Messwerte anzeigen",
+   show_empty: "Leerzustand anzeigen",
+   include_unavailable: "Unbekannte Clients einschließen",
+   show_ip: "IP anzeigen",
+   show_mac: "MAC anzeigen",
+   show_hostname: "Hostname anzeigen",
+   show_network_device: "Verbindungspunkt anzeigen",
+   show_last_changed: "Zustandsänderung anzeigen",
+   show_last_time_reachable: "Erreichbar-Datum anzeigen",
+   show_internet: "Internetzugang steuern",
+   show_wol: "Aufwecken anbieten",
+   show_rename: "Anzeigenamen ändern",
+   show_labels: "Labels ändern",
+   confirm_reboot: "Neustart bestätigen",
+   confirm_reconnect: "WAN-Aktion bestätigen",
+   confirm_internet: "Internetzugang bestätigen",
+   debug: "Diagnose anzeigen",
+   tap_action: "Antippen",
+   hold_action: "Halten",
+   double_tap_action: "Doppelt antippen",
+   role_connection: "WAN-Verbindung",
+   role_link: "WAN-Link",
+   role_external_ip: "Externe IPv4",
+   role_external_ipv6: "Externe IPv6",
+   role_wan_uptime: "WAN-Verbindungsdauer",
+   role_uptime: "Gerätelaufzeit",
+   role_download: "Download",
+   role_upload: "Upload",
+   role_max_download: "Maximaler Download",
+   role_max_upload: "Maximaler Upload",
+   role_received: "Empfangen",
+   role_sent: "Gesendet",
+   role_cpu_temperature: "CPU-Temperatur",
+   role_reboot: "Neu starten",
+   role_reconnect: "WAN neu verbinden",
+   role_update: "Aktualisieren",
+   role_wlan: "WLAN",
+   filter: "Filter",
+   sort: "Sortierung",
+   actions: "Eigene Aktionen",
+   roles: "Manuelle Funktionen"
+  },
+  helpers: {
+   title: "Leer verwendet den Gerätenamen oder Netzwerk.",
+   device_id: "Wählt ein natives FRITZ! Gerät. Vorgabe: erstes eindeutiges Gerät nur im Kartenvorschlag.",
+   config_entry_id: "Filtert die meldende Integration, nicht den physischen Verbindungspunkt. Leer: automatisch oder alle.",
+   platform: "Filtert die Registryintegration. Leer zeigt alle Routertracker.",
+   source_type: "Filtert source_type. Vorgabe router; leer erlaubt alle Quellen.",
+   image: "Optionales Bild. Automatisch bevorzugt vorhandene Bilder. Vorgabe leer.",
+   icon: "Optionales MDI-Icon. Vorgabe: Router oder Netzwerk.",
+   display_mode: "Automatisch nutzt vorhandenes Bild, eigenes Bild, Icon. Vorgabe automatisch.",
+   layout: "Kompakt reduziert sekundäre Angaben. Vorgabe detailliert.",
+   count: "Begrenzt die anfängliche Liste. 0 zeigt alle. Vorgabe 20.",
+   columns: "Zeigt 1 bis 3 Spalten bei ausreichender Breite. Mobil eine. Vorgabe 1.",
+   time_fallback: "Fehlendes Erreichbar-Datum darf explizit als Zustandsänderung erscheinen. Vorgabe aus.",
+   label_ids: "Vorhandene HA-Labels für die Clientaktion. Vorgabe keine; nur Administratoren.",
+   method: "Sortiert Clients. IPv4 wird numerisch, IPv6 getrennt, fehlende Werte zuletzt sortiert. Vorgabe Name.",
+   reverse: "Kehrt Werte um; fehlende IPs bleiben zuletzt. Vorgabe aus.",
+   name: "Sichtbarer Name der eigenen Aktion. Vorgabe leer.",
+   variant: "Sekundär, ruhig oder destruktiv. Vorgabe sekundär.",
+   rename_value: "Ändert nur den Anzeigenamen, keine Entity-ID. Vorgabe aktueller Name.",
+   labels_value: "Ersetzt die Entitylabels durch vorhandene HA-Labels. Vorgabe aktuelle Labels.",
+   show_header: "Kopfzeile anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_status: "Status anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_details: "Details anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_clients: "Clients anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   start_expanded: "Clients aufgeklappt bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_controls: "Aktionen anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_wlan: "WLAN-Steuerung bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_reboot: "Neustart anbieten bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_reconnect: "WAN-Verbindung erneuern bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_update: "Update anbieten bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_metrics: "Messwerte anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_empty: "Leerzustand anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   include_unavailable: "Unbekannte Clients einschließen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_ip: "IP anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_mac: "MAC anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_hostname: "Hostname anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_network_device: "Verbindungspunkt anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_last_changed: "Zustandsänderung anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_last_time_reachable: "Erreichbar-Datum anzeigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_internet: "Internetzugang steuern bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_wol: "Aufwecken anbieten bei verfügbaren und belegten Daten. Vorgabe ein.",
+   show_rename: "Anzeigenamen ändern bei verfügbaren und belegten Daten. Vorgabe aus.",
+   show_labels: "Labels ändern bei verfügbaren und belegten Daten. Vorgabe aus.",
+   confirm_reboot: "Neustart bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   confirm_reconnect: "WAN-Aktion bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   confirm_internet: "Internetzugang bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   debug: "Diagnose anzeigen bei verfügbaren und belegten Daten. Vorgabe aus.",
+   tap_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
+   hold_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
+   double_tap_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
+   role_connection: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_link: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_external_ip: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_external_ipv6: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_wan_uptime: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_uptime: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_download: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_upload: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_max_download: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_max_upload: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_received: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_sent: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_cpu_temperature: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_reboot: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_reconnect: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_update: "Manuelle Entität desselben Geräts und derselben Instanz. Leer verwendet eine eindeutige belegte Rolle.",
+   role_wlan: "Manuelle WLAN-Switches desselben Geräts und Eintrags. Leer verwendet belegte WLAN-IDs.",
+   filter: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch.",
+   sort: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch.",
+   actions: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch.",
+   roles: "Im strukturierten Editor einrichtbar. Vorgabe leer oder automatisch."
+  },
+  rules: {
+   domain: "Domain",
+   state: "Status anzeigen",
+   entity_id: "Entity-ID",
+   name: "Name",
+   group: "Gruppe",
+   area: "Bereich",
+   floor: "Etage",
+   level: "Stockwerk",
+   device: "Gerät",
+   label: "Label",
+   device_manufacturer: "Hersteller",
+   device_model: "Modell",
+   integration: "Integration",
+   hidden_by: "Verborgen durch",
+   attributes: "Attribute",
+   last_changed: "Letzte Zustandsänderung",
+   last_updated: "Letzte Aktualisierung",
+   last_triggered: "Letzte Auslösung",
+   entity_category: "Entity-Kategorie",
+   not: "NICHT",
+   or: "ODER",
+   and: "UND",
+   options: "Zeilenoptionen",
+   type: "Zeilentyp",
+   sort: "Lokale Sortierung",
+   status: "Status anzeigen",
+   ip: "IP-Adresse",
+   ip_range: "IPv4-Bereich",
+   cidr: "IPv4 CIDR",
+   hostname: "Hostname",
+   mac: "MAC-Adresse",
+   network_device: "Verbindungspunkt",
+   config_entry: "Berichtende Instanz",
+   manufacturer: "Hersteller",
+   last_time_reachable: "Zuletzt als erreichbar erkannt"
+  }
+ },
+ en: {
+ image: "Image", icon: "Icon", primary: "Primary", secondary: "Secondary", danger: "Destructive", quiet: "Quiet", "icon-only": "Icon only", overflow: "Menu",
+  network: "Network",
+  fritz: "FRITZ! device",
+  network_description: "Displays network clients with verified mappings and configurable actions.",
+  fritz_description: "Displays a FRITZ!Box or repeater with native capabilities and clients.",
+  home: "Reported present",
+  not_home: "Reported absent",
+  connected: "Connected",
+  disconnected: "Disconnected",
+  unknown: "Unknown",
+  unavailable: "Unavailable",
+  loading: "Loading device information.",
+  empty: "No matching network clients.",
+  choose: "Select a FRITZ! device in the editor.",
+  failed: "Action failed. Check state and permissions.",
+  invalid_config: "The configuration is invalid.",
+  invalid_cidr: "CIDR requires a valid IPv4 address and a prefix from 0 to 32.",
+  invalid_range: "The IPv4 range needs valid boundaries: start must be less than or equal to end.",
+  invalid_rule: "The filter rule is invalid or contains an unsupported field.",
+  invalid_time: "Time filters require a comparison and duration in m, h or d.",
+  invalid_sort: "Select a supported sorting method.",
+  invalid_action: "The action or its target is invalid.",
+  instance_ambiguous: "Select an unambiguous FRITZ! instance in the editor.",
+  role_scope: "The manual entity does not belong to the selected device capability and instance.",
+  ambiguous: "Ambiguous capabilities: select their entities in the editor.",
+  registry_error: "Registry data could not be loaded. Check the Home Assistant connection.",
+  ap_unknown: "Connection point unknown",
+  legacy: "The reporting instance does not prove a physical connection point. It remains unknown without an unambiguous device identifier.",
+  presence: "Presence is reported by Home Assistant and can include a grace period.",
+  clients: "Clients",
+  metrics: "Metrics",
+  wlan: "Wi-Fi",
+  details: "Details",
+  reboot: "Restart",
+  reconnect: "Reconnect WAN",
+  update: "Update",
+  wol: "Wake up",
+  internet_on: "Allow internet",
+  internet_off: "Block internet",
+  rename: "Change display name",
+  labels_action: "Change labels",
+  apply: "Save",
+  cancel: "Cancel",
+  confirm: "Confirm action?",
+  more: "Show more clients",
+  all: "All",
+  auto: "Automatic",
+  image_mode: "Image",
+  icon_mode: "Icon",
+  compact: "Compact",
+  detailed: "Detailed",
+  general: "General",
+  source: "Data source",
+  display: "Display",
+  interaction: "Interaction",
+  filters: "Filters and sorting",
+  advanced: "Advanced",
+  debug_section: "Diagnostics",
+  roles_section: "Manual capabilities",
+  include: "Include",
+  exclude: "Exclude",
+  filter_help: "Include rules are OR-linked, fields within a rule AND-linked. An empty include shows all scoped clients; excludes apply afterwards.",
+  add: "Add",
+  remove: "Remove",
+  field: "Field",
+  value: "Value",
+  from: "Start",
+  to: "End",
+  rule: "Rule",
+  name: "Name",
+  action_name: "Action name",
+  variant: "Presentation",
+  custom_actions: "Custom actions",
+  custom_help: "Custom HA actions use the current client as their default target. Native action editors persist confirmation and targets.",
+  time_unknown: "Time unknown",
+  time_fallback_label: "State change (fallback)",
+  last_changed: "Last state change",
+  last_time_reachable: "Last observed reachable",
+  ip: "IP address",
+  mac: "MAC address",
+  hostname: "Hostname",
+  network_device: "Connection point",
+  internet: "Internet access",
+  allowed: "Allowed",
+  blocked: "Blocked",
+  yes: "On",
+  no: "Off",
+  firmware: "Firmware",
+  uptime: "Device uptime",
+  wan_uptime: "WAN connection duration",
+  external_ip: "External IPv4",
+  external_ipv6: "External IPv6",
+  download: "Download",
+  upload: "Upload",
+  max_download: "Maximum download",
+  max_upload: "Maximum upload",
+  received: "Received",
+  sent: "Sent",
+  cpu_temperature: "CPU temperature",
+  connection: "WAN connection",
+  link: "WAN link",
+  days: "days",
+  hours: "hours",
+  minutes: "minutes",
+  boolean: "Boolean",
+  number: "Number",
+  string: "Text",
+  object: "Object",
+  array: "Array",
+  null: "Null",
+  kind: "Value type",
+  property: "Property",
+  item: "Item",
+  is: "Is",
+  operator: "Comparison",
+  scope_error: "The client is no longer in the current card scope.",
+  name_invalid: "Enter a display name with 1 to 200 characters.",
+  label_invalid: "Select existing labels.",
+  registry_readonly: "Display names and labels require administrator permission.",
+  labels: {
+   title: "Title",
+   device_id: "FRITZ! device",
+   config_entry_id: "Reporting instance",
+   platform: "Integration",
+   source_type: "Tracker source",
+   image: "Custom image",
+   icon: "Custom icon",
+   display_mode: "Media mode",
+   layout: "Layout",
+   count: "Initially visible clients",
+   columns: "Columns",
+   time_fallback: "Time fallback",
+   label_ids: "Offered labels",
+   method: "Sort by",
+   reverse: "Reverse order",
+   name: "Action name",
+   variant: "Action presentation",
+   rename_value: "Display name",
+   labels_value: "Labels",
+   show_header: "Show header",
+   show_status: "Show status",
+   show_details: "Show details",
+   show_clients: "Show clients",
+   start_expanded: "Clients expanded",
+   show_controls: "Show actions",
+   show_wlan: "Wi-Fi controls",
+   show_reboot: "Offer restart",
+   show_reconnect: "Offer WAN reconnect",
+   show_update: "Offer update",
+   show_metrics: "Show metrics",
+   show_empty: "Show empty state",
+   include_unavailable: "Include unknown clients",
+   show_ip: "Show IP",
+   show_mac: "Show MAC",
+   show_hostname: "Show hostname",
+   show_network_device: "Show connection point",
+   show_last_changed: "Show state change",
+   show_last_time_reachable: "Show reachable time",
+   show_internet: "Control internet access",
+   show_wol: "Offer wake up",
+   show_rename: "Edit display names",
+   show_labels: "Edit labels",
+   confirm_reboot: "Confirm restart",
+   confirm_reconnect: "Confirm WAN action",
+   confirm_internet: "Confirm internet access",
+   debug: "Show diagnostics",
+   tap_action: "Tap action",
+   hold_action: "Hold action",
+   double_tap_action: "Double tap action",
+   role_connection: "WAN connection",
+   role_link: "WAN link",
+   role_external_ip: "External IPv4",
+   role_external_ipv6: "External IPv6",
+   role_wan_uptime: "WAN connection duration",
+   role_uptime: "Device uptime",
+   role_download: "Download",
+   role_upload: "Upload",
+   role_max_download: "Maximum download",
+   role_max_upload: "Maximum upload",
+   role_received: "Received",
+   role_sent: "Sent",
+   role_cpu_temperature: "CPU temperature",
+   role_reboot: "Restart",
+   role_reconnect: "Reconnect WAN",
+   role_update: "Update",
+   role_wlan: "Wi-Fi",
+   filter: "Filter",
+   sort: "Sorting",
+   actions: "Custom actions",
+   roles: "Manual capabilities"
+  },
+  helpers: {
+   title: "Empty uses the device name or Network.",
+   device_id: "Selects a native FRITZ! device. Default: first unambiguous device only in the card stub.",
+   config_entry_id: "Filters the reporting integration, not the physical connection point. Empty: automatic or all.",
+   platform: "Filters the registry integration. Empty shows all router trackers.",
+   source_type: "Filters source_type. Default router; empty allows all sources.",
+   image: "Optional image. Automatic prefers existing images. Default empty.",
+   icon: "Optional MDI icon. Default: router or network.",
+   display_mode: "Automatic uses available image, custom image, icon. Default automatic.",
+   layout: "Compact reduces secondary information. Default detailed.",
+   count: "Limits the initial list. 0 shows all. Default 20.",
+   columns: "Shows 1 to 3 columns when space permits. One on mobile. Default 1.",
+   time_fallback: "Missing reachable time may appear explicitly as state change. Default off.",
+   label_ids: "Existing HA labels for client actions. Default none; administrators only.",
+   method: "Sorts clients. IPv4 is numeric, IPv6 separate, missing values last. Default name.",
+   reverse: "Reverses values; missing IPs stay last. Default off.",
+   name: "Visible name of the custom action. Default empty.",
+   variant: "Secondary, quiet or destructive. Default secondary.",
+   rename_value: "Changes the display name only, not entity ID. Default current name.",
+   labels_value: "Replaces entity labels with existing HA labels. Default current labels.",
+   show_header: "Show header when verified data and capabilities are available. Default on.",
+   show_status: "Show status when verified data and capabilities are available. Default on.",
+   show_details: "Show details when verified data and capabilities are available. Default on.",
+   show_clients: "Show clients when verified data and capabilities are available. Default on.",
+   start_expanded: "Clients expanded when verified data and capabilities are available. Default on.",
+   show_controls: "Show actions when verified data and capabilities are available. Default on.",
+   show_wlan: "Wi-Fi controls when verified data and capabilities are available. Default on.",
+   show_reboot: "Offer restart when verified data and capabilities are available. Default on.",
+   show_reconnect: "Offer WAN reconnect when verified data and capabilities are available. Default on.",
+   show_update: "Offer update when verified data and capabilities are available. Default on.",
+   show_metrics: "Show metrics when verified data and capabilities are available. Default on.",
+   show_empty: "Show empty state when verified data and capabilities are available. Default on.",
+   include_unavailable: "Include unknown clients when verified data and capabilities are available. Default on.",
+   show_ip: "Show IP when verified data and capabilities are available. Default on.",
+   show_mac: "Show MAC when verified data and capabilities are available. Default on.",
+   show_hostname: "Show hostname when verified data and capabilities are available. Default on.",
+   show_network_device: "Show connection point when verified data and capabilities are available. Default on.",
+   show_last_changed: "Show state change when verified data and capabilities are available. Default on.",
+   show_last_time_reachable: "Show reachable time when verified data and capabilities are available. Default on.",
+   show_internet: "Control internet access when verified data and capabilities are available. Default on.",
+   show_wol: "Offer wake up when verified data and capabilities are available. Default on.",
+   show_rename: "Edit display names when verified data and capabilities are available. Default off.",
+   show_labels: "Edit labels when verified data and capabilities are available. Default off.",
+   confirm_reboot: "Confirm restart when verified data and capabilities are available. Default on.",
+   confirm_reconnect: "Confirm WAN action when verified data and capabilities are available. Default on.",
+   confirm_internet: "Confirm internet access when verified data and capabilities are available. Default on.",
+   debug: "Show diagnostics when verified data and capabilities are available. Default off.",
+   tap_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
+   hold_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
+   double_tap_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
+   role_connection: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_link: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_external_ip: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_external_ipv6: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_wan_uptime: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_uptime: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_download: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_upload: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_max_download: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_max_upload: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_received: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_sent: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_cpu_temperature: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_reboot: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_reconnect: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_update: "Manual entity from the same device and instance. Empty uses an unambiguous verified role.",
+   role_wlan: "Manual Wi-Fi switches from the same device and entry. Empty uses verified Wi-Fi IDs.",
+   filter: "Configured in the structured editor. Default empty or automatic.",
+   sort: "Configured in the structured editor. Default empty or automatic.",
+   actions: "Configured in the structured editor. Default empty or automatic.",
+   roles: "Configured in the structured editor. Default empty or automatic."
+  },
+  rules: {
+   domain: "Domain",
+   state: "Show status",
+   entity_id: "Entity ID",
+   name: "Name",
+   group: "Group",
+   area: "Area",
+   floor: "Floor",
+   level: "Level",
+   device: "Device",
+   label: "Label",
+   device_manufacturer: "Manufacturer",
+   device_model: "Model",
+   integration: "Integration",
+   hidden_by: "Hidden by",
+   attributes: "Attributes",
+   last_changed: "Last state change",
+   last_updated: "Last updated",
+   last_triggered: "Last triggered",
+   entity_category: "Entity category",
+   not: "NOT",
+   or: "OR",
+   and: "AND",
+   options: "Row options",
+   type: "Row type",
+   sort: "Local sorting",
+   status: "Show status",
+   ip: "IP address",
+   ip_range: "IPv4 range",
+   cidr: "IPv4 CIDR",
+   hostname: "Hostname",
+   mac: "MAC address",
+   network_device: "Connection point",
+   config_entry: "Reporting instance",
+   manufacturer: "Manufacturer",
+   last_time_reachable: "Last observed reachable"
+  }
+ }
+};
+const BUSCH_NETWORK_TEXT=TEXTE_BUSCH_NETWORK_CARD;
+const SCHEMA_BUSCH_NETWORK_CARD=[
+ {
+  name: "title",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "config_entry_id",
+  selector: {
+   select: {
+    options: [],
+    custom_value: true,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "platform",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "source_type",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "display_mode",
+  selector: {
+   select: {
+    options: [
+     "auto",
+     "image",
+     "icon"
+    ],
+    custom_value: false,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "image",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "icon",
+  selector: {
+   icon: {}
+  }
+ },
+ {
+  name: "layout",
+  selector: {
+   select: {
+    options: [
+     "compact",
+     "detailed"
+    ],
+    custom_value: false,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "show_header",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_status",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_details",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "start_expanded",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_controls",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_empty",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "include_unavailable",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_ip",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_mac",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_hostname",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_network_device",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_last_changed",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_last_time_reachable",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_internet",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_wol",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_rename",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_labels",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_internet",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "debug",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "time_fallback",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "count",
+  selector: {
+   number: {
+    min: 0,
+    mode: "box"
+   }
+  }
+ },
+ {
+  name: "columns",
+  selector: {
+   number: {
+    min: 1,
+    max: 3,
+    mode: "box"
+   }
+  }
+ },
+ {
+  name: "method",
+  selector: {
+   select: {
+    options: [
+     "name",
+     "hostname",
+     "status",
+     "ip",
+     "mac",
+     "manufacturer",
+     "last_changed",
+     "last_time_reachable",
+     "network_device"
+    ],
+    custom_value: false,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "reverse",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "label_ids",
+  selector: {
+   label: {
+    multiple: true
+   }
+  }
+ },
+ {
+  name: "tap_action",
+  selector: {
+   ui_action: {}
+  }
+ },
+ {
+  name: "hold_action",
+  selector: {
+   ui_action: {}
+  }
+ },
+ {
+  name: "double_tap_action",
+  selector: {
+   ui_action: {}
+  }
+ },
+ {
+  name: "filter",
+  selector: {
+   object: {}
+  }
+ },
+ {
+  name: "sort",
+  selector: {
+   object: {}
+  }
+ },
+ {
+  name: "actions",
+  selector: {
+   object: {}
+  }
+ },
+ {
+  name: "roles",
+  selector: {
+   object: {}
+  }
+ }
+];
+const SCHEMA_BUSCH_FRITZ_DEVICE_CARD=[
+ {
+  name: "title",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "config_entry_id",
+  selector: {
+   select: {
+    options: [],
+    custom_value: true,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "device_id",
+  selector: {
+   device: {
+    filter: {
+     integration: "fritz"
+    }
+   }
+  }
+ },
+ {
+  name: "display_mode",
+  selector: {
+   select: {
+    options: [
+     "auto",
+     "image",
+     "icon"
+    ],
+    custom_value: false,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "image",
+  selector: {
+   text: {}
+  }
+ },
+ {
+  name: "icon",
+  selector: {
+   icon: {}
+  }
+ },
+ {
+  name: "layout",
+  selector: {
+   select: {
+    options: [
+     "compact",
+     "detailed"
+    ],
+    custom_value: false,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "show_header",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_status",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_details",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_clients",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "start_expanded",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_controls",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_wlan",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_reboot",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_reconnect",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_update",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_metrics",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_empty",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "include_unavailable",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_ip",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_mac",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_hostname",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_network_device",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_last_changed",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_last_time_reachable",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_internet",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_wol",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_rename",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "show_labels",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_reboot",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_reconnect",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_internet",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "debug",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "time_fallback",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "count",
+  selector: {
+   number: {
+    min: 0,
+    mode: "box"
+   }
+  }
+ },
+ {
+  name: "columns",
+  selector: {
+   number: {
+    min: 1,
+    max: 3,
+    mode: "box"
+   }
+  }
+ },
+ {
+  name: "method",
+  selector: {
+   select: {
+    options: [
+     "name",
+     "hostname",
+     "status",
+     "ip",
+     "mac",
+     "manufacturer",
+     "last_changed",
+     "last_time_reachable",
+     "network_device"
+    ],
+    custom_value: false,
+    mode: "dropdown"
+   }
+  }
+ },
+ {
+  name: "reverse",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "label_ids",
+  selector: {
+   label: {
+    multiple: true
+   }
+  }
+ },
+ {
+  name: "tap_action",
+  selector: {
+   ui_action: {}
+  }
+ },
+ {
+  name: "hold_action",
+  selector: {
+   ui_action: {}
+  }
+ },
+ {
+  name: "double_tap_action",
+  selector: {
+   ui_action: {}
+  }
+ },
+ {
+  name: "role_connection",
+  selector: {
+   entity: {
+    filter: {
+     domain: "binary_sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_link",
+  selector: {
+   entity: {
+    filter: {
+     domain: "binary_sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_external_ip",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_external_ipv6",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_wan_uptime",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_uptime",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_download",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_upload",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_max_download",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_max_upload",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_received",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_sent",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_cpu_temperature",
+  selector: {
+   entity: {
+    filter: {
+     domain: "sensor",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_reboot",
+  selector: {
+   entity: {
+    filter: {
+     domain: "button",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_reconnect",
+  selector: {
+   entity: {
+    filter: {
+     domain: "button",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_update",
+  selector: {
+   entity: {
+    filter: {
+     domain: "update",
+     integration: "fritz"
+    },
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "role_wlan",
+  selector: {
+   entity: {
+    filter: {
+     domain: "switch",
+     integration: "fritz"
+    },
+    multiple: true,
+    include_entities: []
+   }
+  }
+ },
+ {
+  name: "filter",
+  selector: {
+   object: {}
+  }
+ },
+ {
+  name: "sort",
+  selector: {
+   object: {}
+  }
+ },
+ {
+  name: "actions",
+  selector: {
+   object: {}
+  }
+ },
+ {
+  name: "roles",
+  selector: {
+   object: {}
+  }
+ }
+];
+const BUSCH_NETWORK_SCHEMA_CACHE=new WeakMap();
+function buschNetworkSchema(core,config,kind='network'){
+ const base=kind==='fritz'?SCHEMA_BUSCH_FRITZ_DEVICE_CARD:SCHEMA_BUSCH_NETWORK_CARD;
+ let cached=core?BUSCH_NETWORK_SCHEMA_CACHE.get(core):null;
+ if(!cached||cached.registry!==core?.index?.registry){cached={registry:core?.index?.registry,entries:[...new Set([...(core?.entities?.values()||[])].filter(e=>e.domain==='device_tracker'||e.platform==='fritz').map(e=>e.config_entry_id).filter(Boolean))]};if(core)BUSCH_NETWORK_SCHEMA_CACHE.set(core,cached);}
+ const entries=cached.entries;
+ return base.map(field=>{
+  if(field.name==='config_entry_id')return {...field,selector:{select:{...field.selector.select,options:entries}}};
+  if(field.name.startsWith('role_')){
+   const domain=field.name==='role_wlan'?'switch':BUSCH_FRITZ_ROLES[field.name.slice(5)][0],ids=core?.getDeviceEntities(config.device_id).filter(e=>e.domain===domain&&e.platform==='fritz'&&(!config.config_entry_id||e.config_entry_id===config.config_entry_id)&&!e.registry?.disabled_by).map(e=>e.entity_id)||[];
+   return {...field,selector:{entity:{...field.selector.entity,include_entities:ids}}};
+  }
+  return field;
+ });
+}
+
+const BUSCH_NETWORK_STYLE=BuschUI.cardStyles+BuschUI.editorStyles+`
+:host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);font-family:var(--ha-font-family-body,inherit);--network-columns:1;--network-media-size:var(--ha-space-12,48px)}*{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--ha-space-4,16px);color:var(--primary-text-color);background:var(--card-background-color)}
+.header{display:grid;grid-template-columns:var(--network-media-size) minmax(0,1fr);gap:var(--ha-space-3,12px);align-items:center;margin-bottom:var(--ha-space-4,16px)}.header-status{grid-column:2}.main{display:grid;gap:var(--ha-space-1,4px)}h2,.client-name{font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.client-name{font-size:var(--ha-font-size-m,14px)}p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail,.hint{color:var(--secondary-text-color)}.hint{font-size:var(--ha-font-size-s,12px)}.message{padding-block:var(--ha-space-2,8px)}.error{color:var(--error-color)}
+.card-icon,.row-icon{display:grid;place-items:center;overflow:hidden;background:var(--secondary-background-color);border-radius:var(--ha-card-border-radius,12px);color:var(--primary-color)}.card-icon{width:var(--network-media-size);height:var(--network-media-size)}.row-icon{width:var(--ha-space-10,40px);height:var(--ha-space-10,40px)}.busch-media img{width:100%;height:100%;object-fit:contain}.busch-media ha-icon{--mdc-icon-size:var(--ha-space-6,24px)}
+.status-badge{justify-self:start;display:inline-flex;align-items:center;gap:var(--ha-space-1,4px);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-1,4px) var(--ha-space-2,8px);font-size:var(--ha-font-size-s,12px);max-width:100%;overflow-wrap:anywhere;background:var(--secondary-background-color)}.status-dot{width:var(--ha-space-2,8px);height:var(--ha-space-2,8px);border-radius:50%;background:currentColor;flex:none}.status-success{color:var(--success-color)}.status-warning{color:var(--warning-color)}.status-error{color:var(--error-color)}.status-unknown,.status-unavailable,.status-neutral{color:var(--secondary-text-color)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--ha-space-30,120px)),1fr));gap:var(--ha-space-3,12px);margin-block:var(--ha-space-4,16px)}.metric{display:grid;gap:var(--ha-space-1,4px);overflow-wrap:anywhere}.metric-label{font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color)}.metric-value{font-size:var(--ha-font-size-m,14px);font-weight:var(--ha-font-weight-medium,500)}
+.actions{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);margin-block:var(--ha-space-2,8px)}.actions button{min-width:var(--ha-space-11,44px);border:0;padding-inline:var(--ha-space-3,12px);border-radius:var(--ha-card-border-radius,12px);background:var(--secondary-background-color);color:var(--primary-text-color);overflow-wrap:anywhere}.actions button[data-variant=danger]{color:var(--error-color)}.actions button[data-variant=quiet]{background:transparent;color:var(--primary-color)}.actions button[data-variant=primary]{background:var(--primary-color);color:var(--text-primary-color)}
+.busch-ui-section{margin-block:var(--ha-space-4,16px)}summary{padding-block:var(--ha-space-2,8px);min-height:var(--ha-space-11,44px);overflow-wrap:anywhere}.clients{display:grid;grid-template-columns:repeat(var(--network-columns,1),minmax(0,1fr));gap:var(--ha-space-4,16px)}.client{display:grid;align-content:start;gap:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.client-head{display:grid;grid-template-columns:var(--ha-space-10,40px) minmax(0,1fr);gap:var(--ha-space-3,12px);align-items:center}.client-status{grid-column:2}.client-details{display:grid;gap:var(--ha-space-1,4px)}.compact .client-details{font-size:var(--ha-font-size-s,12px)}.registry-form{display:grid;gap:var(--ha-space-2,8px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--secondary-text-color);font-size:var(--ha-font-size-s,12px)}[hidden]{display:none!important}@container(max-width:600px){.clients{grid-template-columns:minmax(0,1fr)}}
+`;
+function buschNetworkNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+function buschNetworkDuration(stamp,t,now=Date.now()){const age=buschNetworkTime(stamp,now);if(age===null)return t.time_unknown;const minutes=Math.floor(age/60000),hours=Math.floor(minutes/60),days=Math.floor(hours/24);return `${days?days+' '+t.days+' ':''}${hours%24} ${t.hours} ${minutes%60} ${t.minutes}`;}
+function buschNetworkTimestamp(stamp,hass,t){return stamp?new Date(stamp).toLocaleString(BuschUI.language(hass,{legacy:true})):t.time_unknown;}
+class BuschNetworkBaseCard extends HTMLElement {
+ constructor(){super();this.attachShadow({mode:'open'});this._config=buschNetworkConfig({});this._rows=[];this._rowNodes=new Map();this._sectionOpen=new Map();this._registryDrafts=new Map();this._generation=0;}
+ get _kind(){return 'network';}
+ setConfig(config){try{this._config=buschNetworkConfig(config,this._kind);this._configError=null;}catch(error){this._configError=error.message;this._unsubscribe?.();this._unsubscribe=null;this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._query=null;this._rows=[];}this._generation++;this._visible=this._config.count;this._configureQuery();this._render();}
+ set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}get hass(){return this._hass;}
+ connectedCallback(){this._connect();this._configureQuery();this._render();}
+ disconnectedCallback(){this._generation++;this._unsubscribe?.();this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._unwatch?.();this._unwatchDevice?.();this._release?.();this._unsubscribe=this._unwatch=this._unwatchDevice=this._release=null;this._query=null;this._rowNodes.clear();for(const cleanup of this._gestures?.values()||[])cleanup();this._gestures?.clear();}
+ _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>{this._configureQuery();this._render();});this._configureQuery();}
+ _scopeConfig(){if(this._kind==='network')return this._config;const m=buschFritzModel(this._core,this._config);return {...this._config,platform:'fritz',config_entry_id:m.config_entry_id||'__no_selected_fritz_entry__'};}
+ _configureQuery(){if(!this._core||this._configError)return;try{const spec=this._scopeConfig(),query=new BuschNetworkQueries(this._core).query(spec);this._queryError=null;if(query!==this._query){this._unsubscribe?.();this._query=query;this._rows=query.result;this._unsubscribe=this._core.subscribe(query,rows=>{this._rows=rows;this._renderClients();});}const timed=this._kind==='fritz'&&this._config.show_metrics&&Object.entries(buschFritzModel(this._core,this._config).roles).some(([role,e])=>['uptime','wan_uptime'].includes(role)&&e);if(timed&&!this._unsubscribeClock){this._clockQuery=new BuschNetworkClock(this._core).query();this._unsubscribeClock=this._core.subscribe(this._clockQuery,result=>{this._clockEpoch=result[0];this._render();});}else if(!timed&&this._unsubscribeClock){this._unsubscribeClock();this._unsubscribeClock=null;this._clockQuery=null;}if(this._deviceWatchId!==this._config.device_id){this._unwatchDevice?.();this._deviceWatchId=this._config.device_id;this._unwatchDevice=this._deviceWatchId?this._core.watchDevice(this._deviceWatchId,()=>this._render()):null;}}catch(error){this._queryError=error.message;this._rows=[];}}
+ getCardSize(){return 3+Math.min(6,this._rows.length);}getGridOptions(){return {columns:12,min_columns:3};}
+ _text(){return BuschUI.dictionary(this._kind==='fritz'?TEXTE_BUSCH_FRITZ_DEVICE_CARD:TEXTE_BUSCH_NETWORK_CARD,this._hass,{legacy:true});}
+ _button(parent,label,onClick,variant='secondary',icon){const button=BuschUI.action({label,...(icon?{icon}:{text:label}),onClick,variant,disabled:!!this._busy});parent.appendChild(button);return button;}
+ _section(parent,key,title,body,open=true){const section=BuschUI.section({title,content:body,open:this._sectionOpen.get(key)??open});section.addEventListener('toggle',()=>this._sectionOpen.set(key,section.open));parent.appendChild(section);return section;}
+ _details(id){if(id)this.dispatchEvent(new CustomEvent('hass-more-info',{detail:{entityId:id},bubbles:true,composed:true}));}
+ _freshClient(id){const spec=this._scopeConfig(),query=new BuschNetworkQueries(this._core).query(spec),row=new BuschNetworkClientResolver(this._core).resolve(id);if(!row||!query.smart.scope(query,row.info)||!(!query.include.length||query.include.some(r=>r.test(row)))||query.exclude.some(r=>r.test(row)))return null;return row;}
+ async _nativeAction(kind,id){
+  if(this._configError||this._busy||!this._hass||!this._core||!this._config.show_controls)return;let entity,domain,service,confirm;
+  try{
+   if(id){const row=this._freshClient(id);if(!row)return;if(kind==='internet'&&this._config.show_internet){entity=row.internet;domain='switch';service=entity?.state==='on'?'turn_off':'turn_on';confirm=this._config.confirm_internet;}else if(kind==='wol'&&this._config.show_wol){entity=row.wol;domain='button';service='press';}}
+   else{const model=buschFritzModel(this._core,this._config);if(!this._config['show_'+kind])return;entity=model.roles[kind];domain=kind==='update'?'update':'button';service=kind==='update'?'install':'press';confirm=kind==='reboot'?this._config.confirm_reboot:kind==='reconnect'?this._config.confirm_reconnect:true;if(kind==='update'&&(!(Number(entity?.attributes.supported_features)&1)||entity?.state!=='on'||entity?.attributes.in_progress))return;}
+   if(!buschNetworkAvailable(entity)||entity.domain!==domain||(domain==='switch'&&!['on','off'].includes(entity.state)))return;
+   if(confirm&&!window.confirm(this._text().confirm))return;const generation=this._generation;this._busy=true;await this._hass.callService(domain,service,{entity_id:entity.entity_id});if(generation===this._generation)this._error=null;
+  }catch(error){this._error='failed';}finally{this._busy=false;this._render();}
+ }
+ async _wlanAction(id){if(this._configError||this._busy||!this._config.show_controls||!this._config.show_wlan)return;try{const model=buschFritzModel(this._core,this._config),e=model.wlan.find(e=>e.entity_id===id);if(!buschNetworkAvailable(e)||!['on','off'].includes(e.state))return;this._busy=true;await this._hass.callService('switch',e.state==='on'?'turn_off':'turn_on',{entity_id:id});}catch(error){this._error='failed';}finally{this._busy=false;this._render();}}
+ async _registryAction(kind,id,value){
+  if(this._configError||this._busy||!this._hass?.user?.is_admin||!this._config['show_'+(kind==='rename'?'rename':'labels')])return;
+  try{const row=this._freshClient(id);if(!row)throw new Error('scope_error');let update;if(kind==='rename'){if(typeof value!=='string'||!value.trim()||value.trim().length>200||/[\x00-\x1f]/.test(value))throw new Error('name_invalid');update={name:value.trim()};}else if(kind==='labels'){if(!Array.isArray(value)||value.some(id=>typeof id!=='string'||!this._core.labels.has(id)||(this._config.label_ids.length&&!this._config.label_ids.includes(id)&&!row.info.registry.labels?.includes(id))))throw new Error('label_invalid');update={labels:[...new Set(value)]};}else return;this._busy=true;await this._hass.callWS({type:'config/entity_registry/update',entity_id:id,...update});this._error=null;
+  }catch(error){this._error=['name_invalid','label_invalid','scope_error'].includes(error.message)?error.message:'failed';}finally{this._busy=false;this._render();}
+ }
+ _registryForm(parent,row,kind){const t=this._text(),isName=kind==='rename',name=isName?'rename_value':'labels_value',key=row.entity_id+':'+kind,body=buschNetworkNode('div',undefined,'registry-form'),form=BuschUI.ha.form();let draft=this._registryDrafts.get(key)??(isName?row.name:[...(row.info.registry.labels||[])]);form.hass=this._hass;form.schema=[{name,selector:isName?{text:{}}:this._config.label_ids.length?{select:{multiple:true,mode:'dropdown',options:[...new Set([...this._config.label_ids,...(row.info.registry.labels||[])])].filter(id=>this._core.labels.has(id)).map(id=>({value:id,label:this._core.labels.get(id).name||id}))}}:{label:{multiple:true}}}];form.data={[name]:draft};form.computeLabel=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).label;form.computeHelper=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).helper;form.addEventListener('value-changed',event=>{event.stopPropagation();draft=event.detail.value[name];this._registryDrafts.set(key,draft);});body.appendChild(form);const actions=buschNetworkNode('div',undefined,'actions');this._button(actions,t.apply,()=>this._registryAction(kind,row.entity_id,draft));body.appendChild(actions);this._section(parent,key,isName?t.rename:t.labels_action,body,false);}
+ async _customAction(action,id){if(this._configError||this._busy||!action||action.action==='none')return;try{
+  buschNetworkValidateAction(action);const row=id?this._freshClient(id):null,model=!id&&this._kind==='fritz'?buschFritzModel(this._core,this._config):null,info=row?.info||model?.roles.connection;if(id&&!row)return;const context={entity:info?.entity_id,device:info?.device_id||model?.device?.id,area:info?.area_id};
+  if(action.confirmation&&!action.confirmation.exemptions?.some(e=>e.user===this._hass.user?.id)&&!window.confirm(action.confirmation.text||this._text().confirm))return;
+  const configured=devPlatzhalterErsetzen(action,context),kind=configured.action;if(kind==='more-info'){this._details(configured.entity||context.entity);return;}if(kind==='navigate'){if(typeof configured.navigation_path!=='string'||!configured.navigation_path.startsWith('/'))throw new Error('invalid_action');devNavigiere(configured.navigation_path);return;}if(kind==='url'){if(!/^https?:\/\//i.test(configured.url_path||''))throw new Error('invalid_action');window.open(configured.url_path,'_blank','noreferrer');return;}if(kind==='assist'){this.dispatchEvent(new CustomEvent('hass-start-voice-command',{bubbles:true,composed:true,detail:{pipeline_id:configured.pipeline_id,start_listening:configured.start_listening}}));return;}
+  let service=configured.perform_action||configured.service,target=configured.target&&Object.keys(configured.target).length?configured.target:{entity_id:context.entity},data=configured.data||configured.service_data||{};
+  if(kind==='toggle'){if(!buschNetworkAvailable(info)||!['switch','light','input_boolean','fan'].includes(info.domain))return;service='homeassistant.toggle';target={entity_id:context.entity};}
+  if(!service)return;for(const [key,value]of Object.entries(target)){const values=Array.isArray(value)?value:[value],map=key==='entity_id'?this._core.entities:key==='device_id'?this._core.devices:key==='area_id'?this._core.areas:key==='label_id'?this._core.labels:this._core.floors;if(!values.length||values.some(id=>typeof id!=='string'||!map.has(id)))throw new Error('invalid_action');}
+  const [domain,name]=service.split('.');if(this._hass.services&&!this._hass.services[domain]?.[name])throw new Error('invalid_action');this._busy=true;await this._hass.callService(domain,name,data,target);
+ }catch(error){this._error=error.message==='invalid_action'?'invalid_action':'failed';}finally{this._busy=false;if(this.isConnected)this._render();}}
+ _bindActions(node,config,id){const generation=this._generation;const execute=action=>{if(this.isConnected&&generation===this._generation)this._customAction(action,id);};let holdTimer=null,held=false,tapTimer=null;const clearHold=()=>{if(holdTimer!==null)clearTimeout(holdTimer);holdTimer=null;};node.addEventListener('pointerdown',event=>{event.stopPropagation();held=false;clearHold();if(config.hold_action&&config.hold_action.action!=='none')holdTimer=setTimeout(()=>{holdTimer=null;held=true;execute(config.hold_action);},500);});node.addEventListener('pointerup',clearHold);node.addEventListener('pointercancel',clearHold);node.addEventListener('pointerleave',clearHold);node.addEventListener('contextmenu',event=>{if(config.hold_action)event.preventDefault();});node.addEventListener('click',event=>{event.stopPropagation();if(held){held=false;return;}if(config.double_tap_action&&config.double_tap_action.action!=='none'){if(tapTimer!==null){clearTimeout(tapTimer);tapTimer=null;execute(config.double_tap_action);}else tapTimer=setTimeout(()=>{tapTimer=null;execute(config.tap_action||{action:'more-info'});},250);}else execute(config.tap_action||{action:'more-info'});});const cleanup=()=>{clearHold();if(tapTimer!==null)clearTimeout(tapTimer);tapTimer=null;};this._gestures||=new Map();this._gestures.set(node,cleanup);return cleanup;}
+ _customButtons(parent,id){for(const action of this._config.actions){const icon=['icon-only','overflow'].includes(action.variant)?action.icon||'mdi:dots-horizontal':undefined;const button=this._button(parent,action.name,()=>{},action.variant||'secondary',icon);this._bindActions(button,action,id);}}
+ _clientNode(row){const t=this._text(),c=this._config,root=buschNetworkNode('article',undefined,'client '+c.layout),head=buschNetworkNode('div',undefined,'client-head'),main=buschNetworkNode('div',undefined,'main');root.dataset.entityId=row.entity_id;head.appendChild(BuschUI.media({},row.media,'mdi:devices','row-icon'));const title=buschNetworkNode('p',row.name,'client-name');main.appendChild(title);head.appendChild(main);if(c.show_status){const badge=BuschUI.statusBadge(row.status==='home'?'online':row.status==='not_home'?'offline':row.status,t[row.status]);badge.className+=' client-status';head.appendChild(badge);}root.appendChild(head);const details=buschNetworkNode('div',undefined,'client-details'),add=(label,value)=>details.appendChild(buschNetworkNode('p',label+': '+value,'detail'));
+  if(c.show_ip)add(t.ip,row.ip||t.unknown);if(c.show_hostname&&row.hostname)add(t.hostname,row.hostname);if(c.show_mac&&c.layout!=='compact')add(t.mac,row.mac||t.unknown);if(c.show_network_device)add(t.network_device,row.network_name||t.unknown);if(c.show_last_changed&&c.layout!=='compact')add(t.last_changed,buschNetworkTimestamp(row.last_changed,this._hass,t));if(c.show_last_time_reachable){const stamp=row.last_time_reachable|| (c.time_fallback?row.last_changed:null);add(row.last_time_reachable||!c.time_fallback?t.last_time_reachable:t.time_fallback_label,buschNetworkTimestamp(stamp,this._hass,t));}if(c.show_internet&&row.internet)add(t.internet,row.internet.state==='on'?t.allowed:row.internet.state==='off'?t.blocked:t.unavailable);if(c.layout!=='compact'){if(row.connection_type)add(t.network_device,row.connection_type);if(row.ssid)add(t.wlan,row.ssid);}root.appendChild(details);
+  const actions=buschNetworkNode('div',undefined,'actions');if(c.show_details){const button=this._button(actions,t.details,()=>{},'quiet','mdi:information-outline');this._bindActions(button,c,row.entity_id);}if(c.show_controls){if(c.show_internet&&buschNetworkAvailable(row.internet)&&['on','off'].includes(row.internet.state))this._button(actions,row.internet.state==='on'?t.internet_off:t.internet_on,()=>this._nativeAction('internet',row.entity_id),row.internet.state==='on'?'danger':'secondary');if(c.show_wol&&buschNetworkAvailable(row.wol))this._button(actions,t.wol,()=>this._nativeAction('wol',row.entity_id));this._customButtons(actions,row.entity_id);}if(actions.children.length)root.appendChild(actions);
+  if(this._hass?.user?.is_admin){if(c.show_rename)this._registryForm(root,row,'rename');if(c.show_labels)this._registryForm(root,row,'labels');}return root;
+ }
+ _renderClients(){if(!this._clientBody)return;const c=this._config,t=this._text(),rows=c.count?this._rows.slice(0,this._visible??c.count):this._rows;if(this._clientBody.style.getPropertyValue?.('--network-columns')!==String(c.columns))this._clientBody.style.setProperty?.('--network-columns',String(c.columns));const used=new Set(),nodes=[];for(const row of rows){used.add(row.entity_id);const signature=buschCoreKey({info:row.info.stateObject,registry:row.info.registry,name:row.name,ap:row.network_name,internet:row.internet?.state,wol:row.wol?.state,locale:BuschUI.language(this._hass),admin:this._hass?.user?.is_admin,busy:this._busy,labelChoices:c.label_ids.map(id=>this._core.labels.get(id)),config:c});let item=this._rowNodes.get(row.entity_id);if(!item||item.signature!==signature){item={signature,node:this._clientNode(row)};this._rowNodes.set(row.entity_id,item);}nodes.push(item.node);}for(const id of this._rowNodes.keys())if(!used.has(id))this._rowNodes.delete(id);if(!rows.length&&c.show_empty){this._emptyNode||=buschNetworkNode('p',t.empty,'message');if(this._emptyNode.textContent!==t.empty)this._emptyNode.textContent=t.empty;nodes.push(this._emptyNode);}if(rows.length<this._rows.length){const key=t.more+'|'+this._busy;if(this._moreNodeKey!==key){this._moreNodeKey=key;this._moreNode=buschNetworkNode('div',undefined,'actions');this._button(this._moreNode,t.more,()=>{this._visible=Math.min(this._rows.length,(this._visible??this._config.count)+this._config.count);this._renderClients();},'quiet');}nodes.push(this._moreNode);}if(this._clientBody.children.length!==nodes.length||nodes.some((n,i)=>this._clientBody.children[i]!==n))this._clientBody.replaceChildren(...nodes);if(this._clientBody.isConnected)this._pruneGestures();if(this._clientSection?.firstChild){const text=t.clients+' ('+this._rows.length+')';if(this._clientSection.firstChild.textContent!==text)this._clientSection.firstChild.textContent=text;}}
+ _render(){if(!this._hass||!this._config)return;const t=this._text(),c=this._config;let model;try{model=this._kind==='fritz'&&this._core?buschFritzModel(this._core,c):null;}catch(error){this._queryError=error.message;}const signature=buschCoreKey({config:c,clock:this._clockEpoch,locale:BuschUI.language(this._hass),model:model?{device:model.device,roles:Object.fromEntries(Object.entries(model.roles).map(([k,e])=>[k,e?.stateObject])),wlan:model.wlan.map(e=>e.stateObject),ambiguous:model.ambiguous}:null,busy:this._busy,error:this._error,configError:this._configError,queryError:this._queryError,registryError:[...(this._core?.lastErrors?.keys()||[])],admin:this._hass.user?.is_admin});if(signature===this._shellSignature){this._renderClients();return;}this._shellSignature=signature;
+  const style=buschNetworkNode('style',BUSCH_NETWORK_STYLE),card=buschNetworkNode('ha-card'),name=c.title||model?.name||t[this._kind];
+  if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title});card.appendChild(header);}
+  if(this._kind==='network'&&!this._core)card.appendChild(buschNetworkNode('p',t.loading,'message'));
+  const error=this._configError||this._queryError||this._error;if(error){const message=buschNetworkNode('p',t[error]||t.invalid_config,'message error');message.setAttribute('role','alert');card.appendChild(message);}if(this._core?.lastErrors?.size)card.appendChild(buschNetworkNode('p',t.registry_error,'message error'));
+  if(this._kind==='fritz'&&!this._configError){
+   if(!this._core)card.appendChild(buschNetworkNode('p',t.loading,'message'));else if(!model?.device)card.appendChild(buschNetworkNode('p',t.choose,'message'));else{if(model.ambiguous.length)card.appendChild(buschNetworkNode('p',t.ambiguous,'message'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);
+    const actions=buschNetworkNode('div',undefined,'actions');if(c.show_controls){for(const role of ['reboot','reconnect','update']){const e=model.roles[role];if(c['show_'+role]&&buschNetworkAvailable(e)&&(role!=='update'||(e.state==='on'&&(Number(e.attributes.supported_features)&1)&&!e.attributes.in_progress)))this._button(actions,t[role],()=>this._nativeAction(role),role==='reconnect'?'danger':'secondary');}this._customButtons(actions,null);}if(c.show_details){const e=model.roles.connection||model.roles.uptime||model.roles.update;if(e)this._button(actions,t.details,()=>this._details(e.entity_id),'quiet');}if(actions.children.length)card.appendChild(actions);
+    if(c.show_wlan&&model.wlan.length){const body=buschNetworkNode('div',undefined,'actions');for(const e of model.wlan){const label=e.registry?.name||e.attributes.friendly_name||e.entity_id;if(c.show_controls&&buschNetworkAvailable(e)&&['on','off'].includes(e.state))this._button(body,label+' · '+(e.state==='on'?t.yes:t.no),()=>this._wlanAction(e.entity_id));else body.appendChild(buschNetworkNode('p',label+' · '+(t[e.state]||t.unavailable),'detail'));}this._section(card,'wlan',t.wlan,body);}
+   }
+  }
+  this._clientBody=null;this._clientSection=null;if(!this._configError&&(this._kind==='network'||(c.show_clients&&model?.device))){card.appendChild(buschNetworkNode('p',t.presence,'message hint'));this._clientBody=buschNetworkNode('div',undefined,'clients');this._clientSection=this._section(card,'clients',t.clients,this._clientBody,c.start_expanded);card.appendChild(buschNetworkNode('p',t.legacy,'message hint'));this._renderClients();}
+  if(c.debug&&this._query)card.appendChild(buschNetworkNode('pre',JSON.stringify({scope:{entry:this._query.spec.config_entry_id,platform:this._query.spec.platform},clients:this._rows.length,...this._query.metrics},null,2)));
+  this.shadowRoot.replaceChildren(style,card);this._pruneGestures();
+ }
+ _pruneGestures(){if(!this.isConnected)return;for(const [node,cleanup]of this._gestures||[])if(!node.isConnected){cleanup();this._gestures.delete(node);}}
+}
+class BuschNetworkCard extends BuschNetworkBaseCard {static getConfigElement(){return document.createElement('busch-network-card-editor');}static getStubConfig(){return {type:'custom:busch-network-card'};}}
+class BuschFritzDeviceCard extends BuschNetworkBaseCard {get _kind(){return 'fritz';}static getConfigElement(){return document.createElement('busch-fritz-device-card-editor');}static getStubConfig(hass){const devices=hass?buschFritzDevices({devices:new Map(Object.entries(hass.devices||{})),getDeviceEntities:id=>Object.entries(hass.entities||{}).filter(([,e])=>e.device_id===id).map(([entity_id,e])=>({...e,entity_id,domain:entity_id.split('.')[0],registry:e}))}):[];return {type:'custom:busch-fritz-device-card',...(devices.length?{device_id:devices[0].id}:{})};}}
+const BUSCH_NETWORK_RULE_FIELDS=['state','status','ip','ip_range','cidr','hostname','mac','network_device','integration','config_entry','label','manufacturer','device','area','name','attributes','last_changed','last_time_reachable','and','or','not'];
+
+/* Structured recursive network editor. Invalid intermediate text is a local draft, never an unrestricted saved query. */
+function buschNetworkRuleEditor(parent,initial,change,t){
+ let rule=initial;const body=buschNetworkNode('div',undefined,'node');parent.appendChild(body);const publish=(next,structural=false)=>{rule=next;change(next,structural);};
+ for(const [key,value]of Object.entries(rule)){
+  const wrap=buschNetworkNode('div'),row=buschNetworkNode('div',undefined,'row');wrap.appendChild(row);body.appendChild(wrap);
+  const field=buschSmartSelect(BUSCH_NETWORK_RULE_FIELDS.map(k=>[k,t.rules[k]||k]),key,next=>{const copy={...rule};delete copy[key];if(Object.hasOwn(copy,next))return;const defaults={ip_range:{from:'192.0.2.0',to:'192.0.2.255'},cidr:'192.0.2.0/24',and:[{}],or:[{}],not:{},attributes:{},last_changed:'> 1 h',last_time_reachable:'> 1 h'};copy[next]=defaults[next]??'';publish(copy,true);},t.field);row.appendChild(field);row.appendChild(BuschUI.action({label:t.remove,text:t.remove,onClick:()=>{const next={...rule};delete next[key];publish(next,true);}}));
+  const replace=(v,structural=false)=>publish({...rule,[key]:v},structural);
+  if(['and','or'].includes(key)){value.forEach((child,i)=>{const container=buschNetworkNode('div');wrap.appendChild(container);buschNetworkRuleEditor(container,child,(v,s)=>replace(rule[key].map((r,j)=>j===i?v:r),s),t);container.appendChild(BuschUI.action({label:t.remove,text:t.remove,onClick:()=>replace(rule[key].filter((_,j)=>j!==i),true)}));});wrap.appendChild(BuschUI.action({label:t.add,text:t.add,onClick:()=>replace([...rule[key],{}],true)}));}
+  else if(key==='not')buschNetworkRuleEditor(wrap,value,replace,t);
+  else if(key==='ip_range'){const form=BuschUI.ha.form();form.schema=['from','to'].map(name=>({name,selector:{text:{}}}));form.data=value;form.computeLabel=s=>t[s.name];form.computeHelper=()=>t.invalid_range;form.addEventListener('value-changed',event=>{event.stopPropagation();replace({...rule[key],...event.detail.value});});wrap.appendChild(form);}
+  else if(key==='attributes')buschSmartObject(wrap,value,replace,t,t.value);
+  else{const label=buschNetworkNode('label',t.value),input=BuschUI.ha.input({native:true});input.value=String(value);input.setAttribute('aria-label',(t.rules[key]||key)+' · '+t.value);input.addEventListener('input',()=>replace(input.value));label.appendChild(input);wrap.appendChild(label);}
+ }
+ body.appendChild(BuschUI.action({label:t.add+' · '+t.rule,text:t.add+' · '+t.rule,onClick:()=>{const field=BUSCH_NETWORK_RULE_FIELDS.find(k=>!Object.hasOwn(rule,k)&&!['and','or','not','ip_range','cidr','attributes','last_changed','last_time_reachable'].includes(k));if(field)publish({...rule,[field]:''},true);}}));
+}
+class BuschNetworkBaseEditor extends BuschEditorBase {
+ constructor(){super();this._echo=BuschUI.createEchoState();this._forms=[];this._sectionOpen=new Map();}
+ get _kind(){return 'network';}
+ setConfig(config){const result=BuschUI.validateConfig(config||{},{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return;}if(!BuschUI.acceptEcho(this._echo,result.value,this._config))return;const previous=this._config;this._acceptConfig(result.value);this._validationError=null;const structural=!previous||buschCoreKey(previous.filter)!==buschCoreKey(this._config.filter)||buschCoreKey(previous.actions)!==buschCoreKey(this._config.actions)||previous.device_id!==this._config.device_id||previous.config_entry_id!==this._config.config_entry_id;if(structural)this._render();else this._syncForms();}
+ set hass(hass){const languageChanged=BuschUI.language(this._hass,{legacy:true})!==BuschUI.language(hass,{legacy:true});this._hass=hass;if(this.isConnected)this._connect();if(!this.shadowRoot||languageChanged)this._render();else this._syncForms();}get hass(){return this._hass;}
+ connectedCallback(){this._connect();this._render();}disconnectedCallback(){this._unwatch?.();this._release?.();this._unwatch=this._release=null;}
+ _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._syncForms());}
+ _change(patch,structural=false){const next={...this._config,...patch},result=BuschUI.validateConfig(next,{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return false;}this._validationError=null;BuschUI.queueEcho(this._echo,result.value);this._publishConfig(result.value);if(structural)this._render();else this._syncForms();return true;}
+ _showError(){if(this._errorNode){const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});this._errorNode.textContent=this._validationError?(t[this._validationError]||t.invalid_config):'';this._errorNode.hidden=!this._validationError;}for(const input of this.shadowRoot?.querySelectorAll('input')||[])input.setAttribute('aria-invalid',String(!!this._validationError));}
+ _section(key,title,open=false){const body=buschNetworkNode('div',undefined,'body'),section=BuschUI.section({title,content:body,open:this._sectionOpen.get(key)??open});section.dataset.section=key;section.addEventListener('toggle',()=>this._sectionOpen.set(key,section.open));this.shadowRoot.appendChild(section);return body;}
+ _form(body,fields,getData,onChange){const form=BuschUI.ha.form();form.hass=this._hass;form.schema=fields;form.data=getData();form.computeLabel=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).label;form.computeHelper=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).helper;form.addEventListener('value-changed',event=>{event.stopPropagation();onChange(event.detail.value);});body.appendChild(form);this._forms.push({form,getData,fields});return form;}
+ _syncForms(){if(!this._config||!this._hass)return;const schema=buschNetworkSchema(this._core,this._config,this._kind),t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});for(const f of this._forms){f.form.hass=this._hass;f.form.data=f.getData();f.form.schema=f.fields.map(s=>this._localizedSchema(schema.find(n=>n.name===s.name)||s,t));}for(const form of this.shadowRoot?.querySelectorAll('ha-form')||[])form.hass=this._hass;this._showError();}
+ _localizedSchema(schema,t){if(!schema.selector?.select)return schema;return {...schema,selector:{select:{...schema.selector.select,options:schema.selector.select.options.map(o=>typeof o==='string'?{value:o,label:t[o]||t.rules?.[o]||o}:o)}}};}
+ _render(){if(!this._hass||!this._config)return;this.classList?.add('busch-ui-editor');if(!this.shadowRoot)this.attachShadow({mode:'open'});const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true}),schema=buschNetworkSchema(this._core,this._config,this._kind);this._forms=[];this.shadowRoot.replaceChildren(buschNetworkNode('style',BUSCH_SMART_EDITOR_CSS));this._errorNode=buschNetworkNode('p',undefined,'busch-ui-validation');this._errorNode.setAttribute('role','alert');this.shadowRoot.appendChild(this._errorNode);
+  const groups=[['general',['title'],true],['source',['device_id','config_entry_id','platform','source_type'],true],['display',['display_mode','image','icon','layout','show_header','show_status','show_details','show_clients','start_expanded','show_metrics','show_ip','show_mac','show_hostname','show_network_device','show_last_changed','show_last_time_reachable','time_fallback','count','columns','show_empty'],false],['interaction',['show_controls','show_wlan','show_reboot','show_reconnect','show_update','show_internet','show_wol','show_rename','show_labels','label_ids','confirm_reboot','confirm_reconnect','confirm_internet','tap_action','hold_action','double_tap_action'],false],['filters',['method','reverse','include_unavailable'],false],['debug_section',['debug'],false]];
+  for(const [key,names,open]of groups){const fields=schema.filter(s=>names.includes(s.name));if(!fields.length)continue;const body=this._section(key,t[key],open);const getData=()=>Object.fromEntries(fields.map(f=>[f.name,['method','reverse'].includes(f.name)?this._config.sort[f.name]:this._config[f.name]]));this._form(body,fields,getData,value=>{const patch={...value};if(names.includes('method')){patch.sort={...this._config.sort,...(Object.hasOwn(patch,'method')?{method:patch.method}:{}),...(Object.hasOwn(patch,'reverse')?{reverse:patch.reverse}:{})};delete patch.method;delete patch.reverse;}const sourceChange=(Object.hasOwn(patch,'device_id')&&patch.device_id!==this._config.device_id)||(Object.hasOwn(patch,'config_entry_id')&&patch.config_entry_id!==this._config.config_entry_id);if(sourceChange)patch.roles={};this._change(patch,sourceChange);});
+   if(key==='filters'){body.appendChild(buschNetworkNode('p',t.filter_help));for(const name of ['include','exclude']){const section=buschNetworkNode('div');body.appendChild(section);section.appendChild(buschNetworkNode('p',t[name]));const rules=this._config.filter[name],draft=[...rules];const update=(i,value,structural)=>{draft[i]=value;this._change({filter:{...this._config.filter,[name]:[...draft]}},structural);};rules.forEach((rule,i)=>{const host=buschNetworkNode('div');section.appendChild(host);buschNetworkRuleEditor(host,rule,(value,structural)=>update(i,value,structural),t);host.appendChild(BuschUI.action({label:t.remove,text:t.remove,onClick:()=>this._change({filter:{...this._config.filter,[name]:this._config.filter[name].filter((_,j)=>j!==i)}},true)}));});section.appendChild(BuschUI.action({label:t.add+' · '+t[name],text:t.add+' · '+t[name],onClick:()=>this._change({filter:{...this._config.filter,[name]:[...this._config.filter[name],{}]}},true)}));}}
+  }
+  if(this._kind==='fritz'){const body=this._section('roles',t.roles_section),fields=schema.filter(s=>s.name.startsWith('role_'));this._form(body,fields,()=>Object.fromEntries(fields.map(f=>[f.name,this._config.roles[f.name.slice(5)]])),value=>{const roles={...this._config.roles};for(const [key,v]of Object.entries(value))if(v===undefined||v===null||v==='')delete roles[key.slice(5)];else roles[key.slice(5)]=v;this._change({roles});});}
+  const actionsBody=this._section('custom',t.custom_actions);actionsBody.appendChild(buschNetworkNode('p',t.custom_help));this._config.actions.forEach((action,i)=>{const fields=[{name:'name',selector:{text:{}}},{name:'variant',selector:{select:{mode:'dropdown',options:['primary','secondary','danger','quiet','icon-only','overflow']}}},{name:'icon',selector:{icon:{}}},...['tap_action','hold_action','double_tap_action'].map(name=>({name,selector:{ui_action:{}}}))];this._form(actionsBody,fields,()=>this._config.actions[i]||{},value=>this._change({actions:this._config.actions.map((a,j)=>j===i?{...a,...value}:a)}));actionsBody.appendChild(BuschUI.action({label:t.remove,text:t.remove,onClick:()=>this._change({actions:this._config.actions.filter((_,j)=>j!==i)},true)}));});actionsBody.appendChild(BuschUI.action({label:t.add,text:t.add,onClick:()=>this._change({actions:[...this._config.actions,{name:t.details,variant:'secondary',tap_action:{action:'more-info'}}]},true)}));this._syncForms();
+ }
+}
+class BuschNetworkEditor extends BuschNetworkBaseEditor {}
+class BuschFritzDeviceEditor extends BuschNetworkBaseEditor {get _kind(){return 'fritz';}}
+if(!customElements.get?.('busch-network-card'))customElements.define('busch-network-card',BuschNetworkCard);
+if(!customElements.get?.('busch-fritz-device-card'))customElements.define('busch-fritz-device-card',BuschFritzDeviceCard);
+if(!customElements.get?.('busch-network-card-editor'))customElements.define('busch-network-card-editor',BuschNetworkEditor);
+if(!customElements.get?.('busch-fritz-device-card-editor'))customElements.define('busch-fritz-device-card-editor',BuschFritzDeviceEditor);
+if(!window.customCards.some(c=>c.type==='busch-network-card'))window.customCards.push({type:'busch-network-card',name:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network,description:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+if(!window.customCards.some(c=>c.type==='busch-fritz-device-card'))window.customCards.push({type:'busch-fritz-device-card',name:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz,description:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});

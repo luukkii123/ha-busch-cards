@@ -1111,3 +1111,139 @@ Diese lesende Probe ergänzt die bisherigen Speicherrundläufe; sie ist kein
 neuer vollständiger Visual/YAML-/Save-Reopen-/Portal-/IME-Gesamtnachweis.
 
 Gemeinsame Source/API 0.3.0 ergänzt tatsächlich verwendete Header-/Action-/Sectionprimitives, scoped Card-/Editorstyles sowie DE/EN-Fieldtext und kopierende Validation mit fachlichen Normalisierungscallbacks. Bestehende Layouts und Configfelder bleiben erhalten; keine HACS-Releaseversion geändert.
+
+### FRITZ!- und Netzwerkkarten – lokaler Stand vom 30.09.2026
+
+`custom:busch-fritz-device-card` zeigt ein im Editor gewähltes natives
+FRITZ!-Gerät. Die Auswahl allein über `device_id` reicht bei einer eindeutigen
+Instanz. Router- und Repeaterfunktionen entstehen aus den tatsächlich
+zugeordneten Registry-Entities, deren FRITZ!-Identifiern und dem dokumentierten
+HA-Core-2026.9-Unique-ID-Vertrag. Entity-Namen werden nicht als Rollen gelesen.
+Bei Mehrdeutigkeit stehen für jede Funktion manuelle Entity-Selektoren bereit;
+diese werden weiterhin auf Gerät, Integration, Instanz und Domain geprüft.
+
+WAN-Verbindung, aktuelle/maximale Übertragungsraten, externe IPs, Volumina,
+Geräte-/WAN-Laufzeit, CPU-**Temperatur**, WLAN-Switches und Firmware erscheinen
+nur bei vorhandenen Daten. Sensor-Einheiten bleiben erhalten; Laufzeit-Sensoren
+sind Startzeitpunkte. Es gibt keine erfundene CPU-Auslastung. Neustart,
+WAN-Neuverbindung, WLAN und Firmwareinstallation verwenden native HA-Entities.
+Installation benötigt die Update-Capability und ein verfügbares Update.
+Fehlende oder nicht verfügbare Funktionen erzeugen keine wirkungslosen Buttons.
+
+`custom:busch-network-card` und die FRITZ!-Clientsektion verwenden denselben
+Resolver, dieselbe Query im Busch-Core und denselben Clientrenderer.
+Standardquelle ist `device_tracker` mit `source_type: router`; die FRITZ!-Karte
+begrenzt zusätzlich auf die eigene berichtende Instanz und Integration.
+Die Query teilt Registrycaches, Ereignisverarbeitung und Zeitscheduler des
+Cores. Eine einzelne Trackeränderung bewertet nur diesen Client; Änderungen
+an fremden Sensoren bewerten die Clientfilter nicht erneut. Der Renderer
+behält unveränderte Clientnodes und begrenzt die Anfangsliste auf 20 Einträge.
+
+Alle Einstellungen sind im visuellen DE/EN-Editor verfügbar. Allgemein,
+Datenquelle, Anzeige, Interaktion, Filter/Sortierung, manuelle Rollen und eigene
+Aktionen verwenden native `ha-form`-Felder und die gemeinsame UI-Quelle 0.3.0.
+Filter sind ein rekursiver strukturierter Builder; YAML ist nicht nötig.
+Ungültige Zwischenwerte zeigen einen Inlinefehler und werden nicht als
+unbeschränkte Query gespeichert. Unbekannte optionale Konfigwerte, `false`,
+`0`, vollständige Snapshots und ausstehende HA-Echos bleiben erhalten.
+
+Synthetisches Beispiel (alle Adressen stammen aus RFC 5737):
+
+```yaml
+type: custom:busch-network-card
+title: Example network
+source_type: router
+filter:
+  include:
+    - and:
+        - cidr: 192.0.2.0/24
+        - or:
+            - status: home
+            - hostname: example-*
+    - ip_range:
+        from: 198.51.100.10
+        to: 198.51.100.30
+  exclude:
+    - hostname: guest-*
+sort:
+  method: ip
+  reverse: false
+count: 20
+columns: 1
+show_network_device: true
+show_last_changed: true
+show_last_time_reachable: true
+time_fallback: false
+```
+
+Include-Regeln sind ODER-verknüpft, ihre Felder UND-verknüpft. Excludes werden
+danach mit ODER ausgeschlossen. Leeres Include umfasst alle Clients im
+gewählten Scope. Unterstützt sind `state`, `status`, `integration`,
+`config_entry`, `device`, `area`, `label`, `manufacturer`/
+`device_manufacturer`, `name`, verschachtelte `attributes`, `ip`,
+`ip_range: {from, to}`, `cidr`, `hostname`/`host_name`, `mac`,
+`network_device`/`connected_via_device_id`, `last_changed`,
+`last_time_reachable` sowie `and`, `or`, `not`. Exakte Werte, Globs und
+Regex sind möglich; Zeitvergleiche beispielsweise `"> 2 h"`.
+IPv4 verlangt vier Dezimaloktette von 0–255 ohne führende Nullen.
+Bereiche sind inklusiv und geordnet; CIDR unterstützt `/0` bis `/32`.
+Ungültige Regeln werden abgelehnt. IPv4 wird numerisch sortiert, valide IPv6
+bleiben eine eigene Gruppe, ungültige/fehlende IPs zuletzt. Weitere
+Sortierungen: Name, Hostname, Status, MAC, Hersteller, beide Zeitangaben und
+belegter Verbindungspunkt. Gleiche Werte haben einen stabilen Entity-ID-Tie.
+
+| Information | Bedeutung |
+| --- | --- |
+| Anwesenheit | Von HA gemeldetes `home`/`not_home`; kann FRITZ!-Karenz enthalten. Restore, `unknown` und `unavailable` ergeben keine behauptete Onlineverbindung. |
+| Letzte Zustandsänderung | HAs `last_changed`, einschließlich möglicher Neustart-/Restoreeinflüsse. |
+| Zuletzt als erreichbar erkannt | HAs `last_time_reachable`, zuletzt im Polling als aktiver Host beobachtet. |
+| Zeitfallback | Optional ausschließlich in der Anzeige; deutlich als Zustandsänderung beschriftet. Filter und Sortierung der Erreichbar-Zeit bleiben am echten Erreichbar-Wert. |
+| Verbindungspunkt | Nur eine tatsächlich gelieferte, im Device-Register vorhandene `connected_via_device_id`. Namen, berichtende Instanz und `via_device_id` beweisen keinen AP. |
+
+Zukünftige oder nicht parsebare Zeitpunkte erscheinen unbekannt. Ein
+Zeitfilter auf einem zukünftigen Zeitstempel wird frühestens ab dessen
+Zeitpunkt ausgewertet, über den gemeinsamen Coretimer. Kein Timer pro Client. FRITZ!-Laufzeiten aus konstanten Startzeitstempeln
+werden minutengenau über denselben gemeinsamen Coretimer weitergeführt;
+die letzte entfernte Zeitkarte gibt ihren Timer frei.
+Ohne belegte AP-ID bleibt der Verbindungspunkt unbekannt. Die vorhandene
+Legacy-Discovery kann diese Angaben weglassen; die Karte ändert keine
+FRITZ!-Option und enthält keine Routerzugangsdaten. Es wurde kein Companion
+hinzugefügt, da bislang kein tatsächlicher Mesh-Identifier-Abgleich dessen
+Notwendigkeit belegt.
+
+Internetzugang und Wake-on-LAN werden über native HA-Switches/Buttons mit
+identischer MAC, Client-Device und Config Entry aufgelöst. Anwesenheit ist
+kein Internetzugangswert. `show_internet`, `show_wol`, `show_controls` und
+Bestätigungen sind einstellbar. Anzeigename/Labels sind separate
+Administratoraktionen über die Entity Registry: keine Entity-ID-Umbenennung
+und keine festen persönlichen Labels. `label_ids` begrenzt angebotene Labels;
+bereits zugewiesene Entitylabels können erhalten bleiben. Diese Aktionen
+wurden ausschließlich mit Mocks geprüft.
+
+Eigene Aktionen unterstützen HAs `tap_action`, `hold_action`,
+`double_tap_action`, `confirmation`, Serviceziele und Daten. Ein leeres
+Serviceziel wird mit dem aktuellen Client gefüllt; unbekannte Ziel-IDs und
+leere Ziellisten werden abgelehnt. `{{ entity }}`, `{{ device }}`, `{{ area }}`
+sind die vorhandenen begrenzten Platzhalter, kein ausführbarer Code.
+Zusätzliche beschriftete Aktionen stehen in `actions` mit `name`, optional
+`icon`, `variant` (`primary`, `secondary`, `danger`, `quiet`, `icon-only`,
+`overflow`) und den drei HA-Aktionsfeldern. Enter/Space und Touch verwenden
+dieselben Guards. Interaktive Aktionen klappen die Clientsektion nicht um.
+Registryformulare erscheinen in nativen aufklappbaren Abschnitten im Client;
+es wird kein eigener Popup-/Historydialog eingeführt.
+
+Geprüft: vollständige Node-Suite einschließlich unveränderter offizieller
+auto-entities-1.16.1-Vergleiche ohne Skips, synthetische Karten-/Editorgalerie
+bei 320/480/960 hell/dunkel, native HA-Formen 2026.9.3 und 2026.9.4 mit
+physischer Texteingabe, vollständigem Echo, Falsy-/Readonly-/Fokus-/Keyboard-
+Vertrag. Native Dropdowns und Filterfelder werden gesondert geprüft;
+synthetische Formattrappen belegen nur Layout/Verdrahtung. Einzelne native
+Zwischenläufe enthielten `unknown_command`-Ablehnungen. Ein späterer Lauf
+belegte den fehlenden `recorder/info`-Provider der minimalen Testinstanz;
+Recorder registriert diesen Handler bei echtem Integrationsstart. Die
+Ursache früherer Erstläufe wurde damit nicht rückwirkend bewiesen. Alle
+Fehler bleiben in den privaten Prüfberichten erhalten; eine fehlerfreie
+native Gesamtabnahme wird nicht behauptet. Echte FRITZ!-Registry-Picker,
+Speichern/Visual-YAML-Reopen, Portal-/IME-Gesamtabnahme und Performancematrix
+sind Teil der folgenden Gesamtprüfung. Keine Veröffentlichung, Installation,
+Optionsänderung, produktive Dashboardänderung oder Geräteaktion erfolgt.
