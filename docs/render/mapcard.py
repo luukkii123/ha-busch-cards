@@ -249,6 +249,13 @@ PAGE = """<!doctype html>
     }
     return {
       createCardElement: async (config) => {
+        // Der UI-Adapter kann Kartenhelfer zwischenspeichern. Der Fehlerfall
+        // muss deshalb auch nach einem erfolgreichen ersten Aufruf ausloesen.
+        if (window.__modus === 'wirft') {
+          throw new Error('createCardElement steht in dieser Pruefung absichtlich '
+            + 'nicht zur Verfuegung, damit der Fehlerkasten der Karte mit einem '
+            + 'ausreichend langen Text gemessen werden kann');
+        }
         const el = document.createElement('fake-map-card');
         el.setConfig(config);          /* wirft bei leeren Entitaeten */
         return el;

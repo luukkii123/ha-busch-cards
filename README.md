@@ -40,7 +40,7 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung für `0.16.0`: Home Assistant **2026.9.3** oder neuer. Die
+Voraussetzung für `0.16.1`: Home Assistant **2026.9.3** oder neuer. Die
 Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
 für diesen Stand nicht freigegeben.
 
@@ -897,7 +897,8 @@ type: custom:busch-unraid-stack-card
 device_id: YOUR_STACK_DEVICE_ID
 ```
 
-Im Editor die Unraid-Instanz und ein Gerät vom Modell `Compose stack` wählen.
+Im Editor ein Gerät vom Modell `Compose stack` wählen. Die Geräte-ID bestimmt
+die zugehörige Unraid-Instanz intern eindeutig.
 Die Karte zeigt laufende Container, Stacksteuerung und zugeordnete Container-
 Updates. Konfigurierbar sind Titel, kompakte/ausführliche Ansicht, Status,
 Steuerung, Container, Updates, Zustandsfilter, Sortierung, Neustart,
@@ -918,7 +919,8 @@ Auswahl; die Eingabe der Kennung ist nicht erforderlich. Details und Updates
 öffnen den nativen HA-Dialog. Ein Update wird nur bei vorhandener Zuordnung
 und verfügbarem Update angezeigt.
 
-Beide Karten ordnen Entities über Plattform, Config Entry, Gerätezuordnung
+Beide Karten ordnen Entities über Plattform, den intern aus der Geräte-ID
+ermittelten Config Entry, Gerätezuordnung
 und strukturierte Backendattribute zu. Für ältere Versionen wird ausschließlich
 der belegte Registry-`unique_id`-Vertrag verwendet, niemals ein Entity-ID-
 oder Anzeigenamenmuster. Unklare Zuordnungen bleiben unbedienbar; explizite
@@ -938,8 +940,9 @@ type: custom:busch-unraid-vm-card
 device_id: YOUR_VM_DEVICE_ID
 ```
 
-Im Editor ein Gerät vom Backendmodell `Virtual machine` und optional die
-Unraid-Instanz auswählen. Die Zuordnung verwendet ausschließlich Registry,
+Im Editor ein Gerät vom Backendmodell `Virtual machine` auswählen. Die
+Geräte-ID bestimmt die zugehörige Unraid-Instanz intern eindeutig. Die
+Zuordnung verwendet ausschließlich Registry,
 `kind`, `role`, `config_entry_id` und `vm_key`; mehrdeutige oder ungültige
 IDs erzeugen keine Ersatzzuordnung. Start/Stop verwenden den VM-Schalter,
 Neustart ausschließlich den nativen Rebootbutton. Stop und Neustart werden
@@ -952,6 +955,12 @@ Alle drei Unraid-Karten unterstützen `show_cpu`, `show_ram`, `display_mode`
 Entity-/Devicebilder, dann eigenes Bild und Icon. Bildmodus bevorzugt das
 eigene Bild. Ladefehler wechseln zum Icon. Das Backendattribut `image`
 bleibt ausschließlich Docker-Image/Tag und wird als Text gezeigt.
+
+Für Stack, Container und VM ist `device_id` die einzige Auswahl für den
+Unraid-Host. Ein älteres `config_entry_id` in gespeicherten Karten wird
+ignoriert und beim nächsten Speichern im Editor entfernt. Gehört das Gerät
+zu mehreren Unraid-SSH-Integrationseinträgen oder fehlt die eindeutige
+Registry-Zuordnung, bleiben Steuerungen aus Sicherheitsgründen inaktiv.
 
 CPU wird als Prozent je Kern angezeigt und darf über 100 % liegen.
 RAM wird binär als KiB/MiB/GiB formatiert. Containerlimits stammen nur aus
@@ -1289,3 +1298,24 @@ UI-Quelle 0.3.2. Gegenüber den geprüften Bundlebytes wurde ausschließlich
 Speichern und Wiederöffnen; lokale Suiten und Darstellungsmatrizen sind oben
 dokumentiert. Der vorhandene native Pickerkonflikt bleibt eine benannte Grenze.
 Keine produktiven Geräteaktionen wurden für die Abnahme ausgeführt.
+
+### Geprüft: Release 0.16.1, 01.10.2026
+
+Die Editoren für Stack, Container und VM verwenden nur noch `device_id`.
+Alte `config_entry_id`-Werte werden beim Speichern entfernt; die Karten
+bestimmen den Integrationseintrag intern eindeutig aus dem gewählten Gerät.
+Die Zuordnung wurde lesend gegen die vollständigen Live-Registrierungen
+geprüft: 16 Stackgeräte, 16 Containergeräte und eine VM, jeweils genau ein
+Integrationseintrag und vorhandene Steuer-Entities. Mit und ohne alten
+Instanzwert ist das Ergebnis gleich. Im nativen Home-Assistant-Editor
+(2026.9.3) bestanden alle drei Formulare samt Speichern und den Breiten
+320/480/960 px ohne Überlauf oder Browserfehler.
+
+Die Node-Suite bestand mit 422 Tests, einem bestehenden Skip und null
+Fehlern. Syntaxprüfung und statische UI-Regeln für alle acht Repositories
+waren grün. Chromium prüfte 41 ältere Unraid-Fälle und 126 Fälle der
+aktuellen Stack-/Container-/VM-Familie bei 320/480/960 px in Hell/Dunkel
+ohne Fehler; die weiteren Kartenrenderings bestanden ebenfalls. Zwei
+synthetische Prüffälle wurden korrigiert: der mobile Stackabstand misst
+jetzt die Metriken mit, und die Landkarten-Fehlerprobe berücksichtigt den
+zwischengespeicherten Kartenhelfer. Es gab keine produktiven Schaltaktionen.

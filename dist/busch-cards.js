@@ -902,7 +902,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.16.0";
+const CARD_VERSION = "0.16.1";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -6567,31 +6567,32 @@ if (!customElements.get?.("busch-smart-entities")) customElements.define("busch-
 if (!customElements.get?.("busch-smart-entities-editor")) customElements.define("busch-smart-entities-editor", BuschSmartEntitiesEditor);
 if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))window.customCards.push({type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
 /* Unraid cards: joins are exclusively backend metadata + registry scope. */
-const BUSCH_UNRAID_DEFAULTS = { display_mode:'auto', image:'', icon:'', show_cpu:true, show_ram:true, show_uptime:true, show_ip:true, show_disk:true, debug:false, title: '', config_entry_id: '', device_id: '', container_key: '', switch_entity: '', update_entity: '', layout: 'detailed', show_status: true, show_controls: true, show_containers: true, show_updates: true, state_filter: 'all', sort: 'name', show_restart: true, confirm_stop: true, confirm_restart: true, start_expanded: true };
+const BUSCH_UNRAID_DEFAULTS = { display_mode:'auto', image:'', icon:'', show_cpu:true, show_ram:true, show_uptime:true, show_ip:true, show_disk:true, debug:false, title: '', device_id: '', container_key: '', switch_entity: '', update_entity: '', layout: 'detailed', show_status: true, show_controls: true, show_containers: true, show_updates: true, state_filter: 'all', sort: 'name', show_restart: true, confirm_stop: true, confirm_restart: true, start_expanded: true };
+function buschUnraidConfig(config){const next={...config};delete next.config_entry_id;return next;}
 const TEXTE_BUSCH_UNRAID_STACK_CARD = {
  de: {
-  labels: {title:'Titel',config_entry_id:'Unraid-Instanz',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
-  helpers: {title:'Eigener Kartentitel; Vorgabe ist der Gerätename.',config_entry_id:'Begrenzt die Auswahl auf diese Unraid-Instanz; Vorgabe sind alle Instanzen.',device_id:'Wählt ein Unraid-Gerät; Vorgabe ist das erste passende Gerät.',container_key:'Wählt einen Container anhand seiner Backendkennung; Vorgabe ist der einzige Container, sonst bitte auswählen.',switch_entity:'Ordnet bei älterem Backend einen Schalter ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',update_entity:'Ordnet bei älterem Backend das passende Update ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',layout:'Bestimmt den Umfang der Angaben; Vorgabe ist ausführlich.',show_status:'Zeigt Zustand und laufende Container; Vorgabe ist ein.',show_controls:'Zeigt verfügbare Start- und Stoppaktionen; Vorgabe ist ein.',show_containers:'Zeigt die Containerliste des Stacks; Vorgabe ist ein.',show_updates:'Zeigt zugeordnete verfügbare Updates; Vorgabe ist ein.',state_filter:'Zeigt alle, laufende oder gestoppte Container; Vorgabe ist alle.',sort:'Sortiert Container nach Name oder Zustand; Vorgabe ist Name.',show_restart:'Zeigt ausschließlich native Neustartaktionen; ohne Backendunterstützung nicht verfügbar. Vorgabe ist ein.',confirm_stop:'Fragt vor dem Stoppen nach; Vorgabe ist ein.',confirm_restart:'Fragt vor dem Neustart nach; Vorgabe ist ein.',start_expanded:'Öffnet die Containerliste beim Laden; Vorgabe ist ein.'},
+  labels: {title:'Titel',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
+  helpers: {title:'Eigener Kartentitel; Vorgabe ist der Gerätename.',device_id:'Wählt ein Unraid-Gerät; im Kartenvorschlag ist das erste passende vorbelegt.',container_key:'Wählt einen Container anhand seiner Backendkennung; Vorgabe ist der einzige Container, sonst bitte auswählen.',switch_entity:'Ordnet bei älterem Backend einen Schalter ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',update_entity:'Ordnet bei älterem Backend das passende Update ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',layout:'Bestimmt den Umfang der Angaben; Vorgabe ist ausführlich.',show_status:'Zeigt Zustand und laufende Container; Vorgabe ist ein.',show_controls:'Zeigt verfügbare Start- und Stoppaktionen; Vorgabe ist ein.',show_containers:'Zeigt die Containerliste des Stacks; Vorgabe ist ein.',show_updates:'Zeigt zugeordnete verfügbare Updates; Vorgabe ist ein.',state_filter:'Zeigt alle, laufende oder gestoppte Container; Vorgabe ist alle.',sort:'Sortiert Container nach Name oder Zustand; Vorgabe ist Name.',show_restart:'Zeigt ausschließlich native Neustartaktionen; ohne Backendunterstützung nicht verfügbar. Vorgabe ist ein.',confirm_stop:'Fragt vor dem Stoppen nach; Vorgabe ist ein.',confirm_restart:'Fragt vor dem Neustart nach; Vorgabe ist ein.',start_expanded:'Öffnet die Containerliste beim Laden; Vorgabe ist ein.'},
   texte:{layout_compact:'Kompakt',layout_detailed:'Ausführlich',state_filter_all:'Alle',state_filter_running:'Laufend',state_filter_stopped:'Gestoppt',sort_name:'Name',sort_state:'Zustand'},
   stack:'Unraid-Stack',container:'Unraid-Container',stack_description:'Steuert einen Unraid-Compose-Stack und seine Container.',container_description:'Zeigt und steuert einen Unraid-Container.',empty:'Kein passendes Unraid-Gerät gefunden.',metadata:'Keine eindeutige Zuordnung verfügbar. Backend aktualisieren oder einen Schalter im Editor auswählen.',choose:'Bitte einen Container im Editor auswählen.',none:'Keine Container für diesen Filter.',start:'Starten',stop:'Stoppen',restart:'Neu starten',details:'Details',update:'Update',running:'Läuft',stopped:'Gestoppt',partial:'Teilweise gestartet',unavailable:'Nicht verfügbar',unknown:'Unbekannt',paused:'Pausiert',standalone:'Eigenständiger Container',container_group:'Container ({count})',expand:'Container aufklappen',collapse:'Container zuklappen',running_count:'{running} von {total} laufen',confirm_stop:'„{name}“ stoppen?',confirm_restart:'„{name}“ neu starten?',failed:'Aktion fehlgeschlagen. Bitte Zustand und Berechtigungen prüfen.',restart_missing:'Native Neustartfunktion fehlt. Dafür ist das aktualisierte Unraid-Backend erforderlich. Vorgabe ist ein.'
  },
  en: {
-  labels: {title:'Title',config_entry_id:'Unraid instance',device_id:'Device',container_key:'Container',switch_entity:'Assign switch',update_entity:'Assign update',layout:'Layout',show_status:'Show status',show_controls:'Show controls',show_containers:'Show containers',show_updates:'Show updates',state_filter:'Filter containers',sort:'Sort order',show_restart:'Show restart',confirm_stop:'Confirm stop',confirm_restart:'Confirm restart',start_expanded:'Start expanded'},
-  helpers: {title:'Custom card title; defaults to the device name.',config_entry_id:'Limits selection to this Unraid instance; defaults to all instances.',device_id:'Selects an Unraid device; defaults to the first matching device.',container_key:'Selects a container using its backend identity; defaults to the only container, otherwise select one.',switch_entity:'Explicitly assigns a switch on older backends; defaults to automatic matching.',update_entity:'Explicitly assigns the matching update on older backends; defaults to automatic matching.',layout:'Controls the amount of detail; defaults to detailed.',show_status:'Shows state and running count; enabled by default.',show_controls:'Shows available start and stop actions; enabled by default.',show_containers:'Shows the stack container list; enabled by default.',show_updates:'Shows matching available updates; enabled by default.',state_filter:'Shows all, running or stopped containers; defaults to all.',sort:'Sorts containers by name or state; defaults to name.',show_restart:'Shows native restart actions only; unavailable without backend support. Enabled by default.',confirm_stop:'Asks before stopping; enabled by default.',confirm_restart:'Asks before restarting; enabled by default.',start_expanded:'Expands the container list when loaded; enabled by default.'},
+  labels: {title:'Title',device_id:'Device',container_key:'Container',switch_entity:'Assign switch',update_entity:'Assign update',layout:'Layout',show_status:'Show status',show_controls:'Show controls',show_containers:'Show containers',show_updates:'Show updates',state_filter:'Filter containers',sort:'Sort order',show_restart:'Show restart',confirm_stop:'Confirm stop',confirm_restart:'Confirm restart',start_expanded:'Start expanded'},
+  helpers: {title:'Custom card title; defaults to the device name.',device_id:'Selects an Unraid device; the card suggestion preselects the first matching one.',container_key:'Selects a container using its backend identity; defaults to the only container, otherwise select one.',switch_entity:'Explicitly assigns a switch on older backends; defaults to automatic matching.',update_entity:'Explicitly assigns the matching update on older backends; defaults to automatic matching.',layout:'Controls the amount of detail; defaults to detailed.',show_status:'Shows state and running count; enabled by default.',show_controls:'Shows available start and stop actions; enabled by default.',show_containers:'Shows the stack container list; enabled by default.',show_updates:'Shows matching available updates; enabled by default.',state_filter:'Shows all, running or stopped containers; defaults to all.',sort:'Sorts containers by name or state; defaults to name.',show_restart:'Shows native restart actions only; unavailable without backend support. Enabled by default.',confirm_stop:'Asks before stopping; enabled by default.',confirm_restart:'Asks before restarting; enabled by default.',start_expanded:'Expands the container list when loaded; enabled by default.'},
   texte:{layout_compact:'Compact',layout_detailed:'Detailed',state_filter_all:'All',state_filter_running:'Running',state_filter_stopped:'Stopped',sort_name:'Name',sort_state:'State'},
   stack:'Unraid stack',container:'Unraid container',stack_description:'Controls an Unraid Compose stack and its containers.',container_description:'Displays and controls an Unraid container.',empty:'No matching Unraid device found.',metadata:'No unambiguous mapping available. Update the backend or select a switch in the editor.',choose:'Select a container in the editor.',none:'No containers match this filter.',start:'Start',stop:'Stop',restart:'Restart',details:'Details',update:'Update',running:'Running',stopped:'Stopped',partial:'Partially running',unavailable:'Unavailable',unknown:'Unknown',paused:'Paused',standalone:'Standalone container',container_group:'Containers ({count})',expand:'Expand containers',collapse:'Collapse containers',running_count:'{running} of {total} running',confirm_stop:'Stop “{name}”?',confirm_restart:'Restart “{name}”?',failed:'Action failed. Check the current state and permissions.',restart_missing:'Native restart is unavailable. The updated Unraid backend is required. Enabled by default.'
  }
 };
 const TEXTE_BUSCH_UNRAID_CONTAINER_CARD = {
  de: {
-  labels: {title:'Titel',config_entry_id:'Unraid-Instanz',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
-  helpers: {title:'Eigener Kartentitel; Vorgabe ist der Gerätename.',config_entry_id:'Begrenzt die Auswahl auf diese Unraid-Instanz; Vorgabe sind alle Instanzen.',device_id:'Wählt ein Unraid-Gerät; Vorgabe ist das erste passende Gerät.',container_key:'Wählt einen Container anhand seiner Backendkennung; Vorgabe ist der einzige Container, sonst bitte auswählen.',switch_entity:'Ordnet bei älterem Backend einen Schalter ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',update_entity:'Ordnet bei älterem Backend das passende Update ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',layout:'Bestimmt den Umfang der Angaben; Vorgabe ist ausführlich.',show_status:'Zeigt Zustand und laufende Container; Vorgabe ist ein.',show_controls:'Zeigt verfügbare Start- und Stoppaktionen; Vorgabe ist ein.',show_containers:'Zeigt die Containerliste des Stacks; Vorgabe ist ein.',show_updates:'Zeigt zugeordnete verfügbare Updates; Vorgabe ist ein.',state_filter:'Zeigt alle, laufende oder gestoppte Container; Vorgabe ist alle.',sort:'Sortiert Container nach Name oder Zustand; Vorgabe ist Name.',show_restart:'Zeigt ausschließlich native Neustartaktionen; ohne Backendunterstützung nicht verfügbar. Vorgabe ist ein.',confirm_stop:'Fragt vor dem Stoppen nach; Vorgabe ist ein.',confirm_restart:'Fragt vor dem Neustart nach; Vorgabe ist ein.',start_expanded:'Öffnet die Containerliste beim Laden; Vorgabe ist ein.'},
+  labels: {title:'Titel',device_id:'Gerät',container_key:'Container',switch_entity:'Schalter zuordnen',update_entity:'Update zuordnen',layout:'Darstellung',show_status:'Status anzeigen',show_controls:'Steuerung anzeigen',show_containers:'Container anzeigen',show_updates:'Updates anzeigen',state_filter:'Container filtern',sort:'Sortierung',show_restart:'Neustart anzeigen',confirm_stop:'Stoppen bestätigen',confirm_restart:'Neustart bestätigen',start_expanded:'Aufgeklappt starten'},
+  helpers: {title:'Eigener Kartentitel; Vorgabe ist der Gerätename.',device_id:'Wählt ein Unraid-Gerät; im Kartenvorschlag ist das erste passende vorbelegt.',container_key:'Wählt einen Container anhand seiner Backendkennung; Vorgabe ist der einzige Container, sonst bitte auswählen.',switch_entity:'Ordnet bei älterem Backend einen Schalter ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',update_entity:'Ordnet bei älterem Backend das passende Update ausdrücklich zu; Vorgabe ist die automatische Zuordnung.',layout:'Bestimmt den Umfang der Angaben; Vorgabe ist ausführlich.',show_status:'Zeigt Zustand und laufende Container; Vorgabe ist ein.',show_controls:'Zeigt verfügbare Start- und Stoppaktionen; Vorgabe ist ein.',show_containers:'Zeigt die Containerliste des Stacks; Vorgabe ist ein.',show_updates:'Zeigt zugeordnete verfügbare Updates; Vorgabe ist ein.',state_filter:'Zeigt alle, laufende oder gestoppte Container; Vorgabe ist alle.',sort:'Sortiert Container nach Name oder Zustand; Vorgabe ist Name.',show_restart:'Zeigt ausschließlich native Neustartaktionen; ohne Backendunterstützung nicht verfügbar. Vorgabe ist ein.',confirm_stop:'Fragt vor dem Stoppen nach; Vorgabe ist ein.',confirm_restart:'Fragt vor dem Neustart nach; Vorgabe ist ein.',start_expanded:'Öffnet die Containerliste beim Laden; Vorgabe ist ein.'},
   texte:{layout_compact:'Kompakt',layout_detailed:'Ausführlich',state_filter_all:'Alle',state_filter_running:'Laufend',state_filter_stopped:'Gestoppt',sort_name:'Name',sort_state:'Zustand'},
   stack:'Unraid-Stack',container:'Unraid-Container',stack_description:'Steuert einen Unraid-Compose-Stack und seine Container.',container_description:'Zeigt und steuert einen Unraid-Container.',empty:'Kein passendes Unraid-Gerät gefunden.',metadata:'Keine eindeutige Zuordnung verfügbar. Backend aktualisieren oder einen Schalter im Editor auswählen.',choose:'Bitte einen Container im Editor auswählen.',none:'Keine Container für diesen Filter.',start:'Starten',stop:'Stoppen',restart:'Neu starten',details:'Details',update:'Update',running:'Läuft',stopped:'Gestoppt',partial:'Teilweise gestartet',unavailable:'Nicht verfügbar',unknown:'Unbekannt',paused:'Pausiert',standalone:'Eigenständiger Container',expand:'Container aufklappen',collapse:'Container zuklappen',running_count:'{running} von {total} laufen',confirm_stop:'„{name}“ stoppen?',confirm_restart:'„{name}“ neu starten?',failed:'Aktion fehlgeschlagen. Bitte Zustand und Berechtigungen prüfen.',restart_missing:'Native Neustartfunktion fehlt. Dafür ist das aktualisierte Unraid-Backend erforderlich. Vorgabe ist ein.'
  },
  en: {
-  labels: {title:'Title',config_entry_id:'Unraid instance',device_id:'Device',container_key:'Container',switch_entity:'Assign switch',update_entity:'Assign update',layout:'Layout',show_status:'Show status',show_controls:'Show controls',show_containers:'Show containers',show_updates:'Show updates',state_filter:'Filter containers',sort:'Sort order',show_restart:'Show restart',confirm_stop:'Confirm stop',confirm_restart:'Confirm restart',start_expanded:'Start expanded'},
-  helpers: {title:'Custom card title; defaults to the device name.',config_entry_id:'Limits selection to this Unraid instance; defaults to all instances.',device_id:'Selects an Unraid device; defaults to the first matching device.',container_key:'Selects a container using its backend identity; defaults to the only container, otherwise select one.',switch_entity:'Explicitly assigns a switch on older backends; defaults to automatic matching.',update_entity:'Explicitly assigns the matching update on older backends; defaults to automatic matching.',layout:'Controls the amount of detail; defaults to detailed.',show_status:'Shows state and running count; enabled by default.',show_controls:'Shows available start and stop actions; enabled by default.',show_containers:'Shows the stack container list; enabled by default.',show_updates:'Shows matching available updates; enabled by default.',state_filter:'Shows all, running or stopped containers; defaults to all.',sort:'Sorts containers by name or state; defaults to name.',show_restart:'Shows native restart actions only; unavailable without backend support. Enabled by default.',confirm_stop:'Asks before stopping; enabled by default.',confirm_restart:'Asks before restarting; enabled by default.',start_expanded:'Expands the container list when loaded; enabled by default.'},
+  labels: {title:'Title',device_id:'Device',container_key:'Container',switch_entity:'Assign switch',update_entity:'Assign update',layout:'Layout',show_status:'Show status',show_controls:'Show controls',show_containers:'Show containers',show_updates:'Show updates',state_filter:'Filter containers',sort:'Sort order',show_restart:'Show restart',confirm_stop:'Confirm stop',confirm_restart:'Confirm restart',start_expanded:'Start expanded'},
+  helpers: {title:'Custom card title; defaults to the device name.',device_id:'Selects an Unraid device; the card suggestion preselects the first matching one.',container_key:'Selects a container using its backend identity; defaults to the only container, otherwise select one.',switch_entity:'Explicitly assigns a switch on older backends; defaults to automatic matching.',update_entity:'Explicitly assigns the matching update on older backends; defaults to automatic matching.',layout:'Controls the amount of detail; defaults to detailed.',show_status:'Shows state and running count; enabled by default.',show_controls:'Shows available start and stop actions; enabled by default.',show_containers:'Shows the stack container list; enabled by default.',show_updates:'Shows matching available updates; enabled by default.',state_filter:'Shows all, running or stopped containers; defaults to all.',sort:'Sorts containers by name or state; defaults to name.',show_restart:'Shows native restart actions only; unavailable without backend support. Enabled by default.',confirm_stop:'Asks before stopping; enabled by default.',confirm_restart:'Asks before restarting; enabled by default.',start_expanded:'Expands the container list when loaded; enabled by default.'},
   texte:{layout_compact:'Compact',layout_detailed:'Detailed',state_filter_all:'All',state_filter_running:'Running',state_filter_stopped:'Stopped',sort_name:'Name',sort_state:'State'},
   stack:'Unraid stack',container:'Unraid container',stack_description:'Controls an Unraid Compose stack and its containers.',container_description:'Displays and controls an Unraid container.',empty:'No matching Unraid device found.',metadata:'No unambiguous mapping available. Update the backend or select a switch in the editor.',choose:'Select a container in the editor.',none:'No containers match this filter.',start:'Start',stop:'Stop',restart:'Restart',details:'Details',update:'Update',running:'Running',stopped:'Stopped',partial:'Partially running',unavailable:'Unavailable',unknown:'Unknown',paused:'Paused',standalone:'Standalone container',expand:'Expand containers',collapse:'Collapse containers',running_count:'{running} of {total} running',confirm_stop:'Stop “{name}”?',confirm_restart:'Restart “{name}”?',failed:'Action failed. Check the current state and permissions.',restart_missing:'Native restart is unavailable. The updated Unraid backend is required. Enabled by default.'
  }
@@ -6600,7 +6601,6 @@ const TEXTE_BUSCH_UNRAID_VM_CARD = {
  de: {
   labels: {
    title: "Titel",
-   config_entry_id: "Unraid-Instanz",
    device_id: "Virtuelle Maschine",
    layout: "Darstellung",
    display_mode: "Medienanzeige",
@@ -6620,7 +6620,6 @@ const TEXTE_BUSCH_UNRAID_VM_CARD = {
   },
   helpers: {
    title: "Optionaler eigener Titel; leer verwendet den VM-Namen.",
-   config_entry_id: "Begrenzt die Geräteauswahl auf diese Instanz; leer zeigt alle.",
    device_id: "Wählt ein echtes VM-Gerät der Integration; ungültige IDs werden nicht ersetzt.",
    layout: "Kompakt oder ausführlich; Vorgabe ist ausführlich.",
    display_mode: "Automatisch bevorzugt verfügbare Bilder; Bild bevorzugt das eigene Bild, Icon zeigt nur das Icon. Vorgabe: automatisch.",
@@ -6642,7 +6641,6 @@ const TEXTE_BUSCH_UNRAID_VM_CARD = {
  en: {
   labels: {
    title: "Title",
-   config_entry_id: "Unraid instance",
    device_id: "Virtual machine",
    layout: "Layout",
    display_mode: "Media display",
@@ -6662,7 +6660,6 @@ const TEXTE_BUSCH_UNRAID_VM_CARD = {
   },
   helpers: {
    title: "Optional title; empty uses the VM name.",
-   config_entry_id: "Limits device choices to this instance; empty shows all.",
    device_id: "Selects an integration VM device; invalid IDs are never substituted.",
    layout: "Compact or detailed; defaults to detailed.",
    display_mode: "Auto prefers available pictures; image prefers your picture; icon only shows the icon. Default: auto.",
@@ -6712,9 +6709,9 @@ function buschUnraidMetrics(row,config,t,locale){
  return root;
 }
 
-function buschUnraidDevices(core,kind,entry) {
+function buschUnraidDevices(core,kind) {
  if(!core) return [];
- return [...core.devices.values()].filter(d=>(kind==='vm'?d.model==='Virtual machine':kind==='stack'?d.model==='Compose stack':['Compose stack','Docker container'].includes(d.model))&&(!entry||(d.config_entries||[]).includes(entry))&&core.getDeviceEntities(d.id).some(e=>e.platform==='unraid_ssh'&&(!entry||e.config_entry_id===entry))).sort((a,b)=>String(a.name_by_user||a.name||a.id).localeCompare(String(b.name_by_user||b.name||b.id)));
+ return [...core.devices.values()].filter(d=>(kind==='vm'?d.model==='Virtual machine':kind==='stack'?d.model==='Compose stack':['Compose stack','Docker container'].includes(d.model))&&core.getDeviceEntities(d.id).some(e=>e.platform==='unraid_ssh')).sort((a,b)=>String(a.name_by_user||a.name||a.id).localeCompare(String(b.name_by_user||b.name||b.id)));
 }
 function buschUnraidAvailable(entity){return !!entity&&!['unavailable','unknown',undefined].includes(entity.state);}
 function buschUnraidStatus(entity){if(!entity||entity.state==='unavailable')return 'unavailable';if(entity.state==='on')return 'running';if(entity.state==='off')return 'stopped';return ['running','stopped','starting','stopping','failed','paused'].includes(entity.state)?entity.state:'unknown';}
@@ -6737,10 +6734,14 @@ function buschUnraidLegacy(entries){
  });
 }
 function buschUnraidModel(core,config,kind) {
- const devices=buschUnraidDevices(core,kind,config.config_entry_id),device=config.device_id?devices.find(d=>d.id===config.device_id):devices[0];
+ const devices=buschUnraidDevices(core,kind),device=config.device_id?devices.find(d=>d.id===config.device_id):null;
  const model={device:device||null,containers:[],selected:null,switch:null,restart:null,status:'unknown',running:0,total:0};
  if(!device)return model;
- const entries=buschUnraidLegacy(core.getDeviceEntities(device.id).filter(e=>e.platform==='unraid_ssh'&&(!config.config_entry_id||e.config_entry_id===config.config_entry_id)&&!e.registry?.disabled_by));
+ const deviceEntries=new Set(device.config_entries||[]);
+ const candidates=core.getDeviceEntities(device.id).filter(e=>e.platform==='unraid_ssh'&&e.config_entry_id&&!e.registry?.disabled_by&&(!deviceEntries.size||deviceEntries.has(e.config_entry_id)));
+ const entryIds=new Set(candidates.map(e=>e.config_entry_id));
+ if(entryIds.size!==1)return model;
+ const entries=buschUnraidLegacy(candidates);
  const unique=rows=>rows.length===1?rows[0]:null;
  const explicit=(id,domain)=>unique(entries.filter(e=>e.entity_id===id&&e.domain===domain));
  if(kind==='vm'){
@@ -6777,7 +6778,6 @@ function buschUnraidModel(core,config,kind) {
 }
 const SCHEMA_BUSCH_UNRAID_STACK_CARD = [
  {name: "title", "selector": {"text": {}}},
- {name: "config_entry_id", "selector": {"config_entry": {"integration": "unraid_ssh"}}},
  {name: "device_id", "selector": {"select": {"options": []}}},
  {name: "switch_entity", "selector": {"entity": {"filter": {"integration": "unraid_ssh", "domain": "switch"}}}},
  {name: "layout", "selector": {"select": {"options": [{"value": "compact"}, {"value": "detailed"}]}}},
@@ -6794,7 +6794,6 @@ const SCHEMA_BUSCH_UNRAID_STACK_CARD = [
 ];
 const SCHEMA_BUSCH_UNRAID_CONTAINER_CARD = [
  {name: "title", "selector": {"text": {}}},
- {name: "config_entry_id", "selector": {"config_entry": {"integration": "unraid_ssh"}}},
  {name: "device_id", "selector": {"select": {"options": []}}},
  {name: "container_key", "selector": {"select": {"options": []}}},
  {name: "switch_entity", "selector": {"entity": {"filter": {"integration": "unraid_ssh", "domain": "switch"}}}},
@@ -6813,14 +6812,6 @@ const SCHEMA_BUSCH_UNRAID_VM_CARD = [
   name: "title",
   selector: {
    text: {}
-  }
- },
- {
-  name: "config_entry_id",
-  selector: {
-   config_entry: {
-    integration: "unraid_ssh"
-   }
   }
  },
  {
@@ -6946,7 +6937,7 @@ const SCHEMA_BUSCH_UNRAID_VM_CARD = [
 function buschUnraidSchema(core,config,kind){
  const model=buschUnraidModel(core,config,kind),base=kind==='stack'?SCHEMA_BUSCH_UNRAID_STACK_CARD:kind==='vm'?SCHEMA_BUSCH_UNRAID_VM_CARD:SCHEMA_BUSCH_UNRAID_CONTAINER_CARD;
  return (kind==='vm'?base:[...base,...BUSCH_UNRAID_MEDIA_SCHEMA,...SCHEMA_BUSCH_UNRAID_VM_CARD.filter(f=>['show_cpu','show_ram','debug'].includes(f.name))]).map(field=>{
-  if(field.name==='device_id')return {...field,selector:{select:{options:buschUnraidDevices(core,kind,config.config_entry_id).map(d=>({value:d.id,label:d.name_by_user||d.name||d.id}))}}};
+  if(field.name==='device_id')return {...field,selector:{select:{options:buschUnraidDevices(core,kind).map(d=>({value:d.id,label:d.name_by_user||d.name||d.id}))}}};
   if(field.name==='container_key')return {...field,selector:{select:{options:model.containers.map(c=>({value:c.key,label:c.name}))}}};
   if(field.name==='switch_entity'||field.name==='update_entity')return {...field,selector:{entity:{filter:{integration:'unraid_ssh',domain:field.name==='switch_entity'?'switch':'update',...(model.device?{device_id:model.device.id}:{})}}}};
   if(field.name==='show_restart')return {...field,disabled:kind==='stack'?!model.restart&&!model.containers.some(c=>c.restart):!model.selected?.restart};
@@ -6977,7 +6968,7 @@ function buschUnraidBadge(status,text){return BuschUI.statusBadge(status,text);}
 function buschUnraidIcon(name,className){const holder=buschUnraidNode('span',undefined,className),icon=buschUnraidNode('ha-icon');holder.setAttribute('aria-hidden','true');icon.setAttribute('icon',name);holder.appendChild(icon);return holder;}
 class BuschUnraidBaseCard extends HTMLElement {
  constructor(){super();this.attachShadow({mode:'open'});this._config={...BUSCH_UNRAID_DEFAULTS};this._expanded=true;this._generation=0;}
- setConfig(config){this._config={...BUSCH_UNRAID_DEFAULTS,...config};this._expanded=this._config.start_expanded;this._error=null;this._generation++;this._render();}
+ setConfig(config){this._config={...BUSCH_UNRAID_DEFAULTS,...buschUnraidConfig(config)};this._expanded=this._config.start_expanded;this._error=null;this._generation++;this._render();}
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
  get hass(){return this._hass;}
  connectedCallback(){this._connect();this._render();}
@@ -7031,7 +7022,7 @@ class BuschUnraidStackCard extends BuschUnraidBaseCard {
 class BuschUnraidContainerCard extends BuschUnraidBaseCard {
  get _kind(){return 'container';}
  static getConfigElement(){return document.createElement('busch-unraid-container-card-editor');}
- static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-container-card'};const core=ensureBuschCore(1);core.attach(hass);const model=buschUnraidModel(core,{},'container');return {type:'custom:busch-unraid-container-card',...(model.device?{device_id:model.device.id}:{}),...(model.containers[0]?{container_key:model.containers[0].key}:{})};}
+ static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-container-card'};const core=ensureBuschCore(1);core.attach(hass);const device=buschUnraidDevices(core,'container')[0],model=buschUnraidModel(core,{device_id:device?.id},'container');return {type:'custom:busch-unraid-container-card',...(device?{device_id:device.id}:{}),...(model.containers[0]?{container_key:model.containers[0].key}:{})};}
 }
 class BuschUnraidVmCard extends BuschUnraidBaseCard {
  get _kind(){return 'vm';}
@@ -7039,12 +7030,12 @@ class BuschUnraidVmCard extends BuschUnraidBaseCard {
  static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-vm-card'};const core=ensureBuschCore(1);core.attach(hass);const device=buschUnraidDevices(core,'vm')[0];return {type:'custom:busch-unraid-vm-card',...(device?{device_id:device.id}:{})};}
 }
 class BuschUnraidBaseEditor extends BuschEditorBase {
- setConfig(config){if(!this._acceptConfig(config))return;this._render();}
+ setConfig(config){if(!this._acceptConfig(config,buschUnraidConfig))return;this._render();}
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
  connectedCallback(){this._connect();this._render();}
  disconnectedCallback(){this._release?.();this._unwatch?.();this._release=this._unwatch=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
- _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=BuschUI.ha.form();this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next={...this._config,...event.detail.value};let structural=false;if((next.config_entry_id||'')!==(this._config.config_entry_id||'')){delete next.device_id;delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}else if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};if(structural)this._render();});this.appendChild(this._form);}
+ _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=BuschUI.ha.form();this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next=buschUnraidConfig({...this._config,...event.detail.value});let structural=false;if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};if(structural)this._render();});this.appendChild(this._form);}
   this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);const fields=this._kind==='vm'?buschTexte(TEXTE_BUSCH_UNRAID_VM_CARD,this._hass):t;this._form.computeLabel=s=>fields.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:fields.helpers[s.name]||'';
  }
 }
