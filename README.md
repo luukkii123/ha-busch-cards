@@ -40,7 +40,7 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung für `0.16.1`: Home Assistant **2026.9.3** oder neuer. Die
+Voraussetzung für `0.16.2`: Home Assistant **2026.9.3** oder neuer. Die
 Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
 für diesen Stand nicht freigegeben.
 
@@ -919,6 +919,13 @@ Auswahl; die Eingabe der Kennung ist nicht erforderlich. Details und Updates
 öffnen den nativen HA-Dialog. Ein Update wird nur bei vorhandener Zuordnung
 und verfügbarem Update angezeigt.
 
+Während Home Assistant ein Containerupdate ausführt, zeigen Container und
+zugehöriger Stack **Update läuft**. Der Status wechselt durch den laufenden
+Entity-Stream nach Abschluss wieder zurück. Eine Prozentzahl erscheint nur,
+wenn die Update-Entität einen echten `update_percentage`-Wert liefert; bei
+mehreren gleichzeitigen Updates zeigt der Stack keine irreführende
+Gesamtprozentzahl. Steueraktionen sind während des Updates gesperrt.
+
 Beide Karten ordnen Entities über Plattform, den intern aus der Geräte-ID
 ermittelten Config Entry, Gerätezuordnung
 und strukturierte Backendattribute zu. Für ältere Versionen wird ausschließlich
@@ -944,10 +951,16 @@ Im Editor ein Gerät vom Backendmodell `Virtual machine` auswählen. Die
 Geräte-ID bestimmt die zugehörige Unraid-Instanz intern eindeutig. Die
 Zuordnung verwendet ausschließlich Registry,
 `kind`, `role`, `config_entry_id` und `vm_key`; mehrdeutige oder ungültige
-IDs erzeugen keine Ersatzzuordnung. Start/Stop verwenden den VM-Schalter,
-Neustart ausschließlich den nativen Rebootbutton. Stop und Neustart werden
-standardmäßig bestätigt; pausierte, blockierte und herunterfahrende VMs
-bekommen keine ungeeigneten Start-/Neustartaktionen.
+IDs erzeugen keine Ersatzzuordnung. **Herunterfahren** verwendet den
+VM-Schalter und fordert den Gast nur zum geordneten Ausschalten auf; das
+kann dauern oder am Gast scheitern. **Sofort ausschalten** verwendet den
+eigenen Button der Unraid-SSH-Integration ab **0.6.1** und fordert immer eine
+Bestätigung mit Datenverlustwarnung. Der harte Weg wird nie automatisch nach
+einem erfolglosen Herunterfahren ausgelöst. Neustart verwendet ausschließlich
+den nativen Rebootbutton. Herunterfahren und Neustart werden standardmäßig
+bestätigt; pausierte, blockierte und herunterfahrende VMs bekommen keine
+ungeeigneten Start-/Neustartaktionen, können aber gezielt sofort ausgeschaltet
+werden.
 
 Alle drei Unraid-Karten unterstützen `show_cpu`, `show_ram`, `display_mode`
 (`auto`, `image`, `icon`), eigenes Bild `image`, eigenes Icon `icon`,
@@ -1319,3 +1332,21 @@ ohne Fehler; die weiteren Kartenrenderings bestanden ebenfalls. Zwei
 synthetische Prüffälle wurden korrigiert: der mobile Stackabstand misst
 jetzt die Metriken mit, und die Landkarten-Fehlerprobe berücksichtigt den
 zwischengespeicherten Kartenhelfer. Es gab keine produktiven Schaltaktionen.
+
+### Geprüft: Release 0.16.2, 01.10.2026
+
+Die VM-Karte unterscheidet jetzt **Herunterfahren** (Gastanforderung) und
+**Sofort ausschalten** (eigener Backendbutton ab Unraid SSH 0.6.1). Die harte
+Aktion verlangt immer eine Bestätigung mit Datenverlustwarnung; sie ist auch
+bei einem hängenden Herunterfahren verfügbar, bei ausgeschalteter VM nicht.
+Es gibt keinen automatischen Wechsel vom schonenden zum harten Befehl.
+
+428 Node-Tests bestanden, ein bestehender Skip. Syntax und statische
+UI-Regeln für alle acht Repositories waren grün. Chromium prüfte 41 ältere
+Unraid-Fälle und 180 Fälle der aktuellen Familie einschließlich `in_shutdown`
+und laufender Updates mit und ohne echte Prozentangabe
+bei 320/480/960 px in Hell/Dunkel ohne Überlauf oder Browserfehler. Die
+weiteren Kartenrenderings bestanden. Drei Editoren wurden in Home Assistant
+2026.9.3 nativ geprüft, einschließlich Speichern und 320/480/960 px ohne
+Überlauf. Alle Aktionsprüfungen verwendeten synthetische Serviceaufrufe;
+eine produktive VM wurde nicht geschaltet.
