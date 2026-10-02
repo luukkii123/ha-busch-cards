@@ -94,6 +94,9 @@ for _name, _url in LEAFLET_DATEIEN.items():
 
 PAGE = """<!doctype html>
 <meta charset="utf-8">
+<!-- Wie Home Assistant: an fremde Hosts geht kein Referer. Ohne diese Zeile
+     waere der 403 von tile.openstreetmap.org hier nicht nachzustellen. -->
+<meta name="referrer" content="same-origin">
 <title>busch-map-card</title>
 <style>
   :root { --primary-text-color:#212121; --divider-color:#e0e0e0;
@@ -190,7 +193,7 @@ PAGE = """<!doctype html>
       const div = document.createElement('div');
       div.style.cssText = 'width:100%;height:300px';
       haMap.appendChild(div);
-      const map = window.L.map(div).setView([0, 0], 13);
+      const map = window.L.map(div).setView(window.__mitte || [0, 0], 13);
       if (window.__modus === 'raster') {
         window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: 'HA-Standardangabe', maxZoom: 19,
@@ -557,6 +560,45 @@ with sync_playwright() as pw:
         return { url };
     }""")
 
+    # ── Referer an tile.openstreetmap.org (gemeldet 02.10.2026) ─────────
+    # HA schickt `Referrer-Policy: no-referrer`; OSM liefert dann ein PNG mit
+    # „403 Access blocked" eingebrannt. Gemessen wird der Referer, den
+    # Chromium WIRKLICH an den Kachelserver schickt — abgefangen, nicht aus
+    # den Leaflet-Optionen gelesen. Als PAAR: HAs eigene Ebene (Vorlage 'ha')
+    # muss OHNE Referer bleiben, sonst stellt die Attrappe den Fehler gar
+    # nicht nach und das Gruen der beiden anderen Faelle waere wertlos.
+    referer_log = []
+    LEER_PNG = bytes.fromhex(
+        "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+        "1f15c4890000000d49444154789c63000100000500010d0a2db40000000049454e44ae426082")
+
+    def _kachel(route):
+        referer_log.append(route.request.all_headers().get("referer"))
+        route.fulfill(status=200, content_type="image/png", body=LEER_PNG)
+
+    page.route("https://tile.openstreetmap.org/**", _kachel)
+
+    # Je Fall ein EIGENER Ausschnitt: dieselben Kachel-URLs kaemen sonst aus
+    # Chromiums Bildspeicher, und es gaebe gar keine Anfrage zu messen.
+    def _referer(modus, stil, mitte):
+        referer_log.clear()
+        page.evaluate("""async ([modus, stil, mitte]) => {
+            window.__modus = modus;
+            window.__mitte = mitte;
+            await window.__mk({type:'custom:busch-map-card',
+              entities:['person.demo'], map_style: stil});
+            await new Promise(r => setTimeout(r, 1500));
+            window.__mitte = null;
+        }""", [modus, stil, mitte])
+        return list(referer_log)
+
+    referer = {
+        "ha_raster": _referer("raster", "ha", [10, 10]),
+        "osm_raster": _referer("raster", "osm", [20, 20]),
+        "osm_vektor": _referer("ohneRaster", "osm", [30, 30]),
+    }
+    page.unroute("https://tile.openstreetmap.org/**")
+
     editor = page.evaluate("""async () => {
         const el = window.__card.constructor.getConfigElement();
         document.body.appendChild(el);
@@ -713,6 +755,13 @@ checks["Gegenprobe: Ebene am Ende verdeckt die Entitaeten"] = (
     and gegenprobe["nachher"]["kachelnUeberMarkern"] is True
     and gegenprobe["nachher"]["markerImDom"] == 2
 )
+_ursprung = f"http://127.0.0.1:{PORT}/"
+checks["Referer: Gegenprobe — HAs Ebene schickt keinen"] = (
+    bool(referer["ha_raster"]) and all(r is None for r in referer["ha_raster"]))
+checks["Referer: Vorlage osm (HA-Rasterebene) schickt den Ursprung"] = (
+    bool(referer["osm_raster"]) and all(r == _ursprung for r in referer["osm_raster"]))
+checks["Referer: Vorlage osm (eigene Ebene) schickt den Ursprung"] = (
+    bool(referer["osm_vektor"]) and all(r == _ursprung for r in referer["osm_vektor"]))
 checks["eingebettetes Leaflet springt ein"] = (
     eingebettet["vorher"] == "1.9.4" and eingebettet["nachher"] == "1.9.4")
 checks["eingebettet: Ebene angelegt"] = eingebettet["ebeneAngelegt"] is True
@@ -788,7 +837,7 @@ report = {
     "leaflet": leafletVersion,
     "hell": hell, "dunkel": dunkel, "innerConfig": innen, "eigen": eigen,
     "unberuehrt": unberuehrt, "ohneRaster": ohneRaster, "vektor": vektor,
-    "paar": paar, "gegenprobe_stapel": gegenprobe,
+    "paar": paar, "gegenprobe_stapel": gegenprobe, "referer": referer,
     "eingebettet": eingebettet, "rueckfall": rueckfall,
     "schluessel": schluessel, "ohneSchluessel": ohneSchluessel,
     "ausHelfer": ausHelfer, "nachAenderung": nachAenderung,

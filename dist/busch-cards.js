@@ -902,7 +902,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.16.2";
+const CARD_VERSION = "0.16.3";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -4130,6 +4130,23 @@ const MAP_KEY_ENTITY = "input_text.carto_api_key";
  *  Aufruf dieselbe Ebene wiederfindet statt eine weitere anzulegen. */
 const MAP_PANE = "busch-map-tiles";
 
+/** Referrer-Regel fuer jedes Kachelbild — gesetzt am `<img>`, das schlaegt
+ *  die Regel der Seite.
+ *
+ *  Home Assistant liefert seine Oberflaeche mit `Referrer-Policy: no-referrer`
+ *  (Kopfzeile) bzw. `<meta name="referrer" content="same-origin">` aus. Beides
+ *  heisst: an fremde Kachelserver geht KEIN Referer. tile.openstreetmap.org
+ *  beantwortet solche Browseranfragen mit HTTP 200 und einem PNG, in das
+ *  „403 Access blocked — App is not following the tile usage policy"
+ *  eingebrannt ist (am 02.10.2026 nachgemessen: dieselbe Kachel ohne Referer
+ *  6987 B Sperrbild, mit Referer 40083 B echte Karte). Gemeldet als
+ *  „bekomme immer wieder mal diese Fehlermeldung".
+ *
+ *  `strict-origin-when-cross-origin` schickt nur den Ursprung (Schema, Host,
+ *  Port), nie den Dashboardpfad — genug fuer die Nutzungsregel, ohne mehr
+ *  preiszugeben. Leaflet 1.9 setzt die Option je Kachel (`createTile`). */
+const MAP_REFERRER_POLICY = "strict-origin-when-cross-origin";
+
 /** Eigene Optionen der Karte — alles Uebrige gehoert der eingebauten Karte. */
 const MAP_OWN_KEYS = [
   "map_style", "tile_url", "tile_url_dark", "tile_attribution", "tile_max_zoom",
@@ -4470,8 +4487,14 @@ class BuschMapCard extends HTMLElement {
       }
       if (stil.subdomains) raster.options.subdomains = stil.subdomains;
       if (stil.maxZoom) raster.options.maxZoom = stil.maxZoom;
+      // Vor `setUrl`: erst neu gezeichnete Kacheln tragen die Regel (siehe
+      // MAP_REFERRER_POLICY). Bei gleicher URL zeichnet Leaflet von sich aus
+      // NICHT neu — dann blieben HAs Kacheln ohne Regel stehen; deshalb beim
+      // ersten Setzen das Neuzeichnen erzwingen (`noRedraw: false`).
+      const regelNeu = raster.options.referrerPolicy !== MAP_REFERRER_POLICY;
+      raster.options.referrerPolicy = MAP_REFERRER_POLICY;
       this._setzeQuellenangabe(map, raster, stil.attribution);
-      raster.setUrl(url);
+      raster.setUrl(url, regelNeu ? false : undefined);
       this._layer = raster;
     } else {
       // Keine Rasterebene: Home Assistant zeichnet die Grundkarte als
@@ -4531,6 +4554,7 @@ class BuschMapCard extends HTMLElement {
           attribution: stil.attribution,
           subdomains: stil.subdomains || "abc",
           maxZoom: stil.maxZoom || 19,
+          referrerPolicy: MAP_REFERRER_POLICY,
         });
         neu.addTo(map);
         this._layer = neu;

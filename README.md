@@ -40,7 +40,7 @@ unter Einstellungen → Dashboards → ⋮ → **Ressourcen** eintragen:
 Danach taucht die Karte in der Kartenauswahl auf — als **Busch Zeitplan**, mit
 Vorschau und grafischem Editor.
 
-Voraussetzung für `0.16.2`: Home Assistant **2026.9.3** oder neuer. Die
+Voraussetzung für `0.16.3`: Home Assistant **2026.9.3** oder neuer. Die
 Editoren und Karten wurden nativ mit 2026.9.3 geprüft; ältere Versionen sind
 für diesen Stand nicht freigegeben.
 
@@ -279,6 +279,16 @@ Vorlagen setzt die Karte sie selbst. **Wer eine eigene URL einträgt, trägt auc
 die eigene Angabe ein** — und prüft die Nutzungsbedingungen des Anbieters. Der
 Kachelserver von OpenStreetMap ist für den Hausgebrauch gedacht, nicht für
 Dauerlast.
+
+**„403 Access blocked" auf den OpenStreetMap-Kacheln** war bis `0.16.2` ein
+Fehler der Karte: Home Assistant liefert seine Oberfläche mit
+`Referrer-Policy: no-referrer` aus, der Browser schickte den Kachelanfragen
+also keinen Referer mit — und `tile.openstreetmap.org` antwortet darauf mit
+einem Sperrbild statt der Karte. Seit `0.16.3` setzt die Karte an jeder
+Kachel `referrerPolicy: strict-origin-when-cross-origin`: übertragen wird nur
+der Ursprung (`http://<ha-adresse>:8123/`), nie der Dashboardpfad. Wer das
+Sperrbild nach dem Update noch sieht, hat es im Browserspeicher —
+einmal **Strg+F5**.
 
 ### Grenzen
 
@@ -1350,3 +1360,18 @@ weiteren Kartenrenderings bestanden. Drei Editoren wurden in Home Assistant
 2026.9.3 nativ geprüft, einschließlich Speichern und 320/480/960 px ohne
 Überlauf. Alle Aktionsprüfungen verwendeten synthetische Serviceaufrufe;
 eine produktive VM wurde nicht geschaltet.
+
+### Geprüft: Release 0.16.3, 02.10.2026
+
+Die Landkarte schickt den OpenStreetMap-Kachelservern wieder einen Referer
+(nur den Ursprung); ohne ihn lieferte `tile.openstreetmap.org` zeitweise das
+Sperrbild „403 Access blocked". Ursache am 02.10.2026 nachgemessen: Home
+Assistant sendet `Referrer-Policy: no-referrer`; dieselbe Kachel kam ohne
+Referer als 6987-B-Sperrbild, mit Referer als 40083-B-Karte.
+
+`docs/render/mapcard.py` stellt HAs Referrer-Regel jetzt nach und fängt die
+echten Kachelanfragen in Chromium ab, als Paar: HAs eigene Ebene ohne Referer
+(Gegenprobe), Vorlage `osm` über HAs Rasterebene und über die eigene Ebene mit
+Ursprung. Gegen `0.16.2` rot (beide OSM-Fälle ohne Referer), gegen `0.16.3`
+in zwei Läufen 60/60 grün, Regel 1 ohne Verstoß. 428 Node-Tests bestanden,
+ein bestehender Skip; `node --check` und statische UI-Regeln grün.
