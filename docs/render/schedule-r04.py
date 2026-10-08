@@ -1,6 +1,7 @@
 """Real keyboard/back/scrim/focus/dirty checks. Synthetic data, optional HA host."""
 import json,pathlib,sys,re
 from playwright.sync_api import sync_playwright
+from readonly_guard import install_readonly_guard
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 native=len(sys.argv)>3;prefix='r04-candidate-busch-' if native else 'busch-'
 if native:source=source.replace('busch-',prefix)
@@ -8,10 +9,11 @@ with sync_playwright() as p:
  browser=p.chromium.launch(headless=True);context=browser.new_context(ignore_https_errors=True,locale='de-DE',viewport={'width':960,'height':1000});page=context.new_page();errors=[]
  page.on('pageerror',lambda e:errors.append({'type':type(e).__name__,'locations':re.findall(r'/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)',e.stack or '')}))
  if native:
+  guard_counts=install_readonly_guard(context)
   private=json.loads(pathlib.Path(sys.argv[3]).read_text());base=private['base_url'].rstrip('/')
   auth={'hassUrl':base,'clientId':base+'/','expires':4102444800000,'expires_in':315360000,'refresh_token':'','access_token':private['token']}
-  context.add_init_script('localStorage.setItem("hassTokens",JSON.stringify(%s))'%json.dumps(auth));page.goto(base+'/lovelace/0',wait_until='domcontentloaded',timeout=30000)
-  page.wait_for_function("!!document.querySelector('home-assistant')?.hass && !!customElements.get('ha-card')",timeout=30000)
+  context.add_init_script('localStorage.setItem("hassTokens",JSON.stringify(%s))'%json.dumps(auth));page.goto(base+'/lovelace/0',wait_until='domcontentloaded',timeout=45000)
+  page.wait_for_function("!!document.querySelector('home-assistant')?.hass && !!customElements.get('ha-card')",timeout=45000)
   page.wait_for_timeout(2000)
  else:
   page.set_content('''<style>body{margin:0;font-family:Arial}html{--primary-color:#0879d0;--error-color:#db4437;--primary-text-color:#212121;--secondary-text-color:#555;--card-background-color:#fff;--secondary-background-color:#eef5fb;--divider-color:#dbe4ed;--disabled-text-color:#777}</style>''');page.add_script_tag(content="customElements.define('ha-icon',class extends HTMLElement{})")
@@ -24,6 +26,8 @@ with sync_playwright() as p:
  def focus_trap():
   for _ in range(14):
    page.keyboard.press('Tab');assert page.evaluate('card._els.blockDialog.contains(card.shadowRoot.activeElement)')
+  for _ in range(14):
+   page.keyboard.press('Shift+Tab');assert page.evaluate('card._els.blockDialog.contains(card.shadowRoot.activeElement)')
  report=[]
  for dark in [False,True]:
   page.evaluate("dark=>{for(const [key,light,night] of [['--primary-text-color','#212121','#eee'],['--secondary-text-color','#555','#ccc'],['--card-background-color','#fff','#222'],['--secondary-background-color','#eef5fb','#303b47'],['--divider-color','#dbe4ed','#46505b']])host.style.setProperty(key,dark?night:light)}",dark)
@@ -53,6 +57,7 @@ with sync_playwright() as p:
    report.append({'width':width,'dark':dark,'cleanScrim':scrim,'dirtyBack':'protected','dirtyEscape':'protected','focusTrap':True,'focusReturn':True,'saveDataKept':True,'urlKept':page.url==original_url})
  # A flaky day menu remains allowed to dismiss outside and is unchanged.
  page.evaluate("card._openDayDialog('monday')");page.keyboard.press('Escape');page.wait_for_timeout(350);assert not page.evaluate('card._els.dayDialog.open')
- page.emulate_media(reduced_motion='reduce');open_dialog();assert page.evaluate("getComputedStyle(card._els.blockDialog).animationName==='none'");page.keyboard.press('Escape');page.wait_for_timeout(350)
+ page.emulate_media(reduced_motion='reduce');open_dialog();page.evaluate("card._els.blockDialog.querySelector('.f-from').value='07:45'");page.keyboard.press('Escape');assert opened();assert page.evaluate("getComputedStyle(card._els.blockDialog).animationName==='none'");page.once('dialog',lambda d:d.accept());page.locator('#schedule-r04-probe').locator('.block-dialog .actions button[data-act="cancel"]').click();page.wait_for_timeout(350)
+ guard_report={**guard_counts,'websocketWritesBlocked':page.evaluate("(window.__blocked||[]).reduce((counts,type)=>{counts[type]=(counts[type]||0)+1;return counts},{})")} if native else {}
  browser.close()
-summary={'native':native,'cases':report,'pageErrors':errors,'serviceCalls':0};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0}));assert not errors
+summary={'guard':guard_report,'native':native,'cases':report,'pageErrors':errors,'serviceCalls':0};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0}));assert not errors

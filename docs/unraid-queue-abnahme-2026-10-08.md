@@ -16,7 +16,9 @@ synthetische und bestehender HA-Host/native Komponentenfälle, sechs Breiten
 320/360/390/480/768/960, beide Themes, neun Zustandsvarianten, einschließlich realistischer Pulling/Web + Queue/Db
 Position1 + Queue/Proxy Position2 und Assertion individueller Statuslabels. Überlauf und
 Touchziele >=44px tatsächlich gemessen. Native Details per Tastatur,
-Stateänderung ohne neue hass-Zuweisung, keine Serviceaufrufe. Screenshots
+Stateänderung ohne neue hass-Zuweisung, keine Kandidaten-Serviceaufrufe. Gemeinsamer nativer Read-only-Guard blockiert
+WS-Mutationen/alle HTTP-Schreibmethoden vor Goto; finale216Hostfälle mit
+blockierten Browser-Mod-Updates, ohne Pagefehler. Screenshots
 privat außerhalb Git; Mobilbild angesehen, doppelte Headerbuttons und lange
 Positionslabels im disabled Button korrigiert. Native HA-Themes lokal im
 Probeharness; Nutzerpräferenzen/Dashboardkonfiguration unverändert.

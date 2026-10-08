@@ -3,6 +3,7 @@ Usage: script bundle output-directory [private-credentials-json].
 """
 import json,pathlib,sys,re
 from playwright.sync_api import sync_playwright
+from readonly_guard import install_readonly_guard
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 native=len(sys.argv)>3
 prefix='queue-candidate-busch-' if native else 'busch-'
@@ -19,11 +20,12 @@ with sync_playwright() as p:
  browser=p.chromium.launch(headless=True);context=browser.new_context(ignore_https_errors=True,viewport={'width':1100,'height':1800});page=context.new_page();errors=[]
  page.on('pageerror',lambda e:errors.append({'type':type(e).__name__,'locations':re.findall(r'/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)',e.stack or ''),'candidate':'queue-candidate-busch' in (e.stack or '')}))
  if native:
+  guard_counts=install_readonly_guard(context)
   private=json.loads(pathlib.Path(sys.argv[3]).read_text());base=private['base_url'].rstrip('/')
   auth={'hassUrl':base,'clientId':base+'/','expires':4102444800000,'expires_in':315360000,'refresh_token':'','access_token':private['token']}
   context.add_init_script('localStorage.setItem("hassTokens",JSON.stringify(%s))'%json.dumps(auth))
-  page.goto(base+'/lovelace/0',wait_until='domcontentloaded',timeout=30000)
-  page.wait_for_function("!!document.querySelector('home-assistant')?.hass && !!customElements.get('ha-card')",timeout=30000)
+  page.goto(base+'/lovelace/0',wait_until='domcontentloaded',timeout=45000)
+  page.wait_for_function("!!document.querySelector('home-assistant')?.hass && !!customElements.get('ha-card')",timeout=45000)
  else:
   page.set_content('''<style>body{margin:0;font-family:Arial}html{--primary-color:#0879d0;--error-color:#db4437;--primary-text-color:#212121;--secondary-text-color:#555;--card-background-color:#fff;--secondary-background-color:#eef5fb;--divider-color:#dbe4ed;--success-color:#16864b;--warning-color:#a76900;--disabled-text-color:#777}</style>''')
   page.add_script_tag(content="customElements.define('ha-icon',class extends HTMLElement{connectedCallback(){this.textContent='◇'}})")
@@ -66,6 +68,7 @@ with sync_playwright() as p:
  page.evaluate("const u=__queueCore.entities.get('update.web_update');u.state='on';u.attributes.update_state='queued';card._render();u.attributes.update_state='verifying';card._render();")
  assert page.evaluate("card.shadowRoot.querySelector('ha-card').innerText.includes('Wird geprüft')")
  assert page.evaluate('calls.length')==0
+ guard_report={**guard_counts,'websocketWritesBlocked':page.evaluate("(window.__blocked||[]).reduce((counts,type)=>{counts[type]=(counts[type]||0)+1;return counts},{})")} if native else {}
  browser.close()
-summary={'native':native,'cases':len(report),'failures':sum(len(r['issues']) for r in report),'page_errors':errors,'service_calls':0,'cases_detail':report}
+summary={'guard':guard_report,'native':native,'cases':len(report),'failures':sum(len(r['issues']) for r in report),'page_errors':errors,'service_calls':0,'cases_detail':report}
 (out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({k:v for k,v in summary.items() if k!='cases_detail'}));assert not summary['failures'] and not errors

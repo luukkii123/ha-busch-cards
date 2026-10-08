@@ -17,11 +17,11 @@ bleibt ein flüchtiges Popover mit unverändertem Außenklick/Escape-Verhalten.
 `docs/render/schedule-r04.py`: zwölf synthetische und zwölf in der bestehenden
 HA-Instanz mit tatsächlichen HA-Komponenten ausgeführte Fälle, je sechs
 Breiten 320/360/390/480/768/960 px und Light/Dark. Realer Keyboard-Enter öffnet,
-14 Tabs bleiben im Dialog. Clean Escape/Back schließen und geben Fokus zurück;
+14 Tabs und 14 Shift+Tabs bleiben im Dialog. Clean Escape/Back schließen und geben Fokus zurück;
 Dirty Escape/Back schützen; Dirty Cancel ablehnen/akzeptieren und Speichern
 prüfen Datenerhalt. Reale Außenklickprobe bei 480/768/960; mobil Vollbild ohne
 außenliegenden Punkt ausdrücklich nicht anwendbar. URL bleibt unverändert.
-Reduced Motion tatsächlicher Browsercheck. Alle zwölf Fälle je Umgebung ohne
+Reduced Motion tatsächlicher Browsercheck am Dirty-/Wackelzustand. Alle zwölf Fälle je Umgebung ohne
 Pagefehler/Serviceaufruf; Screenshots privat außerhalb Git unter
 `hacs-unraid-queue/r04-native` und `r04-synthetic`, Editorbilder angesehen.
 
@@ -56,7 +56,7 @@ vom flüchtigen Tagesmenü und bestätigt die explizite Verwerfaktion.
 |---|---|
 | R01 | Ein zentraler Editor-/Schließweg, Escape/Knopf/Back übereinstimmend; Browser/Node. |
 | R02 | Keine Auswahl-/Bulkänderung. |
-| R03 | Enter, 14 Tabs, Escape tatsächlich je zwölf synthetische/native Fälle. |
+| R03 | Enter, 14 Tabs, Escape tatsächlich je zwölf synthetische/native Fälle; zusätzlicher Reverse-Tab-Lauf siehe begrenzten Nachweis unten. |
 | R04 | Clean/Dirty-Scrim geschützt, Focus-Trap und Rückgabe, Dirty Escape/Back, explicit cancel geprüft. |
 | R05 | Back verbraucht pro Dialog genau einen Eintrag, URL bleibt; doppelte Cancelregression. Forward/Deep-link anderer Karten nicht erneut geprüft. |
 | R06 | Sechs Breiten, native Vollbild bei Mobile und Desktopmodal; Außenklick nur wo physisch erreichbar. |
@@ -83,5 +83,37 @@ vom flüchtigen Tagesmenü und bestätigt die explizite Verwerfaktion.
 
 Keine HA-Konfiguration/Dashboard-/Schedule-/Container-/VM-Serviceaktion;
 kein produktives Speichern. #139 bleibt umfassender Gesamt-Audit der übrigen
-Karten/Hostdialoge. Unabhängiger R04-Review durch koordinierenden Agenten
-beauftragt; Todo #156 wird zentral koordiniert.
+Karten/Hostdialoge. Unabhängiger R04-Review durch zweiten Agenten abgeschlossen:
+kein blockierender Produktbefund; eigene guarded native12Cases ohne
+Pagefehler/Kandidaten-Serviceaufruf bestanden. Gemeinsamer
+`docs/render/readonly_guard.py` sperrt native WS-Mutationen und sämtliche
+HTTP-Schreibmethoden vor Seitenstart; normale Browser-Mod-Verbindungsaufnahme
+ist ein Lese-/Subscriptionpfad. Blockierte Hintergrund-Updates werden nach
+Messagetyp gezählt, ohne Nutzdaten aufzuzeichnen. Eine einmalige spätere
+Hoststart-Timeoutprobe wurde mit de-DE Locale erneut erfolgreich ausgeführt.
+Das unterscheidet Kandidaten-Serviceaufrufe von Host-Hintergrundverkehr; Todo #156 wird zentral koordiniert.
+
+
+### Grenze des zuletzt erweiterten Harnesslaufs
+
+Nach den grünen eigenen und unabhängig bewachten nativen Zwölf-Fälle-Läufen
+auf Produktbasis `8fe1b5a` wurde ausschließlich der Browser-Harness erweitert:
+zusätzlich 14 Shift-Tabs sowie Reduced Motion bei tatsächlich ausgelöstem
+Dirty-Escape. Der synthetische erweiterte Lauf bestand zwölf Fälle ohne
+Pagefehler. Im erweiterten nativen Lauf bestanden ebenfalls sämtliche zwölf
+Fallassertions und die abschließende Dirty-Reduced-Motion-Assertion; die
+Gesamtprüfung ist dennoch **nicht grün**, weil drei `pageerror`-Ereignisse die
+abschließende Fehlerfreiheit-Assertion verletzten.
+
+Der vorhandene Report zeichnet dazu jeweils nur den Playwright-Typ `Error`
+und eine leere Scriptlocations-Liste auf. Fehlermeldung, vollständiger Stack,
+Zeitpunkt und Trace wurden nicht gespeichert. Die Ursache sowie eine
+Zuordnung zum HA-Host oder Kandidaten bleiben deshalb ungeklärt; die Fehler
+werden nicht als harmlose Hostfehler eingestuft. Zwischen den grünen Läufen
+und diesem Harnesslauf gab es keinen Produktcodewechsel. Als gesonderter
+Abnahmebeleg bleibt der unabhängige bewachte Zwölf-Fälle-Lauf auf `8fe1b5a`
+mit null Pagefehlern und null Kandidaten-Serviceaufrufen erhalten. Die
+zusätzlichen Shift-Tab-/Dirty-Reduced-Motion-Assertions ersetzen diesen Beleg
+nicht und begründen keine fehlerfreie native Gesamtprüfung des erweiterten
+Harnesses. Todo #156 wird vom Koordinator ausdrücklich mit dieser Grenze
+abgenommen.
