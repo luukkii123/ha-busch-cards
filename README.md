@@ -1375,3 +1375,20 @@ echten Kachelanfragen in Chromium ab, als Paar: HAs eigene Ebene ohne Referer
 Ursprung. Gegen `0.16.2` rot (beide OSM-Fälle ohne Referer), gegen `0.16.3`
 in zwei Läufen 60/60 grün, Regel 1 ohne Verstoß. 428 Node-Tests bestanden,
 ein bestehender Skip; `node --check` und statische UI-Regeln grün.
+
+### Unraid-Updatefortschritt (ab 0.17.0)
+
+Stack- und Containerkarte lesen die echte `unraid_ssh`-Warteschlange (Backend
+0.7.0): wartende Ziele behalten „In Warteschlange · Position …“, laufende
+Ziele zeigen Vorbereitung, Image-Pull, Neuerstellung und Prüfung. Echte
+`progress_percent`-Werte erhalten Prozenttext und Fortschrittsbalken; fehlende
+Werte bleiben ohne Schätzung. Fertig/Fehler und konkrete nächste Aktion bleiben
+sichtbar, Details lassen sich während eines Updates weiterhin öffnen.
+
+Der Stack zeigt Backendzähler, aktuelles Ziel und Gesamtfortschritt. Dieser
+zählt **abgearbeitete** Ziele, einschließlich getrennt ausgewiesener Fehler.
+„Alle aktualisieren“ verwendet den nativen atomaren Stack-Button und bleibt
+während des Batches gesperrt. State-Änderungen aktualisieren die Karte ohne
+Neuladen. Ältere Backendversionen behalten ihre bisherige `in_progress`-Anzeige;
+die Karte erfindet weder Queue noch Fortschritt. Offline gemeldete Entitäten
+mit einem bekannten aktiven Backendauftrag verlieren ihren Wartezustand nicht.

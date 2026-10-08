@@ -105,3 +105,35 @@ test('backend canonical VM enum recognizes shut_off, in_shutdown and idle',()=>{
 test('device shared by two Unraid instances never exposes an ambiguous control',()=>{const l=load(),{core}=fixture();const other={...core.entities.get('switch.renamed'),entity_id:'switch.second',config_entry_id:'other',attributes:{...core.entities.get('switch.renamed').attributes,config_entry_id:'other'}};core.entities.set(other.entity_id,other);core.devices.get('stack').config_entries.push('other');for(const kind of ['stack','container']){const m=l.buschUnraidModel(core,{device_id:'stack',container_key:'web',config_entry_id:'instance'},kind);assert.equal(m.switch,null);assert.equal(m.selected,null);assert.equal(m.containers.length,0);}});
 test('crashed VM renders concise error status instead of an action-error message',()=>{const l=load(),{core,put}=vmFixture(),card=new l.BuschUnraidVmCard();put('state','crashed');card._core=core;card._hass={locale:{language:'de'}};card.setConfig({device_id:'vm'});const all=n=>[n,...n.childNodes.flatMap(all)];assert.ok(all(card.shadowRoot).some(n=>n.className==='status-badge status-error'&&n.textContent==='Fehler'));});
 test('canonical unavailable and unknown container controls override retained paused metadata',()=>{const l=load(),{core}=fixture(),control=core.entities.get('switch.renamed');control.attributes.container_state='paused';for(const state of ['unavailable','unknown']){control.state=state;const row=l.buschUnraidModel(core,{device_id:'stack',container_key:'web'},'container').selected;assert.equal(row.status,state);assert.equal(row.cpu,null);assert.equal(row.ram,null);}control.state='on';assert.equal(l.buschUnraidModel(core,{device_id:'stack',container_key:'web'},'container').selected.status,'paused');});
+
+test('queued backend jobs stay active even without the HA wrapper flag',()=>{
+ const l=load(),{core}=fixture(),u=core.entities.get('update.correct');
+ u.attributes={...u.attributes,in_progress:false,update_state:'queued',queue_position:2,progress_percent:null};
+ const row=l.buschUnraidModel(core,{device_id:'stack',container_key:'web'},'container').selected;
+ assert.equal(row.status,'updating');assert.equal(row.update_state,'queued');assert.equal(row.queue_position,2);assert.equal(row.update_progress,null);
+ const text=vm.runInContext('buschUnraidStatusText',l.context)(row,l.BUSCH_UNRAID_TEXT.de,'de');assert.equal(text,'In Warteschlange · Position 2');
+});
+test('backend phases and terminal errors update without percent heuristics',()=>{
+ const l=load(),{core}=fixture(),u=core.entities.get('update.correct');
+ for(const state of ['pulling','preparing','recreating','verifying','completed','failed']){
+  u.attributes={...u.attributes,update_state:state,in_progress:false,progress_percent:state==='recreating'?42:null,last_error:state==='failed'?'Update fehlgeschlagen. Unraid prüfen.':null};
+  const row=l.buschUnraidModel(core,{device_id:'stack',container_key:'web'},'container').selected;
+  assert.equal(row.update_state,state);assert.equal(row.update_progress,state==='recreating'?42:null);
+  assert.equal(row.status,['completed','failed'].includes(state)?'running':'updating');
+  if(state==='failed')assert.equal(row.last_error,'Update fehlgeschlagen. Unraid prüfen.');
+ }
+});
+test('stack summary uses backend counts and total percent including waiting targets',()=>{
+ const l=load(),{core}=fixture(),u=core.entities.get('update.correct');
+ const queue={active:true,current_target:'web',queued_count:2,completed_count:1,failed_count:1,total_count:5,progress_percent:40};
+ u.attributes={...u.attributes,update_state:'pulling',stack_update_queue:queue};
+ const m=l.buschUnraidModel(core,{device_id:'stack'},'stack');assert.equal(m.status,'updating');assert.equal(m.update_progress,40);assert.equal(m.update_queue,queue);
+});
+test('update all dispatches matched native batch button and blocks repeated busy calls',async()=>{
+ const l=load(),card=new l.BuschUnraidStackCard(),calls=[];card._render=()=>{};card._config={...l.BUSCH_UNRAID_DEFAULTS};
+ let finish;card._hass={callService:async(...args)=>{calls.push(args);await new Promise(resolve=>finish=resolve)}};
+ const row={update_all:{entity_id:'button.batch',state:'unknown'},update_queue:{active:false}};
+ const action=card._action('update_all',row);await card._action('update_all',row);assert.equal(calls.length,1);finish();await action;
+ assert.equal(calls[0][0],'button');assert.equal(calls[0][1],'press');assert.equal(calls[0][2].entity_id,'button.batch');
+ await card._action('update_all',{...row,update_queue:{active:true}});assert.equal(calls.length,1);
+});
