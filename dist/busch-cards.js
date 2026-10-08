@@ -1068,6 +1068,8 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       fehlerUeberschneidung: "Der Zeitraum überschneidet sich mit einem anderen Block.",
       schliessen: "Schließen",
       abbrechen: "Abbrechen",
+      ungespeichert: "Ungespeicherte Änderungen. Speichern oder ausdrücklich abbrechen.",
+      verwerfen: "Ungespeicherte Änderungen verwerfen?",
       speichern: "Speichern",
       loeschen: "Löschen",
       blockLoeschen: "Block löschen",
@@ -1117,6 +1119,8 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       fehlerUeberschneidung: "This range overlaps another block.",
       schliessen: "Close",
       abbrechen: "Cancel",
+      ungespeichert: "Unsaved changes. Save or explicitly cancel.",
+      verwerfen: "Discard unsaved changes?",
       speichern: "Save",
       loeschen: "Delete",
       blockLoeschen: "Delete block",
@@ -1820,6 +1824,7 @@ class BuschScheduleCard extends HTMLElement {
         }
         .choices button:hover { background: var(--divider-color); }
         .choices button.danger { color: var(--error-color, #db4437); }
+        @media (prefers-reduced-motion: reduce) { dialog.wackelt { animation: none; } }
       </style>
 
       <ha-card>
@@ -1838,11 +1843,11 @@ class BuschScheduleCard extends HTMLElement {
         </div>
       </ha-card>
 
-      <dialog class="block-dialog">
+      <dialog class="block-dialog" aria-modal="true" aria-labelledby="busch-block-title">
         <div class="dlg">
           <div class="dlg-kopf">
             <button class="dlg-x" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
-            <h2></h2>
+            <h2 id="busch-block-title"></h2>
             <button class="danger dlg-del" data-act="delete"><ha-icon icon="mdi:delete"></ha-icon></button>
           </div>
           <div class="body">
@@ -1851,7 +1856,7 @@ class BuschScheduleCard extends HTMLElement {
               <label><span class="l-to"></span> <input type="time" class="f-to"></label>
             </div>
             <div class="note"></div>
-            <div class="msg"></div>
+            <div class="msg" role="status" aria-live="polite"></div>
           </div>
           <menu class="actions">
             <button data-act="cancel"></button>
@@ -1951,9 +1956,7 @@ class BuschScheduleCard extends HTMLElement {
   _wireDialogs() {
     const blockDialog = this._els.blockDialog;
     blockDialog.addEventListener("click", (event) => {
-      // Ein Klick NEBEN den Inhalt trifft das <dialog> selbst — das ist der
-      // Scrim. Regel 2 verlangt, dass er schließt (beim Formular mit
-      // ungespeicherten Änderungen: wackeln statt schließen).
+      // R04: Der Zeitblockeditor bleibt auch unverändert bei Außenklick offen.
       if (event.target === blockDialog) {
         this._resolveBlockDialog("scrim");
         return;
@@ -1969,6 +1972,18 @@ class BuschScheduleCard extends HTMLElement {
     blockDialog.addEventListener("cancel", (event) => {
       event.preventDefault();
       this._resolveBlockDialog("escape");
+    });
+    blockDialog.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") event.stopPropagation();
+      if (event.key !== "Tab") return;
+      const fields = [...blockDialog.querySelectorAll("button,input,select,textarea,[tabindex]")]
+        .filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
+      if (!fields.length) return;
+      const active = this.shadowRoot.activeElement;
+      if ((event.shiftKey && active === fields[0]) || (!event.shiftKey && active === fields.at(-1))) {
+        event.preventDefault();
+        (event.shiftKey ? fields.at(-1) : fields[0]).focus();
+      }
     });
 
     const dayDialog = this._els.dayDialog;
@@ -2021,21 +2036,39 @@ class BuschScheduleCard extends HTMLElement {
 
   _liegtObenauf(dialog) {
     const zustand = typeof history !== "undefined" ? history.state : null;
-    return Boolean(zustand && zustand.dialog === this._dialogName(dialog));
+    return Boolean(zustand && zustand.busch_schedule_dialog === this._dialogName(dialog));
   }
 
   _dialogOeffnen(dialog) {
     if (dialog.open) return;
+    dialog._buschExplicitClose = false;
+    dialog._buschClosing = false;
+    const opener = this.shadowRoot.activeElement || document.activeElement;
+    const day = this._dialogTarget?.day;
+    dialog.addEventListener("close", () => {
+      const fallback = day && this.shadowRoot.querySelector(`.track[data-day="${day}"]`);
+      (opener?.isConnected ? opener : fallback)?.focus?.();
+    }, { once: true });
     dialog.showModal();
     if (typeof history === "undefined") return;
     try {
-      history.pushState({ dialog: this._dialogName(dialog) }, "");
+      // Preserve host history keys and its native opensDialog convention.
+      history.replaceState({ ...history.state, opensDialog: true }, "");
+      history.pushState({ ...history.state, busch_schedule_dialog: this._dialogName(dialog) }, "");
     } catch (fehler) {
       // Privater Modus und Ratenbegrenzung können das ablehnen. Escape,
       // Scrim und Schließ-Knopf wirken weiter; nur die Zurück-Geste fehlt.
       return;
     }
     const aufPop = () => {
+      if (dialog === this._els.blockDialog && dialog.open && !dialog._buschExplicitClose && this._blockGeaendert()) {
+        // Browser/mobile Back hat den Dialogeintrag bereits entfernt. Wieder
+        // einsetzen, ohne die HA-Seite zu verlassen oder Eingaben zu verlieren.
+        history.pushState({ ...history.state, busch_schedule_dialog: this._dialogName(dialog) }, "");
+        dialog.querySelector(".msg").textContent = this._texte.ungespeichert;
+        this._wackeln(dialog);
+        return;
+      }
       window.removeEventListener("popstate", aufPop);
       if (dialog._buschPop === aufPop) dialog._buschPop = null;
       if (dialog.open) dialog.close();
@@ -2048,6 +2081,11 @@ class BuschScheduleCard extends HTMLElement {
 
   /** Schließt den Dialog und räumt genau den eigenen Verlaufseintrag ab. */
   _dialogSchliessen(dialog) {
+    if (!dialog.open || dialog._buschClosing) return;
+    // Some native/host combinations emit cancel twice before popstate arrives.
+    // Spend the history entry only once, never navigate past the dashboard.
+    dialog._buschClosing = true;
+    dialog._buschExplicitClose = true;
     const aufPop = dialog._buschPop;
     if (aufPop && this._liegtObenauf(dialog)) {
       // `history.back()` löst `popstate` aus; der Listener schließt und
@@ -2417,12 +2455,11 @@ class BuschScheduleCard extends HTMLElement {
       return;
     }
 
-    // Escape und Scrim: die einzige Ausnahme der Spec. Ein Formular mit
-    // ungespeicherten Änderungen wackelt, statt sie wegzuwerfen. Der
-    // Abbrechen-Knopf und die Zurück-Taste schließen weiterhin — sie sind
-    // eine ausdrückliche Ansage, kein Danebentippen.
-    if (action === "escape" || action === "scrim") {
+    // R04: Außenklick ist im Bearbeitungsdialog niemals ein Abbruch.
+    if (action === "scrim") return;
+    if (action === "escape") {
       if (this._blockGeaendert()) {
+        dialog.querySelector(".msg").textContent = this._texte.ungespeichert;
         this._wackeln(dialog);
         return;
       }
@@ -2430,6 +2467,7 @@ class BuschScheduleCard extends HTMLElement {
     }
 
     if (action === "cancel") {
+      if (this._blockGeaendert() && !window.confirm(this._texte.verwerfen)) return;
       this._dialogSchliessen(dialog);
       this._dialogTarget = null;
       return;
