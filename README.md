@@ -471,6 +471,21 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**08.10.2026 – 0.17.0 (Unraid-Queue und R04):** Queueanzeige mit echten
+Backendphasen, Positionen und Fortschritt: 216 synthetische sowie 216 native
+bewachte Browserfälle bei sechs Breiten in Hell/Dunkel ohne Verstöße oder
+Pagefehler. 435 Node-Tests bestanden, ein bestehender optionaler Vergleich
+übersprungen. Syntaxprüfung und statische UI-Regeln ohne Fehler.
+Zeitblockeditor mit Außenklick-/Dirty-Schutz, Fokusführung und idempotentem
+Historyback: eigene vorherige und unabhängige bewachte native Zwölf-Fälle-
+Läufe auf gleicher Produktbasis ohne Pagefehler. Der zuletzt um Reverse-Tab
+und Dirty-Reduced-Motion erweiterte native Harnesslauf bestand die
+Fallassertions, enthält aber drei Pagefehler unbekannter Ursache und ist
+**nicht vollständig grün**. Einzelheiten und alle 26 Regelgrenzen:
+[Queue-Abnahme](docs/unraid-queue-abnahme-2026-10-08.md) und
+[R04-Abnahme](docs/r04-zeitblock-abnahme-2026-10-08.md).
+Keine produktiven Container-/VM-/Scheduleaktionen bei diesen Prüfungen.
+
 **25.09.2026 – 0.15.2 (mobile Sections-Ansicht):** Die Gerätekarte addierte
 Padding auf ihre Mindesthöhe; ihr zugeklappter Kopf maß dadurch 88–96 px.
 Ohne diese Mindesthöhe misst er bei 320–480 px Kartenbreite 68–72 px, der
