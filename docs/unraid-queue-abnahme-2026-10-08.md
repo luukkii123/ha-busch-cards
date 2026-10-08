@@ -13,7 +13,8 @@ optionaler Differenztest gegen externe auto-entities-Module übersprungen),
 Contract-/Reloadtests siehe Nachbarrepo `docs/update-queue-abnahme-2026-10-08.md`.
 Statischer UI-Prüfer 0 Verstöße. `docs/render/unraid-queue.py`: je 216
 synthetische und bestehender HA-Host/native Komponentenfälle, sechs Breiten
-320/360/390/480/768/960, beide Themes, neun Zustandsvarianten. Überlauf und
+320/360/390/480/768/960, beide Themes, neun Zustandsvarianten, einschließlich realistischer Pulling/Web + Queue/Db
+Position1 + Queue/Proxy Position2 und Assertion individueller Statuslabels. Überlauf und
 Touchziele >=44px tatsächlich gemessen. Native Details per Tastatur,
 Stateänderung ohne neue hass-Zuweisung, keine Serviceaufrufe. Screenshots
 privat außerhalb Git; Mobilbild angesehen, doppelte Headerbuttons und lange
