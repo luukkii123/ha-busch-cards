@@ -1,0 +1,17 @@
+node_modules/
+.DS_Store
+Thumbs.db
+.superpowers/
+
+# Ergebnisse der Render-Läufe — erzeugt, nicht gepflegt.
+docs/render/mapcard-ergebnis/
+docs/render/mapcard-live/
+
+# Nur lokal: Agent-Anweisungen, Pläne, Abnahme-/Designberichte, Render-Ergebnisse
+AGENTS.md
+CLAUDE.md
+docs/design-audit-*.md
+docs/design-glossar.md
+docs/*-abnahme-*.md
+docs/superpowers/
+docs/render/kalender/

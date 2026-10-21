@@ -1,0 +1,33 @@
+"""Quick-control identity and draft races with browser DOM; only mock services."""
+import json,pathlib,sys
+from playwright.sync_api import sync_playwright
+source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
+with sync_playwright() as pw:
+ b=pw.chromium.launch();p=b.new_page();errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
+ p.set_content('<style>body{font-family:Arial}ha-card{display:block}</style>')
+ p.add_script_tag(content="""window.calls=[];window.loadCardHelpers=async()=>({createCardElement:()=>document.createElement('ha-card'),createRowElement:()=>document.createElement('div')});window.build=(domain,rows)=>{window.card?.remove();const states={},entities={};for(const [id,state,attributes]of rows){states[id]={entity_id:id,state,attributes};entities[id]={entity_id:id,device_id:'d',platform:'demo'};}window.h={states,entities,devices:{d:{id:'d',name:'Synthetic device'}},areas:{},connection:{},config:{unit_system:{temperature:'°C'}},locale:{language:'en'},callService:(...c)=>calls.push(c),callWS:async m=>m.type.includes('entity_registry')?Object.values(entities):m.type.includes('device_registry')?[{id:'d',name:'Synthetic device'}]:[]};window.card=document.createElement('busch-device-card');card.setConfig({device_id:'d',quick_controls:true});card.hass=h;document.body.append(card)};""")
+ p.add_script_tag(content=source)
+ attrs={'supported_color_modes':['brightness'],'brightness':128}
+ p.evaluate("args=>build('light',args)",[['light.a','on',attrs],['light.b','on',attrs]])
+ p.wait_for_function("card._entityId==='light.a'&&!!card._quickNodes?.[1]")
+ p.evaluate("()=>{window.old=card._quickNodes[1];old.focus();old.value='200';old.dispatchEvent(new Event('input',{bubbles:true}));h={...h,states:{...h.states,'light.a':{...h.states['light.a'],state:'unavailable'}}};card.hass=h}")
+ p.wait_for_function("card._entityId==='light.b'")
+ assert p.evaluate("!old.isConnected&&old!==card._quickNodes[1]&&Number(card._quickNodes[1].value)===128")
+ p.evaluate("()=>{old.dispatchEvent(new Event('change',{bubbles:true}));old.dispatchEvent(new FocusEvent('blur'));}");assert p.evaluate('calls.length===0')
+ p.evaluate("()=>{h={...h,states:{...h.states,'light.a':{...h.states['light.a'],state:'on'}}};card.hass=h}")
+ p.wait_for_function("card._entityId==='light.a'");p.evaluate("old.dispatchEvent(new Event('change',{bubbles:true}))");assert p.evaluate('calls.length===0')
+ p.evaluate("()=>build('climate',[['climate.test','heat',{supported_features:1,temperature:21,min_temp:7,max_temp:35,target_temp_step:.5}]])")
+ p.wait_for_function("card._entityId==='climate.test'&&!!card._quickNodes?.[0]")
+ p.locator('.dev-quick input').focus()
+ p.evaluate("()=>{window.slider=card._quickNodes[0];h={...h,states:{...h.states,'climate.test':{...h.states['climate.test'],attributes:{...h.states['climate.test'].attributes,temperature:23}}}};card.hass=h}")
+ assert p.evaluate("document.activeElement===slider&&Number(slider.value)===23&&card._quickOutputs[0].textContent==='23 °C'")
+ p.locator('.dev-quick input').press('ArrowRight')
+ assert p.evaluate("calls.length===1&&calls[0][2].temperature===23.5&&calls[0][2].entity_id==='climate.test'&&!card._offen")
+ p.evaluate("()=>{h.states['climate.test'].attributes.temperature=23.5;card.hass={...h};slider.value='24';slider.dispatchEvent(new Event('input',{bubbles:true}));h.states['climate.test'].attributes.temperature=25;card.hass={...h};}")
+ assert p.evaluate("Number(slider.value)===24&&card._quickOutputs[0].textContent==='24 °C'&&document.activeElement===slider&&calls.length===1")
+ p.evaluate("slider.dispatchEvent(new Event('change',{bubbles:true}))");assert p.evaluate("calls.at(-1)[2].temperature===24&&calls.length===2")
+ p.evaluate("()=>{h.states['climate.test'].attributes.temperature=24.5;card.hass={...h};}");assert p.evaluate("Number(slider.value)===24.5&&document.activeElement===slider")
+ p.evaluate("()=>{slider.value='26';slider.dispatchEvent(new Event('input',{bubbles:true}));h.states['climate.test'].attributes.temperature=27;card.hass={...h};slider.blur();}");assert p.evaluate("Number(slider.value)===27&&calls.length===2")
+ p.locator('.dev-quick input').focus();p.evaluate("()=>{slider.value='28';slider.dispatchEvent(new Event('input',{bubbles:true}));}");p.locator('.dev-quick input').press('Escape');assert p.evaluate("Number(slider.value)===27&&calls.length===2&&!card._offen")
+ p.evaluate("()=>{slider.value='28';slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new PointerEvent('pointercancel',{bubbles:true}));}");assert p.evaluate("Number(slider.value)===27&&calls.length===2")
+ result={'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'mockServices':p.evaluate('calls.length'),'pageErrors':errors};(out/'interactions-report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors;b.close()
