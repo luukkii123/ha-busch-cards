@@ -209,6 +209,22 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**22.10.2026 – 0.21.0 (lokal, nicht veröffentlicht):** Neue Karte
+`busch-unraid-docker-card` (Docker-Übersicht eines Unraid-Servers, Kacheln je
+Compose-Stack und Einzelcontainer, Kontextmenü, Ausklappen) und Zeitplan-Kopfzeile
+mit lokalisiertem `next_event` statt HAs generischem Attributformat. Node 475
+Tests, 474 bestanden, 0 Fehler, 1 bestehender Skip (neu:
+`tests/unraid-docker-card.test.js` 18, `tests/schedule-kopf.test.js` 9);
+`ui-regeln-pruefen.py` 0 Verstöße; `docs/render/unraid-docker.py` Exit 0
+(320/375/414/480/600/960/1280 px, hell/dunkel, zu- und aufgeklappt, 1176
+Textprüfungen, 0 Überlauf/außerhalb/Überlappung; Menü als Popover und als
+Blatt unter 450 px: Escape, Zurück, Schließen, obenauf, Scrim bestanden; echte
+PNG-Bilder in drei Seitenverhältnissen geladen, `object-fit: contain`;
+Touchziele ≥ 44 px; Tastatur, Bestätigung, Service-Aufrufe per E2E);
+`docs/render/unraid-cards.py` unverändert grün (41 Fälle). Natives HA 2026.10.2
+nur lesend mit gesperrtem `callService`: echte Containerbilder laden, Spalten
+1/2/3/4 bei 480/600/960/1280 px, keine gekürzte Statuszeile, 0 PageErrors.
+
 **21.10.2026 – 0.20.0:** Kalender-Karte mit `read_only` (Vorgabe aus): Klick
 öffnet nur HAs Ansichtsdialog mit `canEdit`/`canDelete` = false, nie den
 Editor, auch nicht als Rückfall. Node 448 Tests, 447 bestanden, 0 Fehler,

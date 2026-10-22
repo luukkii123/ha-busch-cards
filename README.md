@@ -6,7 +6,7 @@
 
 Eine Sammlung von Lovelace-Karten für Home Assistant in **einer** Datei
 (`busch-cards.js`, ohne Abhängigkeiten): Zeitplan, Landkarte, Kalender,
-Geräteübersicht, dynamische Entity-Auswahl, drei Unraid-Karten und zwei
+Geräteübersicht, dynamische Entity-Auswahl, vier Unraid-Karten und zwei
 Netzwerkkarten. Alle Karten haben einen grafischen Editor (Deutsch/Englisch) und
 folgen dem gewählten Theme in hell und dunkel.
 
@@ -22,6 +22,7 @@ Benötigt Home Assistant **2026.9.3** oder neuer.
 | [`busch-unraid-stack-card`](#busch-unraid-stack-card) | Compose-Stack mit Containersteuerung und Updates |
 | [`busch-unraid-container-card`](#busch-unraid-container-card) | einzelner Container |
 | [`busch-unraid-vm-card`](#busch-unraid-vm-card) | virtuelle Maschine |
+| [`busch-unraid-docker-card`](#busch-unraid-docker-card) | Docker-Übersicht eines Servers als Kacheln |
 | [`busch-network-card`](#busch-network-card) | Netzwerkgeräte aus `device_tracker` |
 | [`busch-fritz-device-card`](#busch-fritz-device-card) | FRITZ!-Router oder -Repeater samt Clients |
 
@@ -360,14 +361,14 @@ item_param: device_id
 
 # Unraid-Karten
 
-Die drei Karten setzen die Home-Assistant-Integration **`unraid_ssh`** voraus und
+Die Karten setzen die Home-Assistant-Integration **`unraid_ssh`** voraus und
 werden über `device_id` an ein Gerät der Integration gebunden (im Editor
-auswählen). Stoppen und Neustarten werden standardmäßig bestätigt. Ist die
+auswählen; bei der Docker-Übersicht ist das der Unraid-Server). Stoppen und Neustarten werden standardmäßig bestätigt. Ist die
 Zuordnung nicht eindeutig, bleiben die Steuerungen aus Sicherheitsgründen
 gesperrt. Ein Update-Fortschritt erscheint nur, wenn das Backend echte Werte
 liefert (Unraid-SSH 0.7.0 oder neuer für die Warteschlange).
 
-Gemeinsame Schlüssel (S = Stack, C = Container, V = VM):
+Gemeinsame Schlüssel von Stack-, Container- und VM-Karte (S = Stack, C = Container, V = VM):
 
 | Schlüssel | Typ | Vorgabe | S | C | V | Bedeutung |
 | --- | --- | --- | :-: | :-: | :-: | --- |
@@ -434,6 +435,56 @@ fragt immer mit Datenverlustwarnung nach und wird nie automatisch ausgelöst.
 type: custom:busch-unraid-vm-card
 device_id: YOUR_VM_DEVICE_ID
 ```
+
+## `busch-unraid-docker-card`
+
+Docker-Übersicht eines Unraid-Servers, angelehnt an das Docker-Widget des
+Unraid-Dashboards: je Compose-Stack eine Kachel, je eigenständigen Container eine
+Kachel. Jede Kachel zeigt das Containerbild der Integration (ersatzweise ein
+Symbol), den Namen (lange Namen werden gekürzt, der volle Name steht im
+Tooltip) und den Zustand mit Symbol: Stacks als „4/4 gestartet“, „2/4
+gestartet“ oder „Gestoppt · 0/2“, Container als *Gestartet*, *Gestoppt*,
+*Pausiert*, *Nicht verfügbar* oder *Update läuft*. Ein Stack hat kein eigenes
+Bild; er zeigt das seines gleichnamigen Hauptcontainers, sonst das des ersten
+Containers mit Bild. VMs gehören nicht in diese Karte
+(→ [`busch-unraid-vm-card`](#busch-unraid-vm-card)).
+
+**Ausklappen:** der Pfeil rechts an einer Stack-Kachel blendet dessen Container
+direkt dahinter ein (farbig markiert), ein zweiter Klick blendet sie aus.
+Mit der Tastatur klappt **Umschalt + Plus** alle Stacks auf, **Umschalt + Minus**
+alle zu. Der Zustand gilt nur für diese Karte und diese Sitzung.
+
+**Aktionen:** ein Klick oder Tipp auf eine Kachel öffnet ihr Menü (am Handy als
+Blatt am unteren Rand): Ausklappen/Einklappen (nur Stacks), Starten bzw.
+Stoppen (bei teilweise gestarteten Stacks beides), Neu starten, Update bzw.
+*Alle aktualisieren* (nur wenn ein Update vorliegt) und Details (öffnet den
+Home-Assistant-Dialog der Haupt-Entität). Es erscheinen nur Aktionen, die die
+Integration für diese Kachel anbietet. Stoppen und Neu starten werden wie bei
+den übrigen Unraid-Karten bestätigt. Escape, Zurück, ein Klick daneben oder
+das Kreuz schließen das Menü; die Pfeiltasten wählen einen Eintrag.
+
+Die Spaltenzahl passt sich automatisch an die Kartenbreite an (eine Spalte am
+Handy und auf schmalen Karten, zwei ab etwa 520 px, drei ab 800 px, vier ab
+1100 px Kartenbreite).
+
+| Schlüssel | Typ | Vorgabe | Bedeutung |
+| --- | --- | --- | --- |
+| `device_id` | Text | der einzige Server | Unraid-Server (Gerätemodell *Unraid*) |
+| `title` | Text | „Docker-Container“ | Titel |
+| `hide_stopped` | ja/nein | `false` | gestoppte Stacks und Container ausblenden |
+| `sort` | `name` \| `state` | `name` | Kacheln nach Name oder Zustand sortieren |
+| `start_expanded` | ja/nein | `false` | alle Stacks beim Laden aufgeklappt |
+| `columns` | `auto` \| `1` … `4` | `auto` | feste Spaltenzahl |
+| `confirm_stop` | ja/nein | `true` | vor dem Stoppen nachfragen |
+| `confirm_restart` | ja/nein | `true` | vor dem Neustart nachfragen |
+
+```yaml
+type: custom:busch-unraid-docker-card
+device_id: YOUR_UNRAID_SERVER_DEVICE_ID
+```
+
+Pausieren, Bearbeiten und Entfernen von Containern bietet die Karte nicht an:
+die Integration stellt dafür keine Aktionen bereit.
 
 ---
 

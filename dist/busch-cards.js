@@ -902,7 +902,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.20.0";
+const CARD_VERSION = "0.21.0";
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -7414,6 +7414,7 @@ const SCHEMA_BUSCH_UNRAID_VM_CARD = [
  }
 ];
 function buschUnraidSchema(core,config,kind){
+ if(kind==='docker')return SCHEMA_BUSCH_UNRAID_DOCKER_CARD.map(field=>field.name==='device_id'?{...field,selector:{select:{options:buschUnraidServers(core).map(d=>({value:d.id,label:d.name_by_user||d.name||d.id}))}}}:field);
  const model=buschUnraidModel(core,config,kind),base=kind==='stack'?SCHEMA_BUSCH_UNRAID_STACK_CARD:kind==='vm'?SCHEMA_BUSCH_UNRAID_VM_CARD:SCHEMA_BUSCH_UNRAID_CONTAINER_CARD;
  return (kind==='vm'?base:[...base,...BUSCH_UNRAID_MEDIA_SCHEMA,...SCHEMA_BUSCH_UNRAID_VM_CARD.filter(f=>['show_cpu','show_ram','debug'].includes(f.name))]).map(field=>{
   if(field.name==='device_id')return {...field,selector:{select:{options:buschUnraidDevices(core,kind).map(d=>({value:d.id,label:d.name_by_user||d.name||d.id}))}}};
@@ -7526,13 +7527,15 @@ class BuschUnraidVmCard extends BuschUnraidBaseCard {
  static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-vm-card'};const core=ensureBuschCore(1);core.attach(hass);const device=buschUnraidDevices(core,'vm')[0];return {type:'custom:busch-unraid-vm-card',...(device?{device_id:device.id}:{})};}
 }
 class BuschUnraidBaseEditor extends BuschEditorBase {
+ get _defaults(){return BUSCH_UNRAID_DEFAULTS;}
  setConfig(config){if(!this._acceptConfig(config,buschUnraidConfig))return;this._render();}
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}
  connectedCallback(){this._connect();this._render();}
  disconnectedCallback(){this._release?.();this._unwatch?.();this._release=this._unwatch=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._render());}
- _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=BuschUI.ha.form();this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next=buschUnraidConfig({...this._config,...event.detail.value});let structural=false;if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};if(structural)this._render();});this.appendChild(this._form);}
-  this._form.hass=this._hass;this._form.data={...BUSCH_UNRAID_DEFAULTS,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),t);const fields=this._kind==='vm'?buschTexte(TEXTE_BUSCH_UNRAID_VM_CARD,this._hass):t;this._form.computeLabel=s=>fields.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:fields.helpers[s.name]||'';
+ _render(){if(!this._config||!this._hass)return;const t=buschTexte(BUSCH_UNRAID_TEXT,this._hass);if(!this._form){this._form=BuschUI.ha.form();this._form.addEventListener('value-changed',event=>{event.stopPropagation();const next=buschUnraidConfig({...this._config,...event.detail.value});let structural=false;if((next.device_id||'')!==(this._config.device_id||'')){delete next.container_key;delete next.switch_entity;delete next.update_entity;structural=true;}this._publishConfig(next);this._form.data={...this._defaults,...this._config};if(structural)this._render();});this.appendChild(this._form);}
+  const fields=this._kind==='vm'?buschTexte(TEXTE_BUSCH_UNRAID_VM_CARD,this._hass):this._kind==='docker'?buschTexte(TEXTE_BUSCH_UNRAID_DOCKER_CARD,this._hass):t;
+  this._form.hass=this._hass;this._form.data={...this._defaults,...this._config};this._form.schema=buschSchemaMitTexten(buschUnraidSchema(this._core,this._config,this._kind),this._kind==='docker'?fields:t);this._form.computeLabel=s=>fields.labels[s.name]||s.name;this._form.computeHelper=s=>s.name==='show_restart'&&s.disabled?t.restart_missing:fields.helpers[s.name]||'';
  }
 }
 class BuschUnraidStackEditor extends BuschUnraidBaseEditor {get _kind(){return 'stack';}}
@@ -7549,6 +7552,261 @@ class BuschUnraidVmEditor extends BuschUnraidBaseEditor {get _kind(){return 'vm'
 if(!customElements.get?.('busch-unraid-vm-card'))customElements.define('busch-unraid-vm-card',BuschUnraidVmCard);
 if(!customElements.get?.('busch-unraid-vm-card-editor'))customElements.define('busch-unraid-vm-card-editor',BuschUnraidVmEditor);
 if(!window.customCards.some(c=>c.type==='busch-unraid-vm-card'))window.customCards.push({type:'busch-unraid-vm-card',name:buschTexte(BUSCH_UNRAID_TEXT).vm,description:buschTexte(BUSCH_UNRAID_TEXT).vm_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+
+/* ── Unraid Docker overview: one tile per Compose stack and per standalone
+ * container of one Unraid server, Unraid-dashboard style. Reuses the family
+ * model (buschUnraidModel), status semantics, BuschUI media and the shared
+ * _action path (confirmations, services, more-info). VMs stay out. ── */
+const BUSCH_UNRAID_DOCKER_DEFAULTS = { ...BUSCH_UNRAID_DEFAULTS, device_id: '', title: '', hide_stopped: false, sort: 'name', start_expanded: false, columns: 'auto', confirm_stop: true, confirm_restart: true };
+const SCHEMA_BUSCH_UNRAID_DOCKER_CARD = [
+ {name: "device_id", "selector": {"select": {"options": []}}},
+ {name: "title", "selector": {"text": {}}},
+ {name: "hide_stopped", "selector": {"boolean": {}}},
+ {name: "sort", "selector": {"select": {"options": [{"value": "name"}, {"value": "state"}]}}},
+ {name: "start_expanded", "selector": {"boolean": {}}},
+ {name: "columns", "selector": {"select": {"options": [{"value": "auto"}, {"value": "1"}, {"value": "2"}, {"value": "3"}, {"value": "4"}]}}},
+ {name: "confirm_stop", "selector": {"boolean": {}}},
+ {name: "confirm_restart", "selector": {"boolean": {}}}
+];
+const TEXTE_BUSCH_UNRAID_DOCKER_CARD = {
+ de: {
+  name: 'Unraid Docker',
+  description: 'Zeigt alle Docker-Container und Compose-Stacks eines Unraid-Servers als Kacheln, mit Aktionen je Kachel.',
+  labels: {device_id: 'Unraid-Server', title: 'Titel', hide_stopped: 'Gestoppte ausblenden', sort: 'Sortierung', start_expanded: 'Stacks ausgeklappt', columns: 'Spalten', confirm_stop: 'Stoppen bestätigen', confirm_restart: 'Neustart bestätigen'},
+  helpers: {device_id: 'Wählt den Unraid-Server, dessen Container gezeigt werden. Vorgabe ist der einzige vorhandene Server.', title: 'Eigener Kartentitel. Vorgabe ist „Docker-Container“.', hide_stopped: 'Blendet gestoppte Stacks und Container aus. Vorgabe ist aus.', sort: 'Sortiert die Kacheln nach Name oder Zustand. Vorgabe ist Name.', start_expanded: 'Zeigt die Container jedes Stacks schon beim Laden. Vorgabe ist aus.', columns: 'Legt die Spaltenzahl fest; automatisch passt sie an die Kartenbreite an. Vorgabe ist automatisch.', confirm_stop: 'Fragt vor dem Stoppen nach. Vorgabe ist ein.', confirm_restart: 'Fragt vor dem Neustart nach. Vorgabe ist ein.'},
+  texte: {sort_name: 'Name', sort_state: 'Zustand', columns_auto: 'Automatisch', columns_1: '1', columns_2: '2', columns_3: '3', columns_4: '4',
+   default_title: 'Docker-Container', running_total: '{running} von {total} gestartet', stack_count: '{running}/{total} gestartet', stack_stopped: 'Gestoppt · 0/{total}',
+   running: 'Gestartet', stopped: 'Gestoppt', paused: 'Pausiert', unavailable: 'Nicht verfügbar', unknown: 'Unbekannt', starting: 'Startet', stopping: 'Stoppt', failed: 'Fehler',
+   empty: 'Kein Unraid-Server gefunden. Bitte im Editor einen Server wählen.', no_containers: 'Auf diesem Server gibt es keine Docker-Container.', all_hidden: 'Alle Container sind gestoppt und ausgeblendet.',
+   menu: 'Aktionen für {name}', expand: 'Ausklappen', collapse: 'Einklappen', show_containers: 'Container von {name} anzeigen', hide_containers: 'Container von {name} ausblenden',
+   start: 'Starten', stop: 'Stoppen', restart: 'Neu starten', update: 'Update', update_all: 'Alle aktualisieren', details: 'Details', close: 'Schließen', in_stack: 'In {name}', stack: 'Stack'}
+ },
+ en: {
+  name: 'Unraid Docker',
+  description: 'Shows every Docker container and Compose stack of an Unraid server as tiles, with actions per tile.',
+  labels: {device_id: 'Unraid server', title: 'Title', hide_stopped: 'Hide stopped', sort: 'Sort order', start_expanded: 'Stacks expanded', columns: 'Columns', confirm_stop: 'Confirm stop', confirm_restart: 'Confirm restart'},
+  helpers: {device_id: 'Selects the Unraid server whose containers are shown. Defaults to the only server.', title: 'Custom card title. Defaults to “Docker containers”.', hide_stopped: 'Hides stopped stacks and containers. Default is off.', sort: 'Sorts the tiles by name or state. Default is name.', start_expanded: 'Shows the containers of every stack when loaded. Default is off.', columns: 'Sets the number of columns; auto adapts to the card width. Default is auto.', confirm_stop: 'Asks before stopping. Default is on.', confirm_restart: 'Asks before restarting. Default is on.'},
+  texte: {sort_name: 'Name', sort_state: 'State', columns_auto: 'Auto', columns_1: '1', columns_2: '2', columns_3: '3', columns_4: '4',
+   default_title: 'Docker containers', running_total: '{running} of {total} started', stack_count: '{running}/{total} started', stack_stopped: 'Stopped · 0/{total}',
+   running: 'Started', stopped: 'Stopped', paused: 'Paused', unavailable: 'Unavailable', unknown: 'Unknown', starting: 'Starting', stopping: 'Stopping', failed: 'Failed',
+   empty: 'No Unraid server found. Select a server in the editor.', no_containers: 'This server has no Docker containers.', all_hidden: 'All containers are stopped and hidden.',
+   menu: 'Actions for {name}', expand: 'Expand', collapse: 'Collapse', show_containers: 'Show containers of {name}', hide_containers: 'Hide containers of {name}',
+   start: 'Start', stop: 'Stop', restart: 'Restart', update: 'Update', update_all: 'Update all', details: 'Details', close: 'Close', in_stack: 'In {name}', stack: 'Stack'}
+ }
+};
+function buschUnraidServers(core){
+ if(!core)return [];
+ return [...core.devices.values()].filter(d=>d.model==='Unraid'&&core.getDeviceEntities(d.id).some(e=>e.platform==='unraid_ssh')).sort((a,b)=>String(a.name_by_user||a.name||a.id).localeCompare(String(b.name_by_user||b.name||b.id)));
+}
+const BUSCH_UNRAID_DOCKER_ORDER={running:0,updating:1,partial:2,starting:3,stopping:4,paused:5,stopped:6,failed:7,unknown:8,unavailable:9};
+function buschUnraidDockerSort(rows,sort){return [...rows].sort((a,b)=>(sort==='state'?(BUSCH_UNRAID_DOCKER_ORDER[a.status]??8)-(BUSCH_UNRAID_DOCKER_ORDER[b.status]??8):0)||String(a.name).localeCompare(String(b.name)));}
+/** Server → tiles. Stack: own switch/restart/update_all, containers as children.
+ * Standalone containers: one tile each. Pictures come from the integration
+ * (entity_picture); a stack has none of its own, so it borrows the picture of
+ * its main container (same name as the stack), else of its first container. */
+function buschUnraidDockerModel(core,config){
+ const servers=buschUnraidServers(core),server=config.device_id?servers.find(d=>d.id===config.device_id)||null:servers.length===1?servers[0]:null;
+ const model={server,tiles:[],running:0,total:0,ambiguous:false};
+ if(!server)return model;
+ const entries=new Set(core.getDeviceEntities(server.id).filter(e=>e.platform==='unraid_ssh'&&e.config_entry_id).map(e=>e.config_entry_id));
+ if(entries.size!==1){model.ambiguous=true;return model;}
+ const entry=[...entries][0];
+ for(const device of buschUnraidDevices(core,'container')){
+  if(!core.getDeviceEntities(device.id).some(e=>e.platform==='unraid_ssh'&&e.config_entry_id===entry))continue;
+  if(device.model==='Compose stack'){
+   const m=buschUnraidModel(core,{device_id:device.id},'stack');if(!m.switch&&!m.containers.length)continue;
+   const name=m.switch?.attributes?.stack_name||m.containers.find(c=>c.stack)?.stack||device.name_by_user||device.name||device.id,key='stack:'+device.id;
+   const pictured=buschUnraidDockerSort(m.containers,'name').filter(c=>c.entity_picture),main=pictured.find(c=>c.name===name)||pictured[0];
+   model.tiles.push({type:'stack',key,name,status:m.status,running:m.running,total:m.total,switch:m.switch,restart:m.restart,update_all:m.update_all,update_queue:m.update_queue,update_progress:m.update_progress,has_update:m.containers.some(c=>c.update?.state==='on'),entity_picture:m.switch?.attributes?.entity_picture||main?.entity_picture,containers:m.containers.map(c=>({...c,type:'container',key:'container:'+c.key,parent:key,parent_name:name}))});
+   model.running+=m.running;model.total+=m.total;
+  }else{
+   const m=buschUnraidModel(core,{device_id:device.id},'container');
+   for(const c of m.containers){model.tiles.push({...c,type:'container',key:'container:'+c.key});model.total++;if(c.status==='running'||(c.status==='updating'&&c.switch?.state==='on'))model.running++;}
+  }
+ }
+ model.tiles=buschUnraidDockerSort(model.tiles,config.sort);
+ for(const tile of model.tiles)if(tile.containers)tile.containers=buschUnraidDockerSort(tile.containers,config.sort);
+ return model;
+}
+const BUSCH_UNRAID_DOCKER_ICONS={running:['mdi:play','success'],partial:['mdi:play','warning'],stopped:['mdi:stop','neutral'],paused:['mdi:pause','warning'],updating:['mdi:progress-download','warning'],starting:['mdi:play-circle-outline','warning'],stopping:['mdi:stop-circle-outline','warning'],failed:['mdi:alert-circle-outline','error'],unavailable:['mdi:alert-circle-outline','error']};
+function buschUnraidDockerStatus(row,t,stackText,locale){
+ const [icon,semantic]=BUSCH_UNRAID_DOCKER_ICONS[row.status]||['mdi:help-circle-outline','unknown'];
+ let text;
+ if(row.status==='updating'||(row.update_state&&row.update_state!=='idle'))text=buschUnraidStatusText(row,stackText,locale);
+ else if(row.type==='stack'&&row.total&&['running','partial','stopped'].includes(row.status))text=(row.status==='stopped'?t.stack_stopped:t.stack_count).replace('{running}',row.running).replace('{total}',row.total);
+ else text=t[row.status]||t.unknown;
+ return {icon,semantic,text};
+}
+const BUSCH_UNRAID_DOCKER_STYLE = BUSCH_UNRAID_STYLE + `
+.header{grid-template-columns:48px minmax(0,1fr)}
+.grid{display:grid;gap:var(--unraid-small);grid-template-columns:minmax(0,1fr)}
+@container (min-width:520px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (min-width:800px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container (min-width:1100px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.grid.cols-1{grid-template-columns:minmax(0,1fr)}.grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tile{display:flex;align-items:stretch;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);background:var(--card-background-color);overflow:hidden}
+.tile.child{border-inline-start:4px solid var(--primary-color);background:color-mix(in srgb,var(--primary-color) 6%,var(--card-background-color))}
+.tile-main{flex:1 1 auto;display:flex;align-items:center;gap:var(--ha-space-3,12px);min-width:0;min-height:64px;margin:0;padding:var(--unraid-small) var(--ha-space-3,12px);border:0;border-radius:0;background:transparent;color:var(--primary-text-color);text-align:start;overflow:hidden}
+.tile-main:hover{background:color-mix(in srgb,var(--primary-text-color) 5%,transparent)}
+.tile-main:focus-visible,.tile-toggle:focus-visible{outline:2px solid var(--primary-color);outline-offset:-2px}
+.tile-main[aria-expanded=true]{background:color-mix(in srgb,var(--primary-color) 12%,transparent)}
+.tile-icon{display:grid;grid-template:100%/100%;place-items:center;flex:none;width:40px;height:40px;border-radius:var(--ha-card-border-radius,12px);background:var(--secondary-background-color);color:var(--primary-color);overflow:hidden}
+.tile-icon img{display:block;width:100%;height:100%;object-fit:contain;padding:var(--ha-space-1,4px);box-sizing:border-box}
+.tile-text{display:grid;gap:2px;min-width:0;flex:1 1 auto}
+.tile-name{display:block;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--ha-font-size-m,14px);font-weight:var(--ha-font-weight-medium,500)}
+.tile-status{display:flex;align-items:flex-start;gap:var(--ha-space-1,4px);min-width:0;color:var(--secondary-text-color);font-size:var(--ha-font-size-s,12px)}
+.tile-status ha-icon{--mdc-icon-size:16px;flex:none;margin-top:1px}
+.tile-status-text{min-width:0;overflow-wrap:anywhere}
+.sem-success ha-icon{color:var(--success-color,#16864b)}.sem-warning ha-icon{color:var(--warning-color,#a76900)}.sem-error ha-icon,.sem-unavailable ha-icon{color:var(--error-color,#db4437)}.sem-neutral ha-icon,.sem-unknown ha-icon{color:var(--secondary-text-color)}
+.tile-toggle{flex:none;display:grid;place-items:center;width:44px;min-width:44px;min-height:44px;margin:0;padding:0;border:0;border-inline-start:1px solid var(--divider-color);border-radius:0;background:transparent;color:var(--secondary-text-color)}
+.tile-toggle ha-icon{transition:transform .15s ease}.tile-toggle[aria-expanded=true] ha-icon{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.tile-toggle ha-icon{transition:none}}
+.grid>.message{grid-column:1/-1;margin:0}
+`;
+const BUSCH_UNRAID_DOCKER_MENU_STYLE = `
+:host{position:fixed;inset:0;z-index:100000;display:block;font-family:var(--ha-font-family-body,inherit);color:var(--primary-text-color)}
+*{box-sizing:border-box;min-width:0}
+.menu-scrim{position:absolute;inset:0;background:transparent}
+:host([sheet]) .menu-scrim{background:var(--mdc-dialog-scrim-color,rgba(0,0,0,.32))}
+.menu-panel{position:absolute;width:min(300px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:var(--ha-space-1,4px) 0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);background:var(--card-background-color,var(--primary-background-color));box-shadow:0 8px 24px rgba(0,0,0,.28)}
+:host([sheet]) .menu-panel{left:0;right:0;bottom:0;top:auto;width:100%;max-height:90vh;border-radius:var(--ha-card-border-radius,12px) var(--ha-card-border-radius,12px) 0 0;padding-bottom:calc(var(--ha-space-2,8px) + env(safe-area-inset-bottom,0px))}
+.menu-head{display:flex;align-items:center;gap:var(--ha-space-2,8px);padding:0 var(--ha-space-1,4px) 0 var(--ha-space-4,16px);border-bottom:1px solid var(--divider-color)}
+.menu-title{flex:1 1 auto;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--ha-font-size-m,14px);font-weight:var(--ha-font-weight-medium,500);color:var(--secondary-text-color)}
+button{font:inherit;cursor:pointer;color:var(--primary-text-color);background:transparent;border:0;margin:0}
+button:focus-visible{outline:2px solid var(--primary-color);outline-offset:-2px}
+.menu-close{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;color:var(--secondary-text-color)}
+.item{display:flex;align-items:center;gap:var(--ha-space-3,12px);width:100%;min-height:48px;padding:0 var(--ha-space-4,16px);text-align:start}
+.item:hover,.item:focus-visible{background:color-mix(in srgb,var(--primary-text-color) 7%,transparent)}
+.item:disabled{color:var(--disabled-text-color);cursor:default;background:transparent}
+.item ha-icon{flex:none;color:var(--secondary-text-color)}
+.item.danger,.item.danger ha-icon{color:var(--error-color)}
+.label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+`;
+let buschUnraidDockerMenuSerial=0;
+/** Small flüchtiges Menü (R04: Außenklick erlaubt). Hängt an document.body, weil
+ * container-type an :host einen festen Bezugsrahmen bilden würde. Eigener
+ * Verlaufseintrag: Zurück schließt nur das Menü (ui-regeln Regel 2). */
+class BuschUnraidDockerMenu extends HTMLElement {
+ constructor(){super();this.attachShadow({mode:'open'});}
+ static open(options){for(const old of document.querySelectorAll('busch-unraid-docker-menu'))old._finish();const menu=document.createElement('busch-unraid-docker-menu');document.body.appendChild(menu);menu._show(options);return menu;}
+ _show({anchor,title,label,closeLabel,items,onClose}){
+  this._onClose=onClose;this._id='busch-unraid-docker-menu-'+(++buschUnraidDockerMenuSerial);
+  const style=document.createElement('style');style.textContent=BUSCH_UNRAID_DOCKER_MENU_STYLE;
+  const scrim=document.createElement('div');scrim.className='menu-scrim';scrim.addEventListener('click',()=>this.close());
+  const panel=document.createElement('div');panel.className='menu-panel';
+  const head=document.createElement('div');head.className='menu-head';const caption=document.createElement('p');caption.className='menu-title';caption.textContent=title;caption.title=title;
+  const close=document.createElement('button');close.type='button';close.className='menu-close';close.setAttribute('aria-label',closeLabel);close.title=closeLabel;close.appendChild(BuschUI.ha.icon('mdi:close'));close.addEventListener('click',()=>this.close());
+  head.append(caption,close);
+  const list=document.createElement('div');list.setAttribute('role','menu');list.setAttribute('aria-label',label);
+  for(const item of items){const button=document.createElement('button');button.type='button';button.className='item'+(item.danger?' danger':'');button.setAttribute('role','menuitem');button.dataset.action=item.key;button.disabled=!!item.disabled;const icon=BuschUI.ha.icon(item.icon);icon.setAttribute('aria-hidden','true');const text=document.createElement('span');text.className='label';text.textContent=item.label;button.append(icon,text);button.addEventListener('click',async event=>{event.stopPropagation();if(button.disabled)return;await this.close();item.run();});list.appendChild(button);}
+  panel.append(head,list);this.shadowRoot.replaceChildren(style,scrim,panel);
+  this.addEventListener('keydown',event=>this._key(event));
+  history.pushState({buschUnraidDockerMenu:this._id},'');
+  this._pop=()=>{if(history.state?.buschUnraidDockerMenu!==this._id)this._finish();};window.addEventListener('popstate',this._pop);
+  this._place(anchor,panel);
+  this._items()[0]?.focus({preventScroll:true});
+ }
+ _place(anchor,panel){
+  const vw=window.innerWidth,vh=window.innerHeight,sheet=vw<450;this.toggleAttribute('sheet',sheet);
+  if(sheet)return;
+  const r=anchor.getBoundingClientRect(),m=panel.getBoundingClientRect();
+  const left=Math.max(8,Math.min(r.left,vw-m.width-8));let top=r.bottom+4;
+  if(top+m.height>vh-8)top=r.top-m.height-4;
+  if(top<8)top=Math.max(8,vh-m.height-8);
+  panel.style.left=Math.round(left)+'px';panel.style.top=Math.round(top)+'px';
+ }
+ _items(){return [...this.shadowRoot.querySelectorAll('.item:not(:disabled)')];}
+ _key(event){
+  const items=this._items(),focusable=[...this.shadowRoot.querySelectorAll('button:not(:disabled)')],active=this.shadowRoot.activeElement,index=items.indexOf(active);
+  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.close();return;}
+  const move=to=>{event.preventDefault();items[(to+items.length)%items.length]?.focus();};
+  if(event.key==='ArrowDown')move(index+1);else if(event.key==='ArrowUp')move(index<0?items.length-1:index-1);else if(event.key==='Home')move(0);else if(event.key==='End')move(items.length-1);
+  else if(event.key==='Tab'&&focusable.length){const at=focusable.indexOf(active),next=event.shiftKey?at-1:at+1;event.preventDefault();focusable[(next+focusable.length)%focusable.length].focus();}
+  event.stopPropagation();
+ }
+ close(){
+  if(this._closing)return this._closing;
+  this.style.display='none';window.removeEventListener('popstate',this._pop);
+  const own=history.state?.buschUnraidDockerMenu===this._id;
+  this._closing=new Promise(resolve=>{if(!own){this._finish();resolve();return;}let done=false;const finish=()=>{if(done)return;done=true;window.removeEventListener('popstate',finish);this._finish();resolve();};window.addEventListener('popstate',finish);setTimeout(finish,300);history.back();});
+  return this._closing;
+ }
+ _finish(){if(this._done)return;this._done=true;window.removeEventListener('popstate',this._pop);this.remove();this._onClose?.();}
+}
+class BuschUnraidDockerCard extends BuschUnraidBaseCard {
+ constructor(){super();this._config={...BUSCH_UNRAID_DOCKER_DEFAULTS};this._toggled=new Map();this._menuKey=null;this.addEventListener('keydown',event=>this._shortcut(event));}
+ /* R03: Shift+Plus klappt alle Stacks auf, Shift+Minus alle zu (nicht in Textfeldern). */
+ _shortcut(event){if(!event.shiftKey||event.ctrlKey||event.metaKey||event.altKey||/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName||''))return;const open=['+','*'].includes(event.key)?true:['-','_'].includes(event.key)?false:null;if(open===null)return;const m=this._lastModel;if(!m)return;event.preventDefault();for(const tile of m.tiles)if(tile.type==='stack'&&tile.containers.length)this._toggled.set(tile.key,open);this._render();}
+ get _kind(){return 'docker';}
+ static getConfigElement(){return document.createElement('busch-unraid-docker-card-editor');}
+ static getStubConfig(hass){if(!hass)return {type:'custom:busch-unraid-docker-card'};const core=ensureBuschCore(1);core.attach(hass);const server=buschUnraidServers(core)[0];return {type:'custom:busch-unraid-docker-card',...(server?{device_id:server.id}:{})};}
+ setConfig(config){const next={...BUSCH_UNRAID_DOCKER_DEFAULTS,...buschUnraidConfig(config)};if(buschCoreKey(this._config)===buschCoreKey(next)&&this._renderSignature)return;if(next.device_id!==this._config.device_id||next.start_expanded!==this._config.start_expanded)this._toggled.clear();this._config=next;this._error=null;this._generation++;this._render();}
+ disconnectedCallback(){super.disconnectedCallback();this._menu?._finish();}
+ getCardSize(){const m=this._lastModel;return Math.max(2,1+Math.ceil(((m?.tiles.length)||1)/2));}
+ getGridOptions(){return {columns:12,min_columns:3};}
+ _isOpen(key){return this._toggled.has(key)?this._toggled.get(key):!!this._config.start_expanded;}
+ _toggle(key){this._toggled.set(key,!this._isOpen(key));this._focusAfter={key,role:'toggle'};this._render();}
+ _menuItems(row,t){
+  const items=[],busy=this._busy||row.status==='updating',online=!!row.switch&&buschUnraidAvailable(row.switch);
+  if(row.type==='stack'&&row.containers.length){const open=this._isOpen(row.key);items.push({key:'toggle',label:open?t.collapse:t.expand,icon:open?'mdi:chevron-up':'mdi:chevron-down',run:()=>this._toggle(row.key)});}
+  if(row.switch){
+   const on=row.type==='stack'?['running','partial'].includes(row.status)||row.switch.state==='on':row.switch.state==='on'||['running','paused'].includes(row.status);
+   if(!on||row.status==='partial')items.push({key:'start',label:t.start,icon:'mdi:play',disabled:busy||!online,run:()=>this._action('start',row)});
+   if(on)items.push({key:'stop',label:t.stop,icon:'mdi:stop',danger:true,disabled:busy||!online,run:()=>this._action('stop',row)});
+  }
+  if(row.restart)items.push({key:'restart',label:t.restart,icon:'mdi:restart',disabled:busy||row.restart.state==='unavailable',run:()=>this._action('restart',row)});
+  if(row.type==='stack'&&row.update_all&&(row.has_update||row.update_queue?.active))items.push({key:'update_all',label:t.update_all,icon:'mdi:package-up',disabled:this._busy||row.update_queue?.active||row.update_all.state==='unavailable',run:()=>this._action('update_all',row)});
+  if(row.type==='container'&&row.update&&(row.update.state==='on'||row.status==='updating'))items.push({key:'update',label:t.update,icon:'mdi:package-up',run:()=>this._action('update',row)});
+  if(row.switch)items.push({key:'details',label:t.details,icon:'mdi:information-outline',run:()=>this._action('details',row)});
+  return items;
+ }
+ _openMenu(row,anchor){
+  const t=buschTexte(TEXTE_BUSCH_UNRAID_DOCKER_CARD,this._hass).texte;
+  this._menuKey=row.key;anchor.setAttribute('aria-expanded','true');
+  this._menu=BuschUnraidDockerMenu.open({anchor,title:row.name,label:t.menu.replace('{name}',row.name),closeLabel:t.close,items:this._menuItems(row,t),onClose:()=>{this._menu=null;this._menuKey=null;const main=[...(this.shadowRoot?.querySelectorAll('.tile-main')||[])].find(n=>n.dataset.key===row.key);main?.setAttribute('aria-expanded','false');main?.focus({preventScroll:true});}});
+ }
+ _tile(row,t,stackText){
+  const tile=buschUnraidNode('div',undefined,'tile '+row.type+(row.parent?' child':''));tile.dataset.key=row.key;
+  const main=buschUnraidNode('button',undefined,'tile-main');main.type='button';main.dataset.key=row.key;main.dataset.focusKey='main';
+  const status=buschUnraidDockerStatus(row,t,stackText,this._hass?.locale?.language),label=[row.name,row.parent_name?t.in_stack.replace('{name}',row.parent_name):(row.type==='stack'?t.stack:''),status.text].filter(Boolean).join(', ');
+  main.setAttribute('aria-label',label);main.setAttribute('aria-haspopup','menu');main.setAttribute('aria-expanded',String(this._menuKey===row.key));main.title=row.name;
+  main.appendChild(buschMedia({},row,row.type==='stack'?'mdi:docker':'mdi:cube-outline','tile-icon'));
+  const text=buschUnraidNode('span',undefined,'tile-text'),name=buschUnraidNode('span',row.name,'tile-name');name.title=row.name;
+  const line=buschUnraidNode('span',undefined,'tile-status sem-'+status.semantic),icon=BuschUI.ha.icon(status.icon);icon.setAttribute('aria-hidden','true');const statusText=buschUnraidNode('span',status.text,'tile-status-text');statusText.title=status.text;line.append(icon,statusText);
+  text.append(name,line);main.appendChild(text);main.addEventListener('click',event=>{event.stopPropagation();this._openMenu(row,main);});tile.appendChild(main);
+  if(row.type==='stack'&&row.containers.length){const open=this._isOpen(row.key),toggle=buschUnraidNode('button',undefined,'tile-toggle');toggle.type='button';toggle.dataset.key=row.key;toggle.dataset.focusKey='toggle';toggle.setAttribute('aria-expanded',String(open));const hint=(open?t.hide_containers:t.show_containers).replace('{name}',row.name);toggle.setAttribute('aria-label',hint);toggle.title=hint;toggle.appendChild(BuschUI.ha.icon('mdi:chevron-down'));toggle.addEventListener('click',event=>{event.stopPropagation();this._toggle(row.key);});tile.appendChild(toggle);}
+  return tile;
+ }
+ _render(){
+  if(!this.shadowRoot||!this._config)return;
+  const active=this.shadowRoot.activeElement,focus=this._focusAfter||(active?.dataset?.key?{key:active.dataset.key,role:active.dataset.focusKey}:null);this._focusAfter=null;
+  const words=buschTexte(TEXTE_BUSCH_UNRAID_DOCKER_CARD,this._hass),t=words.texte,stackText=buschTexte(BUSCH_UNRAID_TEXT,this._hass),m=buschUnraidDockerModel(this._core,this._config);this._lastModel=m;
+  const signature=JSON.stringify([this._config,m,[...this._toggled],this._menuKey,!!this._busy,this._error,t]);if(signature===this._renderSignature)return;this._renderSignature=signature;
+  const card=buschUnraidNode('ha-card'),style=buschUnraidNode('style',BUSCH_UNRAID_DOCKER_STYLE);if(this._busy)card.setAttribute('aria-busy','true');
+  const header=buschUnraidNode('div',undefined,'header'),main=buschUnraidNode('div',undefined,'header-main'),titleNode=buschUnraidNode('h2',this._config.title||t.default_title);
+  main.appendChild(titleNode);header.appendChild(buschMedia({},{},'mdi:docker','card-icon'));header.appendChild(main);card.appendChild(header);
+  const message=(parent,text)=>parent.appendChild(buschUnraidNode('p',text,'message'));
+  if(!m.server)message(card,t.empty);
+  else if(m.ambiguous)message(card,stackText.metadata);
+  else{
+   const server=m.server.name_by_user||m.server.name||'';main.appendChild(buschUnraidNode('p',[t.running_total.replace('{running}',m.running).replace('{total}',m.total),server].filter(Boolean).join(' · '),'detail'));
+   const grid=buschUnraidNode('div',undefined,'grid'+(['1','2','3','4'].includes(String(this._config.columns))?' cols-'+this._config.columns:''));grid.setAttribute('role','list');
+   const visible=row=>!this._config.hide_stopped||row.status!=='stopped';
+   const add=row=>{const tile=this._tile(row,t,stackText);tile.setAttribute('role','listitem');grid.appendChild(tile);};
+   for(const row of m.tiles.filter(visible)){add(row);if(row.type==='stack'&&this._isOpen(row.key))for(const child of row.containers.filter(visible))add(child);}
+   if(!m.tiles.length)message(grid,t.no_containers);else if(!grid.childNodes.length)message(grid,t.all_hidden);
+   card.appendChild(grid);
+  }
+  if(this._error){const error=buschUnraidNode('p',this._error,'message error');error.setAttribute('role','alert');card.appendChild(error);}
+  BuschUI.header({node:header,titleNode});this.shadowRoot.replaceChildren(style,card);
+  if(focus){const target=[...this.shadowRoot.querySelectorAll('button')].find(n=>n.dataset.key===focus.key&&n.dataset.focusKey===focus.role);target?.focus({preventScroll:true});}
+ }
+}
+class BuschUnraidDockerEditor extends BuschUnraidBaseEditor {get _kind(){return 'docker';}get _defaults(){return BUSCH_UNRAID_DOCKER_DEFAULTS;}}
+if(!customElements.get?.('busch-unraid-docker-menu'))customElements.define('busch-unraid-docker-menu',BuschUnraidDockerMenu);
+if(!customElements.get?.('busch-unraid-docker-card'))customElements.define('busch-unraid-docker-card',BuschUnraidDockerCard);
+if(!customElements.get?.('busch-unraid-docker-card-editor'))customElements.define('busch-unraid-docker-card-editor',BuschUnraidDockerEditor);
+if(!window.customCards.some(c=>c.type==='busch-unraid-docker-card'))window.customCards.push({type:'busch-unraid-docker-card',name:buschTexte(TEXTE_BUSCH_UNRAID_DOCKER_CARD).name,description:buschTexte(TEXTE_BUSCH_UNRAID_DOCKER_CARD).description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
 
 /* FRITZ Core 2026.9 adapter: registry identities, never display-name heuristics. */
 const BUSCH_FRITZ_ROLES={connection:['binary_sensor','is_connected'],link:['binary_sensor','is_linked'],external_ip:['sensor','external_ip'],external_ipv6:['sensor','external_ipv6'],wan_uptime:['sensor','connection_uptime'],uptime:['sensor','device_uptime'],download:['sensor','kb_s_received'],upload:['sensor','kb_s_sent'],max_download:['sensor','max_kb_s_received'],max_upload:['sensor','max_kb_s_sent'],received:['sensor','gb_received'],sent:['sensor','gb_sent'],cpu_temperature:['sensor','cpu_temperature'],reboot:['button','reboot'],reconnect:['button','reconnect'],update:['update','update']};
