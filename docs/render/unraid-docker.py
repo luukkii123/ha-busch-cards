@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """busch-unraid-docker-card im Playwright-Container: Darstellung, Menü, E2E.
 
-Aufruf (Mounts wie in hacs/docs/karten.md, „Die Landkarte“):
+Aufruf (Repo nach /repo, Ordner mit regeln.py nach /work):
 
     docker run --rm --name test-hacs-t0-docker-render \
-      -v "/mnt/user/Data/Claude Projekte/hacs/busch-cards:/repo" \
-      -v "/mnt/user/Data/Claude Projekte/hacs/docs/render:/work" \
+      -v "$PWD:/repo" \
+      -v "<ordner-mit-regeln.py>:/work" \
       --entrypoint bash mcr.microsoft.com/playwright/python:v1.62.0-noble \
       -c 'pip install --quiet --break-system-packages playwright==1.62.0 >/dev/null; \
           python3 /repo/docs/render/unraid-docker.py /repo/dist/busch-cards.js /tmp/docker-out'

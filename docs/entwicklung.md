@@ -209,7 +209,17 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
-**22.10.2026 – 0.21.0 (lokal, nicht veröffentlicht):** Neue Karte
+**22.10.2026 – 0.21.0, Release-Abnahme (`main` 1389a61):** `node --check`
+grün; `ui-regeln-pruefen.py` alle Repos 0 Verstöße; zentraler Karten-Runner
+(`karten-alle.sh --repo busch-cards`) 24/24 Schritte grün, Node 476 Tests
+(475 bestanden, 0 Fehler, 1 bestehender Skip), 659 Bilder, Zeitplan-Kopfzeile
+lokalisiert („Aus · ab 14:45“). Ein erster Lauf parallel zur
+Integrationsmatrix war in `render-zeitplan.py` rot (Wackelprobe der
+Formular-Ausnahme liest nach 120 ms eine 300-ms-Klasse; Kartencode
+unverändert seit dem grünen Lauf von 8033abc); Wiederholung ohne Parallellast
+grün.
+
+**22.10.2026 – 0.21.0 (Entwicklung):** Neue Karte
 `busch-unraid-docker-card` (Docker-Übersicht eines Unraid-Servers, Kacheln je
 Compose-Stack und Einzelcontainer, Kontextmenü, Ausklappen) und Zeitplan-Kopfzeile
 mit lokalisiertem `next_event` statt HAs generischem Attributformat. Node 475
