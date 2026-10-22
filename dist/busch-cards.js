@@ -1064,6 +1064,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       aus: "Aus",
       bis: "bis",
       ab: "ab",
+      morgen: "morgen",
       hinweisNurLesen: "In YAML festgelegt — hier nur zum Ansehen.",
       hinweisSchreibschutz: "Schreibschutz aktiv — hier nur zum Ansehen.",
       heute: "heute",
@@ -1125,6 +1126,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       aus: "Off",
       bis: "until",
       ab: "from",
+      morgen: "tomorrow",
       hinweisNurLesen: "Defined in YAML — read only here.",
       hinweisSchreibschutz: "Read only — changes are locked on this card.",
       heute: "today",
@@ -1218,6 +1220,42 @@ function scheduleNow(hass, date = new Date()) {
     day: SCHEDULE_DAYS[(date.getDay() + 6) % 7], // JS: Sonntag = 0
     minute: date.getHours() * 60 + date.getMinutes(),
   };
+}
+
+/**
+ * `next_event` → Text für die Kopfzeile, im Stil der übrigen Karte: heute nur
+ * "HH:MM", morgen "morgen HH:MM", innerhalb einer Woche "<Wochentag> HH:MM",
+ * sonst "TT.MM. HH:MM" (lokalisiert). `title` nennt den vollen Zeitpunkt.
+ * Bewusst NICHT `hass.formatEntityAttributeValue`: der generische Formatierer
+ * liefert "23. Oktober 2026 um 12:00:00" und gibt Werte, die sein
+ * Zeitstempel-Muster verfehlen, roh (ISO) zurück. Zeitzone wie scheduleNow.
+ */
+function scheduleNextLabel(value, hass, texte, now = new Date()) {
+  const date = new Date(value);
+  if (typeof value !== "string" || Number.isNaN(date.getTime())) return null;
+  const language = hass?.locale?.language || "de";
+  const zone = hass?.locale?.time_zone === "server" ? hass?.config?.time_zone : undefined;
+  const fmt = (options) => {
+    try {
+      return new Intl.DateTimeFormat(language, { timeZone: zone, ...options });
+    } catch {
+      return new Intl.DateTimeFormat("de", options);
+    }
+  };
+  const teile = fmt({ year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hourCycle: "h23" });
+  const tag = (d) => {
+    const p = Object.fromEntries(teile.formatToParts(d).map((x) => [x.type, x.value]));
+    return { utc: Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)), minute: (Number(p.hour) % 24) * 60 + Number(p.minute) };
+  };
+  const ziel = tag(date);
+  const diff = Math.round((ziel.utc - tag(now).utc) / 86400000);
+  const uhr = formatClock(ziel.minute);
+  let text;
+  if (diff === 0) text = uhr;
+  else if (diff === 1) text = `${texte.morgen} ${uhr}`;
+  else if (diff > 1 && diff < 7) text = `${fmt({ weekday: "long" }).format(date)} ${uhr}`;
+  else text = `${fmt({ day: "2-digit", month: "2-digit" }).format(date)} ${uhr}`;
+  return { text, title: fmt({ dateStyle: "full", timeStyle: "short", hourCycle: "h23" }).format(date) };
 }
 
 /**
@@ -1333,7 +1371,8 @@ class BuschScheduleCard extends HTMLElement {
     // Minütlich: die Uhrzeitlinie wandert, und um Mitternacht springt die
     // Heute-Markierung — auch wenn der Zeitplan selbst sich nicht ändert.
     clearInterval(this._nowTimer);
-    this._nowTimer = setInterval(() => this._renderNow(), 60000);
+    // Auch die Kopfzeile: aus "morgen 06:00" wird um Mitternacht "06:00".
+    this._nowTimer = setInterval(() => { this._renderNow(); this._renderHeader(); }, 60000);
     if (this._hass && this._config && !this._model) this._load(true);
   }
 
@@ -2353,17 +2392,10 @@ class BuschScheduleCard extends HTMLElement {
       return;
     }
     const parts = [isOn ? this._texte.ein : this._texte.aus];
-    const next = state.attributes?.next_event;
-    if (next) {
-      const date = new Date(next);
-      if (!Number.isNaN(date.getTime())) {
-        const time = this._hass.formatEntityAttributeValue
-          ? this._hass.formatEntityAttributeValue(state, "next_event")
-          : date.toLocaleString(this._hass.locale?.language || "de");
-        parts.push(`${isOn ? this._texte.bis : this._texte.ab} ${time}`);
-      }
-    }
+    const next = scheduleNextLabel(state.attributes?.next_event, this._hass, this._texte);
+    if (next) parts.push(`${isOn ? this._texte.bis : this._texte.ab} ${next.text}`);
     this._els.sub.textContent = parts.join(" · ");
+    this._els.sub.title = next ? next.title : "";
   }
 
   _renderDays() {
