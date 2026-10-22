@@ -281,3 +281,18 @@ test('ohne Server: Leerzustand mit nächster Aktion; einziger Server wird automa
   const card = karte(l, core, { device_id: '' });
   assert.equal(card.shadowRoot.querySelector('.message').textContent, 'Kein Unraid-Server gefunden. Bitte im Editor einen Server wählen.');
 });
+
+test('Unraid SSH 0.8.0: Anzeigename und Stackbild des Backends haben Vorrang', () => {
+  const l = load(), core = fixture();
+  const sw = core.entities.get('switch.stack_media');
+  sw.attributes.stack_display_name = 'Media Center'; sw.attributes.entity_picture = '/local/unraid_ssh/entry/stack.png';
+  core.entities.get('switch.stack_tools').attributes.entity_picture = BILD('eigenes-stackbild');
+  const card = karte(l, core, { start_expanded: true });
+  const tile = (key) => card.shadowRoot.querySelectorAll('.tile').find((t) => t.dataset.key === key);
+  assert.equal(tile('stack:media').querySelector('.tile-name').textContent, 'Media Center');
+  assert.equal(tile('stack:media').querySelector('.tile-icon').childNodes[0].attributes.src, '/local/unraid_ssh/entry/stack.png');
+  assert.equal(tile('stack:tools').querySelector('.tile-icon').childNodes[0].attributes.src, BILD('eigenes-stackbild'));
+  assert.match(tile('container:media').querySelector('.tile-main').attributes['aria-label'], /In Media Center/);
+  // Sortierung nach Anzeigename: „Media Center“ bleibt zwischen cache und tools
+  same(card._lastModel.tiles.map((t) => t.name).slice(1, 4), ['cache', 'Media Center', 'tools']);
+});

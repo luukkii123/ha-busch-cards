@@ -7602,8 +7602,9 @@ const BUSCH_UNRAID_DOCKER_ORDER={running:0,updating:1,partial:2,starting:3,stopp
 function buschUnraidDockerSort(rows,sort){return [...rows].sort((a,b)=>(sort==='state'?(BUSCH_UNRAID_DOCKER_ORDER[a.status]??8)-(BUSCH_UNRAID_DOCKER_ORDER[b.status]??8):0)||String(a.name).localeCompare(String(b.name)));}
 /** Server → tiles. Stack: own switch/restart/update_all, containers as children.
  * Standalone containers: one tile each. Pictures come from the integration
- * (entity_picture); a stack has none of its own, so it borrows the picture of
- * its main container (same name as the stack), else of its first container. */
+ * (entity_picture). Unraid SSH 0.8.0 gives the stack switch the picture of its
+ * first pictured service and the Compose Manager name (stack_display_name);
+ * older backends: borrow the main container's picture, else the first one. */
 function buschUnraidDockerModel(core,config){
  const servers=buschUnraidServers(core),server=config.device_id?servers.find(d=>d.id===config.device_id)||null:servers.length===1?servers[0]:null;
  const model={server,tiles:[],running:0,total:0,ambiguous:false};
@@ -7615,7 +7616,7 @@ function buschUnraidDockerModel(core,config){
   if(!core.getDeviceEntities(device.id).some(e=>e.platform==='unraid_ssh'&&e.config_entry_id===entry))continue;
   if(device.model==='Compose stack'){
    const m=buschUnraidModel(core,{device_id:device.id},'stack');if(!m.switch&&!m.containers.length)continue;
-   const name=m.switch?.attributes?.stack_name||m.containers.find(c=>c.stack)?.stack||device.name_by_user||device.name||device.id,key='stack:'+device.id;
+   const name=m.switch?.attributes?.stack_display_name||m.switch?.attributes?.stack_name||m.containers.find(c=>c.switch?.attributes?.stack_display_name)?.switch.attributes.stack_display_name||m.containers.find(c=>c.stack)?.stack||device.name_by_user||device.name||device.id,key='stack:'+device.id;
    const pictured=buschUnraidDockerSort(m.containers,'name').filter(c=>c.entity_picture),main=pictured.find(c=>c.name===name)||pictured[0];
    model.tiles.push({type:'stack',key,name,status:m.status,running:m.running,total:m.total,switch:m.switch,restart:m.restart,update_all:m.update_all,update_queue:m.update_queue,update_progress:m.update_progress,has_update:m.containers.some(c=>c.update?.state==='on'),entity_picture:m.switch?.attributes?.entity_picture||main?.entity_picture,containers:m.containers.map(c=>({...c,type:'container',key:'container:'+c.key,parent:key,parent_name:name}))});
    model.running+=m.running;model.total+=m.total;

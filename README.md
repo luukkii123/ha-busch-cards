@@ -441,12 +441,13 @@ device_id: YOUR_VM_DEVICE_ID
 Docker-Übersicht eines Unraid-Servers, angelehnt an das Docker-Widget des
 Unraid-Dashboards: je Compose-Stack eine Kachel, je eigenständigen Container eine
 Kachel. Jede Kachel zeigt das Containerbild der Integration (ersatzweise ein
-Symbol), den Namen (lange Namen werden gekürzt, der volle Name steht im
-Tooltip) und den Zustand mit Symbol: Stacks als „4/4 gestartet“, „2/4
+Symbol), den Namen (bei Stacks der Name aus dem Compose Manager; lange Namen
+werden gekürzt, der volle Name steht im Tooltip) und den Zustand mit Symbol: Stacks als „4/4 gestartet“, „2/4
 gestartet“ oder „Gestoppt · 0/2“, Container als *Gestartet*, *Gestoppt*,
-*Pausiert*, *Nicht verfügbar* oder *Update läuft*. Ein Stack hat kein eigenes
-Bild; er zeigt das seines gleichnamigen Hauptcontainers, sonst das des ersten
-Containers mit Bild. VMs gehören nicht in diese Karte
+*Pausiert*, *Nicht verfügbar* oder *Update läuft*. Das Stackbild liefert
+Unraid SSH ab 0.8.0 (erster Dienst mit Bild in Compose-Reihenfolge, auch bei
+gestopptem Stack); mit älterem Backend zeigt die Karte das Bild des
+gleichnamigen Hauptcontainers, sonst das des ersten Containers mit Bild. VMs gehören nicht in diese Karte
 (→ [`busch-unraid-vm-card`](#busch-unraid-vm-card)).
 
 **Ausklappen:** der Pfeil rechts an einer Stack-Kachel blendet dessen Container
