@@ -209,6 +209,12 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**23.10.2026 – 0.22.0 (ohne Unraid-Karten, `main` e223852, Todo #564):**
+`node --check dist/busch-cards.js` grün; `ui-regeln-pruefen.py` alle Repos
+0 Verstöße; `karten-alle.sh --repo busch-cards` (Lauf
+`karten-20261023-153007-b4f6ad`) 20/20 Schritte grün, Node 411 Tests
+(410 bestanden, 0 Fehler, 1 bestehender Skip), 367 Bilder.
+
 **22.10.2026 – 0.21.0, Release-Abnahme (`main` 1389a61):** `node --check`
 grün; `ui-regeln-pruefen.py` alle Repos 0 Verstöße; zentraler Karten-Runner
 (`karten-alle.sh --repo busch-cards`) 24/24 Schritte grün, Node 476 Tests
