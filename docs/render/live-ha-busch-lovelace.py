@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Seven-card native Lovelace editor roundtrip on a disposable dashboard.
+"""Five-card native Lovelace editor roundtrip on a disposable dashboard.
 
-The caller creates an admin-only hidden dashboard with seven synthetic views
-named probe-1..probe-7 and deletes it after this probe. The credential JSON
+The caller creates an admin-only hidden dashboard with five synthetic views
+named probe-1..probe-5 and deletes it after this probe. The credential JSON
 and dashboard path are supplied at runtime. No real entity is referenced and
 the script never invokes a Home Assistant service.
 """
@@ -21,8 +21,6 @@ CASES = [
     ("map-card", "tile_attribution", "Codex Map"),
     ("device-card", "title", "Codex Device"),
     ("smart-entities", "card_param", "codex_entities"),
-    ("unraid-stack-card", "title", "Codex Stack"),
-    ("unraid-container-card", "title", "Codex Container"),
 ]
 
 WALK = """const walk=(root,selector)=>{

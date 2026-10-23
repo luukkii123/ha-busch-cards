@@ -69,3 +69,7 @@ test("eingerueckte Deklarationen INNERHALB von Funktion und Klasse sind erlaubt"
     "eigene Gueltigkeitsbereiche duerfen jeden Namen tragen"
   );
 });
+
+test("Busch Cards enthält keine Unraid-Karten mehr", () => {
+  assert.doesNotMatch(quelle(), /busch-unraid-/, "die Unraid-Karten liegen ab 0.22.0 in Unraid Cards");
+});

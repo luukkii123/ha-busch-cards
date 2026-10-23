@@ -508,9 +508,9 @@ markiert; die lokalen Funktionsfixtures laufen weiter. TypeScript wird nur
 für den isolierten Referenztest durch Nodes `stripTypeScriptTypes` gelesen;
 das Produkt hat weiterhin keinen Buildschritt.
 
-Browserharness: `docs/render/smart-entities.py` und `docs/render/unraid-cards.py`,
-jeweils mit Bundlepfad und privatem Ausgabeordner. Sie testen synthetische
-Daten und Schaltaufrufe über Attrappen, keine produktiven Containeraktionen.
+Browserharness: `docs/render/smart-entities.py` mit Bundlepfad und privatem
+Ausgabeordner. Es testet synthetische Daten über Attrappen. Die Unraid-Tests
+liegen ab 0.22.0 im Repo Unraid Cards.
 
 ### Gerätekarte: optionale Schnellsteuerung (lokaler UPDATED-Stand)
 
