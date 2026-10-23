@@ -7031,7 +7031,6 @@ if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))win
 /* Shared media/status helpers (formerly in the Unraid section; buschMedia/buschMediaResolve serve the device card). */
 function buschMediaResolve(config={},metadata={},defaultIcon='mdi:devices'){return BuschUI.resolveMedia(config,metadata,defaultIcon);}
 function buschMedia(config,metadata,defaultIcon,className='card-icon'){return BuschUI.media(config,metadata,defaultIcon,className);}
-function buschUiStatusSemantic(status){return BuschUI.statusSemantic(String(status||'').toLowerCase());}
 
 /* FRITZ Core 2026.9 adapter: registry identities, never display-name heuristics. */
 const BUSCH_FRITZ_ROLES={connection:['binary_sensor','is_connected'],link:['binary_sensor','is_linked'],external_ip:['sensor','external_ip'],external_ipv6:['sensor','external_ipv6'],wan_uptime:['sensor','connection_uptime'],uptime:['sensor','device_uptime'],download:['sensor','kb_s_received'],upload:['sensor','kb_s_sent'],max_download:['sensor','max_kb_s_received'],max_upload:['sensor','max_kb_s_sent'],received:['sensor','gb_received'],sent:['sensor','gb_sent'],cpu_temperature:['sensor','cpu_temperature'],reboot:['button','reboot'],reconnect:['button','reconnect'],update:['update','update']};
