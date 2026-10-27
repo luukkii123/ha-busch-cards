@@ -93,3 +93,18 @@ test('scheduleNextLabel ist eine reine Funktion', () => {
     l.TEXTE_BUSCH_SCHEDULE_CARD.de, JETZT);
   assert.equal(r.text, '18:30');
 });
+
+test('#641: fremde Zustandsänderung zeichnet den Kopf nicht neu, eigene schon', () => {
+  const l = lade();
+  const card = Object.create(l.BuschScheduleCard.prototype);
+  let header = 0;
+  card._config = { entity: 'schedule.test' };
+  card._renderHeader = () => { header++; };
+  card._renderTexte = () => {}; card._load = () => {};
+  const own = { state: 'off', attributes: {} }, de = { language: 'de' };
+  card._hass = { locale: de, language: 'de', config: { time_zone: 'Europe/Berlin' }, states: { 'schedule.test': own, 'sensor.x': { state: '1' } } };
+  card.hass = { locale: de, language: 'de', config: { time_zone: 'Europe/Berlin' }, states: { 'schedule.test': own, 'sensor.x': { state: '2' } } };
+  assert.equal(header, 0);
+  card.hass = { locale: de, language: 'de', config: { time_zone: 'Europe/Berlin' }, states: { 'schedule.test': { state: 'on', attributes: {} } } };
+  assert.equal(header, 1);
+});

@@ -1363,7 +1363,8 @@ class BuschScheduleCard extends HTMLElement {
     const before = previous.states?.[this._config.entity];
     const now = hass.states?.[this._config.entity];
     if (before !== now && !this._drag && !this._saving) this._load(false);
-    this._renderHeader();
+    // #641: nur bei eigener Änderung, Sprache oder Zeitzone; die Minute zieht `_nowTimer` nach.
+    if (before !== now || buschSprache(previous) !== buschSprache(hass) || previous.config?.time_zone !== hass.config?.time_zone) this._renderHeader();
   }
 
   connectedCallback() {
@@ -9284,7 +9285,7 @@ class BuschNetworkBaseCard extends HTMLElement {
  _pruneGestures(){if(!this.isConnected)return;for(const [node,cleanup]of this._gestures||[])if(!node.isConnected){cleanup();this._gestures.delete(node);}}
 }
 class BuschNetworkCard extends BuschNetworkBaseCard {static getConfigElement(){return document.createElement('busch-network-card-editor');}static getStubConfig(){return {type:'custom:busch-network-card'};}}
-class BuschFritzDeviceCard extends BuschNetworkBaseCard {get _kind(){return 'fritz';}static getConfigElement(){return document.createElement('busch-fritz-device-card-editor');}static getStubConfig(hass){const devices=hass?buschFritzDevices({devices:new Map(Object.entries(hass.devices||{})),getDeviceEntities:id=>Object.entries(hass.entities||{}).filter(([,e])=>e.device_id===id).map(([entity_id,e])=>({...e,entity_id,domain:entity_id.split('.')[0],registry:e}))}):[];return {type:'custom:busch-fritz-device-card',...(devices.length?{device_id:devices[0].id}:{})};}}
+class BuschFritzDeviceCard extends BuschNetworkBaseCard {get _kind(){return 'fritz';}static getConfigElement(){return document.createElement('busch-fritz-device-card-editor');}static getStubConfig(hass){let index=null;const byDevice=()=>{if(index)return index;index=new Map();for(const [entity_id,e] of Object.entries(hass.entities||{})){if(!e?.device_id)continue;let list=index.get(e.device_id);if(!list)index.set(e.device_id,list=[]);list.push({...e,entity_id,domain:entity_id.split('.')[0],registry:e});}return index;};/* #641: one O(entities) index instead of O(devices × entities) in the card picker. */const devices=hass?buschFritzDevices({devices:new Map(Object.entries(hass.devices||{})),getDeviceEntities:id=>byDevice().get(id)||[]}):[];return {type:'custom:busch-fritz-device-card',...(devices.length?{device_id:devices[0].id}:{})};}}
 const BUSCH_NETWORK_RULE_FIELDS=['state','status','ip','ip_range','cidr','hostname','mac','network_device','integration','config_entry','label','manufacturer','device','area','name','attributes','last_changed','last_time_reachable','and','or','not'];
 
 /* Structured recursive network editor. Invalid intermediate text is a local draft, never an unrestricted saved query. */
