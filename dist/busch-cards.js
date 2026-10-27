@@ -256,6 +256,8 @@ class BuschEntityIndex {
     this.entities = new Map(); this.devices = new Map(); this.areas = new Map(); this.floors = new Map(); this.labels = new Map(); this.registry = new Map(); this.states = new Map(); this.order = new Map(); this.nextOrder = 0;
     this.indices = Object.fromEntries(["domain", "state", "integration", "config_entry", "device", "area", "floor", "label", "manufacturer", "model", "entity_category"].map(key => [key, new Map()]));
     this.deviceIndices = { via_device_id: new Map(), config_entry_id: new Map() };
+    // #641: Versionen je Gerät ("#"+entity_id ohne Gerät) und Epoche je rebuild() für track()/unchanged().
+    this.devVersion = new Map(); this.epoch = 0;
   }
   keys(info) {
     return { domain: [info.domain], state: [info.state], integration: [info.platform], config_entry: [info.config_entry_id], device: [info.device_id], area: [info.area_id], floor: [info.floor_id], label: info.labels, manufacturer: [info.manufacturer], model: [info.model], entity_category: [info.entity_category] };
@@ -263,6 +265,8 @@ class BuschEntityIndex {
   update(id, state) {
     if (state) { if (!this.order.has(id)) this.order.set(id, this.nextOrder++); this.states.set(id, state); } else { this.states.delete(id); this.order.delete(id); }
     const old = this.entities.get(id);
+    const bump = key => this.devVersion.set(key, (this.devVersion.get(key) || 0) + 1), deviceId = this.registry.get(id)?.device_id;
+    bump("#" + id); if (old?.device_id) bump(old.device_id); if (deviceId && deviceId !== old?.device_id) bump(deviceId);
     if (old) for (const [field, keys] of Object.entries(this.keys(old))) for (const key of keys) buschCoreSet(this.indices[field], key, id, false);
     const entry = this.registry.get(id);
     if (!entry && !state) { this.entities.delete(id); return { id, old, next: undefined }; }
@@ -277,6 +281,7 @@ class BuschEntityIndex {
     return { id, old, next };
   }
   rebuild() {
+    this.epoch++;
     this.order = new Map([...this.states.keys()].map((id, i) => [id, i])); this.nextOrder = this.order.size;
     this.entities.clear(); for (const map of Object.values(this.indices)) map.clear();
     for (const map of Object.values(this.deviceIndices)) map.clear();
@@ -430,7 +435,9 @@ class BuschCardsCore {
     this.apiVersion = "1.0"; this.version = "1.0.0"; this.index = new BuschEntityIndex(); this.metrics = { stateUpdates: 0, queriesSkipped: 0, queriesRecalculated: 0, resultChanges: 0, domRenders: null, structuralBuilds: 0 };
     this.registry = new BuschRegistryCache(null, (name, map) => {
       this.index[name === "entity" ? "registry" : name === "device" ? "devices" : name === "area" ? "areas" : name === "floor" ? "floors" : "labels"] = map;
-      this.index.rebuild(); this.engine?.refresh(); this.lastErrors.delete(name);
+      this.lastErrors.delete(name);
+      // #641: Mehrere Registerladungen bauen den Index höchstens einmal je Mikrotask neu.
+      if (!this._rebuildQueued) { this._rebuildQueued = true; Promise.resolve().then(() => { this._rebuildQueued = false; this.index.rebuild(); this.engine?.refresh(); }); }
       if (!this._notifyQueued) { this._notifyQueued = true; Promise.resolve().then(() => {
         this._notifyQueued = false;
         for (const listener of this._listeners) { try { listener(); } catch (error) { console.warn("Busch Core registry listener failed", error?.name); } }
@@ -444,9 +451,16 @@ class BuschCardsCore {
   get areas() { return this.index.areas; }
   get floors() { return this.index.floors; }
   get labels() { return this.index.labels; }
-  getEntity(id) { return this.entities.get(id); }
+  getEntity(id) { const entity = this.entities.get(id); if (this._track) this._track.add(entity?.device_id || "#" + id); return entity; }
   getDevice(id) { return this.devices.get(id); }
-  getDeviceEntities(id) { return [...(this.index.indices.device.get(id) || [])].map(entity => this.entities.get(entity)); }
+  getDeviceEntities(id) { if (this._track) this._track.add(id); return [...(this.index.indices.device.get(id) || [])].map(entity => this.entities.get(entity)); }
+  // #641: Merkt sich, welche Geräte/Entitäten fn() über getEntity/getDeviceEntities liest; unchanged() prüft deren Versionen.
+  track(fn) {
+    const outer = this._track, read = new Set(); this._track = read;
+    try { fn(); } finally { this._track = outer; if (outer) for (const key of read) outer.add(key); }
+    return { epoch: this.index.epoch, versions: [...read].map(key => [key, this.index.devVersion.get(key) || 0]) };
+  }
+  unchanged(deps) { return !!deps && deps.versions.length > 0 && deps.epoch === this.index.epoch && deps.versions.every(([key, version]) => (this.index.devVersion.get(key) || 0) === version); }
   seed(hass) {
     this.index.registry = buschCoreMap(hass.entities, "entity_id"); this.index.devices = buschCoreMap(hass.devices, "id");
     this.index.areas = buschCoreMap(hass.areas, "area_id"); this.index.floors = buschCoreMap(hass.floors, "floor_id");
@@ -581,13 +595,20 @@ class BuschCardsCore {
   loadFloorRegistry() { return this.registry.load("floor"); }
   loadLabelRegistry() { return this.registry.load("label"); }
   watch(callback) { this._listeners.add(callback); return () => this._listeners.delete(callback); }
-  retain(hass) { this.attach(hass); this.users++; let released = false; return () => { if (released) return; released = true; if (--this.users <= 0) this.dispose(); }; }
+  // #641: Freigabe erst nach 30 s Schonfrist; ein neues retain() bricht sie ab (erneutes Öffnen des Kartenwählers holt sonst wieder alles).
+  retain(hass) {
+    if (this._releaseTimer) { clearTimeout(this._releaseTimer); this._releaseTimer = null; } this.attach(hass); this.users++; let released = false;
+    return () => {
+      if (released) return; released = true;
+      if (--this.users <= 0) { if (this._releaseTimer) clearTimeout(this._releaseTimer); this._releaseTimer = setTimeout(() => { this._releaseTimer = null; if (this.users <= 0) this.dispose(); }, 30000); }
+    };
+  }
   query(spec) { return this.engine.query(spec); }
   smartQuery(spec, scopeDeviceId) { this.smart ||= new BuschSmartQueries(this); return this.smart.query(spec, scopeDeviceId); }
   subscribe(query, callback) { return this.engine.subscribe(query, callback); }
   debugSnapshot() { return { ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
   dispose() {
-    this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
+    if (this._releaseTimer) { clearTimeout(this._releaseTimer); this._releaseTimer = null; } this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
     this.streaming = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set(); this._snapshotPromise = null; this._stateBuffer = null;
     if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this._dirtyDevices.clear(); this.engine?.stop();
   }
