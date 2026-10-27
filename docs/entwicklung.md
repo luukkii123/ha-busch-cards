@@ -209,6 +209,20 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**27.10.2026 – 0.22.1, nur Leistung (#641):** Kern mit Geräteversionen,
+`track`/`unchanged`, 30 s Schonfrist und gebündeltem `rebuild`; Index für die
+FRITZ!-Vorschau, Zeitplan-Kopf ohne Neuaufbau bei fremden Entitäten. Keine
+sichtbare Änderung. `node --check` grün; `ui-regeln-pruefen.py` 0 Verstöße;
+Kern byte-gleich zu Unraid Cards. `karten-alle.sh --repo busch-cards` (Lauf
+`karten-20261027-133757-176f30`): Node 420/420, 19/20 Schritte grün,
+367 Bilder. Rot war nur `smart-entities`: es erwartete nach dem Entfernen
+aller Karten fünf neue Registerabrufe; mit der Schonfrist bleibt der Kern
+30 s warm und ruft nichts erneut ab (gewolltes Verhalten von #641/C2, mit
+dem alten Bundle gegengeprüft: dort fünf Abrufe). Erwartung angepasst
+(keine Doppelabrufe, innerhalb der Schonfrist keiner), nur dieser Schritt
+wiederholt und grün (`karten-20261027-134634-4d099f`). Bilder gesichtet
+(Zeitplan, Netzwerkkarten).
+
 **23.10.2026 – 0.22.0 (ohne Unraid-Karten, `main` e223852, Todo #564):**
 `node --check dist/busch-cards.js` grün; `ui-regeln-pruefen.py` alle Repos
 0 Verstöße; `karten-alle.sh --repo busch-cards` (Lauf

@@ -49,7 +49,11 @@ with sync_playwright() as pw:
  page.wait_for_function('cards.every(c=>c._child)')
  stats=page.evaluate("""async()=>{const core=globalThis[Symbol.for('busch.cards.core')],q=cards[0]._query,before=q.metrics.calculations,configs=cards.reduce((n,c)=>n+c._renders,0);let mutations=0;const observer=new MutationObserver(events=>mutations+=events.length);observer.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});const start=performance.now();__h={...__h,states:{...__h.states,'light.other':{...__h.states['light.other'],state:'unrelated'}}};for(const c of cards)c.hass=__h;await Promise.resolve();await Promise.resolve();const ms=performance.now()-start;observer.disconnect();return {cards:cards.length,shared:cards.every(c=>c._query===q),unrelatedRecalculations:q.metrics.calculations-before,targetConfigurations:cards.reduce((n,c)=>n+c._renders,0)-configs,domMutations:mutations,updateMs:ms,registryRequests:__h.requests,heap:performance.memory?.usedJSHeapSize??null}}""")
  assert stats['shared'] and stats['unrelatedRecalculations']==0 and stats['targetConfigurations']==0 and stats['domMutations']==0
- assert len(stats['registryRequests'])==5 and len(set(stats['registryRequests']))==5
+ # Since 0.22.1 (#641/C2) the shared core keeps its registry cache for 30 s after the last release;
+ # the 25 new cards arrive inside that grace period and must not fetch again (old: 5 fresh lists).
+ # Never duplicated either way.
+ assert len(stats['registryRequests'])==len(set(stats['registryRequests'])) and len(stats['registryRequests']) in (0,5)
+ assert stats['registryRequests']==[], 'grace period expected: no registry refetch within 30 s'
  browser.close()
 (out/'report.json').write_text(json.dumps({'cases':report,'errors':errors,'performance':stats,'behavior':'include/change/sort/empty/else/device-value/unique/unrelated-no-target-update/editor-change'},indent=2))
 print(json.dumps({'cases':len(report),'failures':sum(len(r['failures'])for r in report),'errors':errors}));assert not errors and not any(r['failures']for r in report)
