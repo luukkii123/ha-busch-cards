@@ -38,7 +38,7 @@ Typ *JavaScript-Modul*).
 unter Einstellungen → Dashboards → ⋮ → **Ressourcen** als
 `/local/busch-cards.js` (Typ *JavaScript-Modul*) eintragen.
 
-Danach erscheinen die Karten in der Kartenauswahl, mit Vorschau und Editor.
+Danach erscheinen die Karten in der Kartenauswahl unter „Nach Karte“ mit Name und Beschreibung (ohne Live-Vorschau, damit der Dialog schnell lädt) und lassen sich im Editor einrichten.
 
 ---
 

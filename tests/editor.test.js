@@ -212,7 +212,7 @@ test("die Karte und ihr Editor sind angemeldet", () => {
   );
   const eintrag = fenster.customCards.find((k) => k.type === "busch-calendar-card");
   assert.ok(eintrag, "kein Eintrag im Kartenwaehler");
-  assert.strictEqual(eintrag.preview, true);
+  assert.strictEqual(eintrag.preview, false);
 });
 
 test("die Kartenklasse verweist auf denselben Editornamen", () => {

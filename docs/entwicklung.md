@@ -209,6 +209,13 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**12.11.2026 · 0.22.2, Kartenwähler ohne Live-Vorschau (#1011, Tag `v0.22.2`)** — Zeitplan, Landkarte, Kalender, Gerät, Smart Entities, Netzwerk, FRITZ!: Namen einheitlich „Busch …“ (neu: „Busch Netzwerk“, „Busch FRITZ!-Gerät“), Beschreibung je ein Satz; `getStubConfig` über einen gemeinsamen Index (`buschStubIndex`, ein Durchlauf je Register, gemerkt am Entitätsregister).
+
+1. `node --check` grün; neue Tests `tests/kartenwaehler.test.js` (preview false, ein Satz Beschreibung de/en, höchstens ein Durchlauf je Register, kein Netz) zuerst rot, danach grün.
+2. `python3 scripts/ui-regeln-pruefen.py`: 0 Verstöße, mit der neuen Prüfung R3.6 (Kartenwähler-Vertrag), die vorher für dieses Repo rot war.
+3. Einziger Abnahmelauf `karten-alle.sh` für alle fünf geänderten Kartenrepos (Lauf `karten-20261112-175558-77c23e`): 20/20 Schritte grün, Node 423 Tests (422 bestanden, 1 bestehender Skip), 367 Bilder.
+4. Eintrag in `docs/stand.md` der Projektverwaltung, Block 12.11.2026 (#1011).
+
 **27.10.2026 – 0.22.1, nur Leistung (#641):** Kern mit Geräteversionen,
 `track`/`unchanged`, 30 s Schonfrist und gebündeltem `rebuild`; Index für die
 FRITZ!-Vorschau, Zeitplan-Kopf ohne Neuaufbau bei fremden Entitäten. Keine

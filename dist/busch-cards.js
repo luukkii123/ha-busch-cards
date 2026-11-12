@@ -923,7 +923,41 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.22.1";
+const CARD_VERSION = "0.22.2";
+
+/*
+ * #1011 Kartenwähler: Vorgaben für getStubConfig aus EINEM Durchlauf über
+ * hass.states und die Register, gemerkt am Entitätsregister (das bleibt während
+ * eines Wählerbesuchs dasselbe Objekt, hass.states wechselt bei jeder Änderung).
+ * Keine Netz- oder WebSocket-Abfrage, kein geteilter Kern.
+ */
+const BUSCH_STUB_INDEX = new WeakMap();
+function buschStubIndex(hass) {
+  const states = hass?.states || {}, registry = hass?.entities || {};
+  const schluessel = hass?.entities || hass?.states;
+  const gemerkt = schluessel && typeof schluessel === "object" ? BUSCH_STUB_INDEX.get(schluessel) : null;
+  if (gemerkt) return gemerkt;
+  const first = new Map(), platforms = new Map(), byDevice = new Map();
+  let ids = [], firstWithDevice = "";
+  ids = Object.keys(states);
+  for (const id of ids) {
+    const domain = id.slice(0, id.indexOf("."));
+    if (!first.has(domain)) first.set(domain, id);
+  }
+  for (const [id, entry] of Object.entries(registry)) {
+    const entityId = entry?.entity_id || id;
+    if (states[entityId] && entry?.platform) platforms.set(entry.platform, (platforms.get(entry.platform) || 0) + 1);
+    if (!entry?.device_id) continue;
+    let list = byDevice.get(entry.device_id);
+    if (!list) byDevice.set(entry.device_id, list = []);
+    list.push({ ...entry, entity_id: id, domain: id.split(".")[0], registry: entry });
+  }
+  for (const id of ids) if (registry[id]?.device_id) { firstWithDevice = id; break; }
+  const index = { ids, first, platforms, byDevice, firstWithDevice, devices: null };
+  index.deviceMap = () => index.devices || (index.devices = new Map(Object.entries(hass?.devices || {})));
+  if (schluessel && typeof schluessel === "object") BUSCH_STUB_INDEX.set(schluessel, index);
+  return index;
+}
 
 console.info(
   `%c BUSCH-CARDS %c v${CARD_VERSION} `,
@@ -1053,7 +1087,7 @@ const SCHEMA_BUSCH_SCHEDULE_CARD = [
 const TEXTE_BUSCH_SCHEDULE_CARD = {
   de: {
     name: "Busch Zeitplan",
-    description: "Zeitplan-Helfer im Dashboard bearbeiten — ziehen, tippen, kopieren.",
+    description: "Bearbeitet einen Zeitplan-Helfer direkt im Dashboard durch Ziehen, Tippen und Kopieren.",
     labels: {
       entity: "Zeitplan",
       title: "Titel",
@@ -1115,7 +1149,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
   },
   en: {
     name: "Busch schedule",
-    description: "Edit a schedule helper right on the dashboard — drag, tap, copy.",
+    description: "Edits a schedule helper right on the dashboard by dragging, tapping and copying.",
     labels: {
       entity: "Schedule",
       title: "Title",
@@ -1309,7 +1343,7 @@ class BuschScheduleCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    const entity = Object.keys(hass.states).find((id) => id.startsWith("schedule."));
+    const entity = buschStubIndex(hass).first.get("schedule");
     return { type: "custom:busch-schedule-card", entity: entity || "" };
   }
 
@@ -3831,9 +3865,7 @@ class BuschCalendarCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    const ersterKalender = hass
-      ? Object.keys(hass.states).find((id) => id.startsWith("calendar."))
-      : undefined;
+    const ersterKalender = hass ? buschStubIndex(hass).first.get("calendar") : undefined;
     return {
       type: "custom:busch-calendar-card",
       entities: ersterKalender ? [ersterKalender] : [],
@@ -4255,7 +4287,7 @@ const SCHEMA_BUSCH_CALENDAR_CARD = [
 const TEXTE_BUSCH_CALENDAR_CARD = {
   de: {
     name: "Busch Kalender",
-    description: "Termine als Monatsliste, mit Monatsversatz und Blättern.",
+    description: "Zeigt Termine eines oder mehrerer Kalender als Monatsliste zum Blättern.",
     labels: {
       title: "Überschrift",
       entities: "Kalender",
@@ -4297,7 +4329,7 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
   },
   en: {
     name: "Busch calendar",
-    description: "Events as a month list, with a month offset and paging.",
+    description: "Shows events of one or more calendars as a month list you can page through.",
     labels: {
       title: "Heading",
       entities: "Calendars",
@@ -4446,7 +4478,7 @@ window.customCards.some(card => card.type === "busch-schedule-card") || window.c
   type: "busch-schedule-card",
   name: waehlerZeitplan.name,
   description: waehlerZeitplan.description,
-  preview: true,
+  preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 
@@ -4641,7 +4673,7 @@ const SCHEMA_BUSCH_MAP_CARD = [
 const TEXTE_BUSCH_MAP_CARD = {
   de: {
     name: "Busch Landkarte",
-    description: "Die eingebaute Map-Karte mit frei wählbaren Kacheln — nur der Typ wird getauscht.",
+    description: "Zeigt Personen und Orte auf der eingebauten Landkarte mit frei wählbaren Kartenkacheln.",
     labels: {
       map_style: "Kartenvorlage",
       tile_url: "Eigene Kachel-URL",
@@ -4670,7 +4702,7 @@ const TEXTE_BUSCH_MAP_CARD = {
   },
   en: {
     name: "Busch map",
-    description: "The built-in map card with freely chosen tiles — only the type changes.",
+    description: "Shows people and places on the built-in map with freely chosen map tiles.",
     labels: {
       map_style: "Tile preset",
       tile_url: "Own tile URL",
@@ -4721,7 +4753,7 @@ class BuschMapCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    const person = Object.keys(hass?.states || {}).find((id) => id.startsWith("person."));
+    const person = buschStubIndex(hass).first.get("person");
     return {
       type: "custom:busch-map-card",
       entities: person ? [person] : [],
@@ -5156,7 +5188,7 @@ window.customCards.some(card => card.type === "busch-map-card") || window.custom
   type: "busch-map-card",
   name: waehlerLandkarte.name,
   description: waehlerLandkarte.description,
-  preview: true,
+  preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 
@@ -5719,7 +5751,7 @@ function devSchemaFuer(konfig) {
 const TEXTE_BUSCH_DEVICE_CARD = {
   de: {
     name: "Busch Gerät",
-    description: "Zeigt zu einer Entität ihr ganzes Gerät: Kopfzeile, Bedienelement und alle Entitäten, gruppiert wie auf der Geräteseite.",
+    description: "Zeigt das ganze Gerät einer Entität mit Kopfzeile, Bedienelement und gruppierten Entitäten.",
     labels: {
       quick_controls: "Schnellsteuerung",
       display_mode: "Medienanzeige",
@@ -5875,7 +5907,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
   },
   en: {
     name: "Busch device",
-    description: "Shows the whole device behind an entity: header, control and every entity, grouped like the device page.",
+    description: "Shows the whole device of an entity with header, control and grouped entities.",
     labels: {
       quick_controls: "Quick controls",
       display_mode: "Media display",
@@ -6201,10 +6233,13 @@ class BuschDeviceCard extends HTMLElement {
    *  Kartenwähler sofort ein Gerät zeigt (Spec Abschnitt 8). */
   static getStubConfig(hass, entities) {
     const register = (hass && hass.entities) || {};
-    const liste = Array.isArray(entities) && entities.length
-      ? entities
-      : Object.keys((hass && hass.states) || {});
-    const treffer = liste.find((id) => register[id] && register[id].device_id) || liste[0] || "";
+    let treffer;
+    if (Array.isArray(entities) && entities.length) {
+      treffer = entities.find((id) => register[id] && register[id].device_id) || entities[0] || "";
+    } else {
+      const index = buschStubIndex(hass);
+      treffer = index.firstWithDevice || index.ids[0] || "";
+    }
     // Aufgeklappt, damit die Vorschau im Kartenwaehler etwas zeigt. Die
     // VORGABE von start_expanded bleibt aus.
     return { type: "custom:busch-device-card", entity: treffer, start_expanded: true };
@@ -6815,7 +6850,7 @@ window.customCards.some(card => card.type === "busch-calendar-card") || window.c
   type: "busch-calendar-card",
   name: waehlerKalender.name,
   description: waehlerKalender.description,
-  preview: true,
+  preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 
@@ -6828,7 +6863,7 @@ window.customCards.some(card => card.type === "busch-device-card") || window.cus
   type: "busch-device-card",
   name: waehlerGeraet.name,
   description: waehlerGeraet.description,
-  preview: true,
+  preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
 const BUSCH_SMART_RULES = ['domain','state','entity_id','name','group','area','floor','level','device','label','device_manufacturer','device_model','integration','hidden_by','attributes','last_changed','last_updated','last_triggered','entity_category','not','or','and','options','type','sort'];
@@ -6866,8 +6901,8 @@ function buschSmartCardConfig(config,result){
   return JSON.parse(JSON.stringify({type:'entities',[key]:result,...config.card}));
 }
 const TEXTE_BUSCH_SMART_ENTITIES = {
- de:{itemSection:'Karte pro Ergebnis',itemHelp:'Jeder Ergebniswert wird nach Deduplizierung und Begrenzung in eine eigene Kopie der Vorlage eingesetzt. Vorgabe: reine Wertausgabe.',filters:'Filter',more:'Weitere Optionen',navigation:'Konfigurationsbereiche',is:'ist',operator:'Operator',name:'Busch Smart Entities',description:'Entitäten gemeinsam filtern und eine beliebige Zielkarte befüllen.',loading:'Entitäten und Register werden geladen.',error:'Die Abfrage konnte nicht ausgeführt werden.',registry:'Registerdaten konnten nicht vollständig geladen werden. Bitte Rechte und Verbindung prüfen.',javascript:'JavaScript-Abfrage · Optimierung begrenzt',template:'Template-Abfrage · Optimierung begrenzt',declarative:'Deklarative Abfrage',target:'Zielkarte',static:'Statische Entities',include:'Include-Filter',exclude:'Exclude-Filter',templateSection:'Template',sortSection:'Sortierung',display:'Anzeige',advanced:'Erweitert',output:'Ergebnisausgabe',add:'Hinzufügen',remove:'Entfernen',rule:'Regel',and:'UND',or:'ODER',not:'NICHT',field:'Feld',value:'Wert',kind:'Typ',property:'Eigenschaft',string:'Text',number:'Zahl',boolean:'Ja/Nein',object:'Objekt',array:'Liste',null:'Leerwert',import:'Auto-Entities-Konfiguration übernehmen',importHelp:'Konfiguration als JSON einfügen. Alle Felder bleiben erhalten; nur der Kartentyp wird ersetzt.',invalid:'Ungültige Konfiguration.',json:'Erweiterte Kartenkonfiguration',preview:'Ergebnisvorschau',valueHelp:'Ohne Wertausgabe bleiben Entity-Zeilen erhalten. Device-IDs und Attribute benötigen eine Zielkarte, die diese Werte akzeptiert. Eindeutige Werte werden vor globaler Begrenzung gebildet.',filterHelp:'Regeln innerhalb eines Filters sind UND-verknüpft. Weitere Include-Filter fügen Treffer hinzu. Vorgabe: keine Filter.',labels:{card:'Zielkartenoptionen',item:'Kartenvorlage',item_enabled:'Karte pro Ergebnis erzeugen',item_type:'Ergebniskartentyp',item_param:'Bindungspfad',entities:'Statische Entities',filter:'Filter',value:'Ergebnisausgabe',sort:'Sortierung',else:'Alternative Karte',card_type:'Kartentyp',card_param:'Zielparameter',template:'Jinja-Template',show_empty:'Leere Karte anzeigen',unique:'Eindeutige Entity-Zeilen',debug:'Debug anzeigen',value_type:'Ausgabe',attribute:'Attributpfad',missing:'Fehlende Werte',unique_values:'Nur eindeutige Werte',method:'Sortieren nach',reverse:'Absteigend',ignore_case:'Großschreibung ignorieren',numeric:'Numerisch',ip:'IP-Adressen',sort_attribute:'Sortierattribut',first:'Erster Treffer',count:'Anzahl'},helpers:{card:'Weitere Optionen der Zielkarte als typisiertes Objekt bearbeiten. Vorgabe: Entities.',item:'Statische Optionen für jede Ergebniskarte. Vorgabe: keine Vorlage.',item_enabled:'Erzeugt aus jedem ausgegebenen Wert eine Karte. Vorgabe: aus.',item_type:'Kartentyp je Treffer, auch beliebige Custom Cards. Vorgabe: Tile.',item_param:'Objektpfad für den Wert, z. B. device_id oder config.target; keine Listenindizes. Vorgabe beim Aktivieren: entity.',entities:'Feste Entities vor dynamischen Treffern. Vorgabe: keine.',filter:'Rekursive Include-/Exclude-Regeln. Vorgabe: keine.',value:'Werte aus Treffern extrahieren. Vorgabe: Entity-Zeilen.',sort:'Globale Sortierung und Begrenzung. Vorgabe: unverändert.',else:'Karte für leere Ergebnisse. Vorgabe: keine.',card_type:'Zielkarte wählen. Vorgabe: Entities.',card_param:'Parameter der Zielkarte, der Treffer erhält. Vorgabe: entities.',template:'Home Assistant berechnet das Template. Vorgabe: kein Template.',show_empty:'Leere Ergebnisse anzeigen. Vorgabe: ein.',unique:'Ganze Zeilen oder nur Entity-IDs vergleichen. Vorgabe: aus.',debug:'Abfragezähler und Laufzeit anzeigen. Vorgabe: aus.',value_type:'Entity-Zeilen oder extrahierte Werte ausgeben. Vorgabe: Entity-Zeilen.',attribute:'Freier verschachtelter Attributpfad, etwa network.details.interface. Vorgabe: leer.',missing:'Fehlende Zuordnung überspringen oder null ausgeben. Vorgabe: überspringen.',unique_values:'Tatsächlich ausgegebene Werte deduplizieren. Vorgabe: aus.',method:'Name sortiert nach der ersten Treffer-Entity, Gerätename nach dem Register. Vorgabe: unverändert.',reverse:'Sortierreihenfolge umkehren. Vorgabe: aus.',ignore_case:'Text ohne Groß-/Kleinschreibung vergleichen. Vorgabe: aus.',numeric:'Zahlen statt Text vergleichen. Vorgabe: aus.',ip:'IP-Adressen numerisch vergleichen. Vorgabe: aus.',sort_attribute:'Attribut für die Sortierung. Vorgabe: leer.',first:'Anfang bei null zählen. Vorgabe: 0.',count:'Maximale Trefferzahl. Leer lässt alle Treffer zu.'}},
- en:{itemSection:'Card per result',itemHelp:'After deduplication and pagination, each result value is inserted into its own copy of the template. Default: raw values.',filters:'Filters',more:'More options',navigation:'Configuration sections',is:'is',operator:'Operator',name:'Busch Smart Entities',description:'Share entity queries and populate any target card.',loading:'Loading entities and registries.',error:'The query could not be evaluated.',registry:'Registry data could not be loaded completely. Check permissions and connection.',javascript:'JavaScript query · limited optimization',template:'Template query · limited optimization',declarative:'Declarative query',target:'Target card',static:'Static entities',include:'Include filters',exclude:'Exclude filters',templateSection:'Template',sortSection:'Sorting',display:'Display',advanced:'Advanced',output:'Result output',add:'Add',remove:'Remove',rule:'Rule',and:'AND',or:'OR',not:'NOT',field:'Field',value:'Value',kind:'Type',property:'Property',string:'Text',number:'Number',boolean:'Boolean',object:'Object',array:'List',null:'Null',import:'Import auto-entities configuration',importHelp:'Paste configuration as JSON. All fields are preserved; only the card type changes.',invalid:'Invalid configuration.',json:'Advanced card configuration',preview:'Result preview',valueHelp:'Without value output, entity rows are preserved. Device IDs and attributes require a target card that accepts these values. Unique values are calculated before global pagination.',filterHelp:'Rules within a filter use AND. Additional include filters add matches. Default: no filters.',labels:{card:'Target card options',item:'Card template',item_enabled:'Card per result',item_type:'Result card type',item_param:'Binding path',entities:'Static entities',filter:'Filters',value:'Result output',sort:'Sorting',else:'Alternative card',card_type:'Card type',card_param:'Target parameter',template:'Jinja template',show_empty:'Show empty card',unique:'Unique entity rows',debug:'Show debug',value_type:'Output',attribute:'Attribute path',missing:'Missing values',unique_values:'Unique values only',method:'Sort by',reverse:'Descending',ignore_case:'Ignore case',numeric:'Numeric',ip:'IP addresses',sort_attribute:'Sort attribute',first:'First match',count:'Count'},helpers:{card:'Edit further target card options as a typed object. Default: Entities.',item:'Static options for each result card. Default: no template.',item_enabled:'Creates a card from each output value. Default: off.',item_type:'Card type per result, including any custom card. Default: Tile.',item_param:'Object path for the value, e.g. device_id or config.target; no array indices. Default when enabled: entity.',entities:'Fixed entities before dynamic matches. Default: none.',filter:'Recursive include/exclude rules. Default: none.',value:'Extract values from matches. Default: entity rows.',sort:'Global sorting and pagination. Default: unchanged.',else:'Card for empty results. Default: none.',card_type:'Choose the target card. Default: Entities.',card_param:'Target parameter receiving the results. Default: entities.',template:'Home Assistant evaluates the template. Default: no template.',show_empty:'Display empty results. Default: on.',unique:'Compare complete rows or entity IDs only. Default: off.',debug:'Show query counters and execution time. Default: off.',value_type:'Output entity rows or extracted values. Default: entity rows.',attribute:'Free nested attribute path, for example network.details.interface. Default: empty.',missing:'Skip missing values or output null. Default: skip.',unique_values:'Deduplicate the actual output values. Default: off.',method:'Name sorts by the first matching entity; device name uses the registry. Default: unchanged.',reverse:'Reverse sort order. Default: off.',ignore_case:'Compare text without case. Default: off.',numeric:'Compare numbers instead of text. Default: off.',ip:'Compare IP addresses numerically. Default: off.',sort_attribute:'Attribute used for sorting. Default: empty.',first:'Zero-based start offset. Default: 0.',count:'Maximum results. Empty allows all results.'}}
+ de:{itemSection:'Karte pro Ergebnis',itemHelp:'Jeder Ergebniswert wird nach Deduplizierung und Begrenzung in eine eigene Kopie der Vorlage eingesetzt. Vorgabe: reine Wertausgabe.',filters:'Filter',more:'Weitere Optionen',navigation:'Konfigurationsbereiche',is:'ist',operator:'Operator',name:'Busch Smart Entities',description:'Filtert Entitäten nach Regeln und füllt damit eine beliebige Zielkarte.',loading:'Entitäten und Register werden geladen.',error:'Die Abfrage konnte nicht ausgeführt werden.',registry:'Registerdaten konnten nicht vollständig geladen werden. Bitte Rechte und Verbindung prüfen.',javascript:'JavaScript-Abfrage · Optimierung begrenzt',template:'Template-Abfrage · Optimierung begrenzt',declarative:'Deklarative Abfrage',target:'Zielkarte',static:'Statische Entities',include:'Include-Filter',exclude:'Exclude-Filter',templateSection:'Template',sortSection:'Sortierung',display:'Anzeige',advanced:'Erweitert',output:'Ergebnisausgabe',add:'Hinzufügen',remove:'Entfernen',rule:'Regel',and:'UND',or:'ODER',not:'NICHT',field:'Feld',value:'Wert',kind:'Typ',property:'Eigenschaft',string:'Text',number:'Zahl',boolean:'Ja/Nein',object:'Objekt',array:'Liste',null:'Leerwert',import:'Auto-Entities-Konfiguration übernehmen',importHelp:'Konfiguration als JSON einfügen. Alle Felder bleiben erhalten; nur der Kartentyp wird ersetzt.',invalid:'Ungültige Konfiguration.',json:'Erweiterte Kartenkonfiguration',preview:'Ergebnisvorschau',valueHelp:'Ohne Wertausgabe bleiben Entity-Zeilen erhalten. Device-IDs und Attribute benötigen eine Zielkarte, die diese Werte akzeptiert. Eindeutige Werte werden vor globaler Begrenzung gebildet.',filterHelp:'Regeln innerhalb eines Filters sind UND-verknüpft. Weitere Include-Filter fügen Treffer hinzu. Vorgabe: keine Filter.',labels:{card:'Zielkartenoptionen',item:'Kartenvorlage',item_enabled:'Karte pro Ergebnis erzeugen',item_type:'Ergebniskartentyp',item_param:'Bindungspfad',entities:'Statische Entities',filter:'Filter',value:'Ergebnisausgabe',sort:'Sortierung',else:'Alternative Karte',card_type:'Kartentyp',card_param:'Zielparameter',template:'Jinja-Template',show_empty:'Leere Karte anzeigen',unique:'Eindeutige Entity-Zeilen',debug:'Debug anzeigen',value_type:'Ausgabe',attribute:'Attributpfad',missing:'Fehlende Werte',unique_values:'Nur eindeutige Werte',method:'Sortieren nach',reverse:'Absteigend',ignore_case:'Großschreibung ignorieren',numeric:'Numerisch',ip:'IP-Adressen',sort_attribute:'Sortierattribut',first:'Erster Treffer',count:'Anzahl'},helpers:{card:'Weitere Optionen der Zielkarte als typisiertes Objekt bearbeiten. Vorgabe: Entities.',item:'Statische Optionen für jede Ergebniskarte. Vorgabe: keine Vorlage.',item_enabled:'Erzeugt aus jedem ausgegebenen Wert eine Karte. Vorgabe: aus.',item_type:'Kartentyp je Treffer, auch beliebige Custom Cards. Vorgabe: Tile.',item_param:'Objektpfad für den Wert, z. B. device_id oder config.target; keine Listenindizes. Vorgabe beim Aktivieren: entity.',entities:'Feste Entities vor dynamischen Treffern. Vorgabe: keine.',filter:'Rekursive Include-/Exclude-Regeln. Vorgabe: keine.',value:'Werte aus Treffern extrahieren. Vorgabe: Entity-Zeilen.',sort:'Globale Sortierung und Begrenzung. Vorgabe: unverändert.',else:'Karte für leere Ergebnisse. Vorgabe: keine.',card_type:'Zielkarte wählen. Vorgabe: Entities.',card_param:'Parameter der Zielkarte, der Treffer erhält. Vorgabe: entities.',template:'Home Assistant berechnet das Template. Vorgabe: kein Template.',show_empty:'Leere Ergebnisse anzeigen. Vorgabe: ein.',unique:'Ganze Zeilen oder nur Entity-IDs vergleichen. Vorgabe: aus.',debug:'Abfragezähler und Laufzeit anzeigen. Vorgabe: aus.',value_type:'Entity-Zeilen oder extrahierte Werte ausgeben. Vorgabe: Entity-Zeilen.',attribute:'Freier verschachtelter Attributpfad, etwa network.details.interface. Vorgabe: leer.',missing:'Fehlende Zuordnung überspringen oder null ausgeben. Vorgabe: überspringen.',unique_values:'Tatsächlich ausgegebene Werte deduplizieren. Vorgabe: aus.',method:'Name sortiert nach der ersten Treffer-Entity, Gerätename nach dem Register. Vorgabe: unverändert.',reverse:'Sortierreihenfolge umkehren. Vorgabe: aus.',ignore_case:'Text ohne Groß-/Kleinschreibung vergleichen. Vorgabe: aus.',numeric:'Zahlen statt Text vergleichen. Vorgabe: aus.',ip:'IP-Adressen numerisch vergleichen. Vorgabe: aus.',sort_attribute:'Attribut für die Sortierung. Vorgabe: leer.',first:'Anfang bei null zählen. Vorgabe: 0.',count:'Maximale Trefferzahl. Leer lässt alle Treffer zu.'}},
+ en:{itemSection:'Card per result',itemHelp:'After deduplication and pagination, each result value is inserted into its own copy of the template. Default: raw values.',filters:'Filters',more:'More options',navigation:'Configuration sections',is:'is',operator:'Operator',name:'Busch Smart Entities',description:'Filters entities by rules and fills any target card with them.',loading:'Loading entities and registries.',error:'The query could not be evaluated.',registry:'Registry data could not be loaded completely. Check permissions and connection.',javascript:'JavaScript query · limited optimization',template:'Template query · limited optimization',declarative:'Declarative query',target:'Target card',static:'Static entities',include:'Include filters',exclude:'Exclude filters',templateSection:'Template',sortSection:'Sorting',display:'Display',advanced:'Advanced',output:'Result output',add:'Add',remove:'Remove',rule:'Rule',and:'AND',or:'OR',not:'NOT',field:'Field',value:'Value',kind:'Type',property:'Property',string:'Text',number:'Number',boolean:'Boolean',object:'Object',array:'List',null:'Null',import:'Import auto-entities configuration',importHelp:'Paste configuration as JSON. All fields are preserved; only the card type changes.',invalid:'Invalid configuration.',json:'Advanced card configuration',preview:'Result preview',valueHelp:'Without value output, entity rows are preserved. Device IDs and attributes require a target card that accepts these values. Unique values are calculated before global pagination.',filterHelp:'Rules within a filter use AND. Additional include filters add matches. Default: no filters.',labels:{card:'Target card options',item:'Card template',item_enabled:'Card per result',item_type:'Result card type',item_param:'Binding path',entities:'Static entities',filter:'Filters',value:'Result output',sort:'Sorting',else:'Alternative card',card_type:'Card type',card_param:'Target parameter',template:'Jinja template',show_empty:'Show empty card',unique:'Unique entity rows',debug:'Show debug',value_type:'Output',attribute:'Attribute path',missing:'Missing values',unique_values:'Unique values only',method:'Sort by',reverse:'Descending',ignore_case:'Ignore case',numeric:'Numeric',ip:'IP addresses',sort_attribute:'Sort attribute',first:'First match',count:'Count'},helpers:{card:'Edit further target card options as a typed object. Default: Entities.',item:'Static options for each result card. Default: no template.',item_enabled:'Creates a card from each output value. Default: off.',item_type:'Card type per result, including any custom card. Default: Tile.',item_param:'Object path for the value, e.g. device_id or config.target; no array indices. Default when enabled: entity.',entities:'Fixed entities before dynamic matches. Default: none.',filter:'Recursive include/exclude rules. Default: none.',value:'Extract values from matches. Default: entity rows.',sort:'Global sorting and pagination. Default: unchanged.',else:'Card for empty results. Default: none.',card_type:'Choose the target card. Default: Entities.',card_param:'Target parameter receiving the results. Default: entities.',template:'Home Assistant evaluates the template. Default: no template.',show_empty:'Display empty results. Default: on.',unique:'Compare complete rows or entity IDs only. Default: off.',debug:'Show query counters and execution time. Default: off.',value_type:'Output entity rows or extracted values. Default: entity rows.',attribute:'Free nested attribute path, for example network.details.interface. Default: empty.',missing:'Skip missing values or output null. Default: skip.',unique_values:'Deduplicate the actual output values. Default: off.',method:'Name sorts by the first matching entity; device name uses the registry. Default: unchanged.',reverse:'Reverse sort order. Default: off.',ignore_case:'Compare text without case. Default: off.',numeric:'Compare numbers instead of text. Default: off.',ip:'Compare IP addresses numerically. Default: off.',sort_attribute:'Attribute used for sorting. Default: empty.',first:'Zero-based start offset. Default: 0.',count:'Maximum results. Empty allows all results.'}}
 };
 Object.assign(TEXTE_BUSCH_SMART_ENTITIES.de, {
  texte:{unique_false:'Aus',unique_true:'Ganze Zeilen',unique_entity:'Entity-ID',value_type_rows:'Entity-Zeilen',value_type_entity_id:'Entity-ID',value_type_device_id:'Geräte-ID',value_type_attribute:'Attribut',missing_skip:'Überspringen',missing_null:'Leerwert (null)',method_none:'Unverändert',method_domain:'Domain',method_entity_id:'Entity-ID',method_name:'Name',method_device_name:'Gerätename',method_device:'Gerät',method_area:'Bereich',method_state:'Zustand',method_attribute:'Attribut',method_last_changed:'Letzte Zustandsänderung',method_last_updated:'Letzte Aktualisierung',method_last_triggered:'Letzte Auslösung',card_type_entities:'Entitäten',card_type_grid:'Raster',card_type_glance:'Übersicht',card_type_map:'Karte', 'card_type_vertical-stack':'Vertikaler Stapel'},
@@ -6940,8 +6975,7 @@ function buschSmartFilterBuilder(parent,rule,change,t,fields=BUSCH_SMART_RULES,u
 class BuschSmartEntities extends HTMLElement {
   static getConfigElement(){return document.createElement('busch-smart-entities-editor');}
   static getStubConfig(hass){
-    const counts=new Map();
-    for(const [id,entry] of Object.entries(hass?.entities||{}))if(hass?.states?.[entry.entity_id||id]&&entry.platform)counts.set(entry.platform,(counts.get(entry.platform)||0)+1);
+    const counts=buschStubIndex(hass).platforms;
     const integration=counts.has('sun')?'sun':[...counts].sort((a,b)=>a[1]-b[1]||a[0].localeCompare(b[0]))[0]?.[0]||'sun';
     return {type:'custom:busch-smart-entities',filter:{include:[{integration}]},card:{type:'entities'},sort:{method:'name',count:6}};
   }
@@ -7049,7 +7083,7 @@ class BuschSmartEntitiesEditor extends BuschEditorBase {
 }
 if (!customElements.get?.("busch-smart-entities")) customElements.define("busch-smart-entities", BuschSmartEntities);
 if (!customElements.get?.("busch-smart-entities-editor")) customElements.define("busch-smart-entities-editor", BuschSmartEntitiesEditor);
-if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))window.customCards.push({type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))window.customCards.push({type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
 /* Shared media/status helpers (formerly in the Unraid section; buschMedia/buschMediaResolve serve the device card). */
 function buschMediaResolve(config={},metadata={},defaultIcon='mdi:devices'){return BuschUI.resolveMedia(config,metadata,defaultIcon);}
 function buschMedia(config,metadata,defaultIcon,className='card-icon'){return BuschUI.media(config,metadata,defaultIcon,className);}
@@ -7176,8 +7210,10 @@ const TEXTE_BUSCH_NETWORK_CARD={
  image: "Bild", icon: "Icon", primary: "Primär", secondary: "Sekundär", danger: "Destruktiv", quiet: "Ruhig", "icon-only": "Nur Icon", overflow: "Menü",
   network: "Netzwerk",
   fritz: "FRITZ! Gerät",
-  network_description: "Zeigt Netzwerkclients mit belegten Zuordnungen und konfigurierbaren Aktionen.",
-  fritz_description: "Zeigt eine FRITZ!Box oder einen Repeater mit nativen Funktionen und Clients.",
+  network_description: "Zeigt Netzwerkclients mit belegten Zuordnungen und einstellbaren Aktionen.",
+  fritz_description: "Zeigt eine FRITZ!Box oder einen Repeater mit ihren Funktionen und Clients.",
+  waehler_network: "Busch Netzwerk",
+  waehler_fritz: "Busch FRITZ!-Gerät",
   home: "Anwesend gemeldet",
   not_home: "Abwesend gemeldet",
   connected: "Verbunden",
@@ -7480,8 +7516,10 @@ const TEXTE_BUSCH_NETWORK_CARD={
  image: "Image", icon: "Icon", primary: "Primary", secondary: "Secondary", danger: "Destructive", quiet: "Quiet", "icon-only": "Icon only", overflow: "Menu",
   network: "Network",
   fritz: "FRITZ! device",
-  network_description: "Displays network clients with verified mappings and configurable actions.",
-  fritz_description: "Displays a FRITZ!Box or repeater with native capabilities and clients.",
+  network_description: "Shows network clients with verified mappings and configurable actions.",
+  fritz_description: "Shows a FRITZ!Box or repeater with its functions and clients.",
+  waehler_network: "Busch network",
+  waehler_fritz: "Busch FRITZ! device",
   home: "Reported present",
   not_home: "Reported absent",
   connected: "Connected",
@@ -7786,8 +7824,10 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
  image: "Bild", icon: "Icon", primary: "Primär", secondary: "Sekundär", danger: "Destruktiv", quiet: "Ruhig", "icon-only": "Nur Icon", overflow: "Menü",
   network: "Netzwerk",
   fritz: "FRITZ! Gerät",
-  network_description: "Zeigt Netzwerkclients mit belegten Zuordnungen und konfigurierbaren Aktionen.",
-  fritz_description: "Zeigt eine FRITZ!Box oder einen Repeater mit nativen Funktionen und Clients.",
+  network_description: "Zeigt Netzwerkclients mit belegten Zuordnungen und einstellbaren Aktionen.",
+  fritz_description: "Zeigt eine FRITZ!Box oder einen Repeater mit ihren Funktionen und Clients.",
+  waehler_network: "Busch Netzwerk",
+  waehler_fritz: "Busch FRITZ!-Gerät",
   home: "Anwesend gemeldet",
   not_home: "Abwesend gemeldet",
   connected: "Verbunden",
@@ -8090,8 +8130,10 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
  image: "Image", icon: "Icon", primary: "Primary", secondary: "Secondary", danger: "Destructive", quiet: "Quiet", "icon-only": "Icon only", overflow: "Menu",
   network: "Network",
   fritz: "FRITZ! device",
-  network_description: "Displays network clients with verified mappings and configurable actions.",
-  fritz_description: "Displays a FRITZ!Box or repeater with native capabilities and clients.",
+  network_description: "Shows network clients with verified mappings and configurable actions.",
+  fritz_description: "Shows a FRITZ!Box or repeater with its functions and clients.",
+  waehler_network: "Busch network",
+  waehler_fritz: "Busch FRITZ! device",
   home: "Reported present",
   not_home: "Reported absent",
   connected: "Connected",
@@ -9306,7 +9348,7 @@ class BuschNetworkBaseCard extends HTMLElement {
  _pruneGestures(){if(!this.isConnected)return;for(const [node,cleanup]of this._gestures||[])if(!node.isConnected){cleanup();this._gestures.delete(node);}}
 }
 class BuschNetworkCard extends BuschNetworkBaseCard {static getConfigElement(){return document.createElement('busch-network-card-editor');}static getStubConfig(){return {type:'custom:busch-network-card'};}}
-class BuschFritzDeviceCard extends BuschNetworkBaseCard {get _kind(){return 'fritz';}static getConfigElement(){return document.createElement('busch-fritz-device-card-editor');}static getStubConfig(hass){let index=null;const byDevice=()=>{if(index)return index;index=new Map();for(const [entity_id,e] of Object.entries(hass.entities||{})){if(!e?.device_id)continue;let list=index.get(e.device_id);if(!list)index.set(e.device_id,list=[]);list.push({...e,entity_id,domain:entity_id.split('.')[0],registry:e});}return index;};/* #641: one O(entities) index instead of O(devices × entities) in the card picker. */const devices=hass?buschFritzDevices({devices:new Map(Object.entries(hass.devices||{})),getDeviceEntities:id=>byDevice().get(id)||[]}):[];return {type:'custom:busch-fritz-device-card',...(devices.length?{device_id:devices[0].id}:{})};}}
+class BuschFritzDeviceCard extends BuschNetworkBaseCard {get _kind(){return 'fritz';}static getConfigElement(){return document.createElement('busch-fritz-device-card-editor');}static getStubConfig(hass){/* #641/#1011: the shared one-pass stub index instead of O(devices × entities) per card. */const index=hass?buschStubIndex(hass):null;const devices=index?buschFritzDevices({devices:index.deviceMap(),getDeviceEntities:id=>index.byDevice.get(id)||[]}):[];return {type:'custom:busch-fritz-device-card',...(devices.length?{device_id:devices[0].id}:{})};}}
 const BUSCH_NETWORK_RULE_FIELDS=['state','status','ip','ip_range','cidr','hostname','mac','network_device','integration','config_entry','label','manufacturer','device','area','name','attributes','last_changed','last_time_reachable','and','or','not'];
 
 /* Structured recursive network editor. Invalid intermediate text is a local draft, never an unrestricted saved query. */
@@ -9352,5 +9394,5 @@ if(!customElements.get?.('busch-network-card'))customElements.define('busch-netw
 if(!customElements.get?.('busch-fritz-device-card'))customElements.define('busch-fritz-device-card',BuschFritzDeviceCard);
 if(!customElements.get?.('busch-network-card-editor'))customElements.define('busch-network-card-editor',BuschNetworkEditor);
 if(!customElements.get?.('busch-fritz-device-card-editor'))customElements.define('busch-fritz-device-card-editor',BuschFritzDeviceEditor);
-if(!window.customCards.some(c=>c.type==='busch-network-card'))window.customCards.push({type:'busch-network-card',name:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network,description:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
-if(!window.customCards.some(c=>c.type==='busch-fritz-device-card'))window.customCards.push({type:'busch-fritz-device-card',name:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz,description:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz_description,preview:true,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+if(!window.customCards.some(c=>c.type==='busch-network-card'))window.customCards.push({type:'busch-network-card',name:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).waehler_network,description:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network_description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+if(!window.customCards.some(c=>c.type==='busch-fritz-device-card'))window.customCards.push({type:'busch-fritz-device-card',name:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).waehler_fritz,description:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz_description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});

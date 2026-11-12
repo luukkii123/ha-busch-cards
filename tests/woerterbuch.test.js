@@ -189,7 +189,7 @@ test("der Kartenwaehler-Eintrag folgt navigator.language", () => {
       assert.ok(eintrag, `kein Eintrag fuer ${tag}`);
       assert.strictEqual(eintrag.name, texte[erwartet].name, `${tag}: falsche Sprache`);
       assert.strictEqual(eintrag.description, texte[erwartet].description);
-      assert.strictEqual(eintrag.preview, true);
+      assert.strictEqual(eintrag.preview, false);
       assert.ok(eintrag.documentationURL, `${tag}: keine documentationURL`);
     }
   }
