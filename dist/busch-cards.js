@@ -1070,7 +1070,7 @@ class BuschSmartQueries {
 }
 /* END BUSCH SHARED CORE */
 
-const CARD_VERSION = "0.24.0";
+const CARD_VERSION = "0.25.0";
 
 /*
  * #1011 Kartenwähler: Vorgaben für getStubConfig aus EINEM Durchlauf über
