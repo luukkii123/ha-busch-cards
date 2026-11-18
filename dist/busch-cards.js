@@ -232,9 +232,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.2.0 sha256:97c46ba559da5a1bb27b3304272a197be3d36b3a9f250af94f2042c4318b2707 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.2.0", sourceHash: "97c46ba559da" });
-/* Busch Cards Core 1.2.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.3.0 sha256:8b570747b1f02202707d66e0a6efa67096ea1945bb80eeb3166178a9561bff82 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.3.0", sourceHash: "8b570747b1f0" });
+/* Busch Cards Core 1.3.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -504,88 +504,109 @@ class BuschCardsCore {
       const languageChanged = this._language !== buschCoreKey(hass.locale || hass.language);
       this.hass = hass; this.registry.hass = hass; this._language = buschCoreKey(hass.locale || hass.language);
       if (languageChanged) this.engine.refresh();
-      if (!this.streaming && [hass.entities, hass.devices, hass.areas, hass.floors].some((value, index) => value !== this._display[index])) this.seed(hass);
-      // Without a stream, compare state references once for the shared runtime.
+      // Registries follow their own events; without them the display registries of the frontend are the source.
+      if (!this._registryLive && [hass.entities, hass.devices, hass.areas, hass.floors].some((value, index) => value !== this._display[index])) this.seed(hass);
+      // M10: one state source. Until the entity stream delivers, hass.states (compared by reference); then the stream alone.
       if (!this.streaming && this._states !== hass.states) this.syncStates(hass.states || {});
       return;
     }
     this.dispose(); this.index.labels = new Map(); this.lastErrors.clear(); this.connection = identity; this.hass = hass; this.registry.hass = hass; this._language = buschCoreKey(hass.locale || hass.language); this.seed(hass);
     const generation = this.generation;
     const connection = hass.connection;
-    let stateReady = Promise.resolve();
+    this.subscribeEntities(connection, generation);
     if (typeof connection?.subscribeEvents === "function") {
-      this._stateBuffer = [];
+      this._registryLive = true;
       const subscribe = (type, callback) => {
         return Promise.resolve(connection.subscribeEvents(event => { if (generation === this.generation) callback(event); }, type)).then(unsubscribe => {
-          if (generation !== this.generation) unsubscribe(); else {
-            this.unsubscribers.push(unsubscribe);
-            if (type === "state_changed") return this.syncStream();
-          }
-        }).catch(() => { if (generation === this.generation) this.streaming = false; });
+          if (generation !== this.generation) unsubscribe(); else this.unsubscribers.push(unsubscribe);
+        }).catch(() => { if (generation === this.generation) this._registryLive = false; });
       };
-      stateReady = subscribe("state_changed", event => {
-        if (this._stateBuffer) this._stateBuffer.push(event.data);
-        else this.updateState(event.data.entity_id, event.data.new_state);
-      });
       for (const name of Object.keys(BUSCH_REGISTRY_IDS)) subscribe(`${name}_registry_updated`, () => {
         this._dirtyRegistries ||= new Set(); this._dirtyRegistries.add(name);
         if (this._registryTimer) return;
         this._registryTimer = setTimeout(() => { this._registryTimer = null; const names = [...this._dirtyRegistries]; this._dirtyRegistries.clear(); this.refreshRegistries(names, true); }, 50);
       });
       if (typeof connection.addEventListener === "function") {
+        // After a reconnect the socket library resubscribes subscribe_entities; its next message is a full state again.
         const onReady = () => {
           if (generation !== this.generation) return;
-          this.registry.clear(); this._refreshing.clear(); this._queuedRefresh?.clear();
-          this._snapshotEpoch = (this._snapshotEpoch || 0) + 1; this._snapshotPromise = null; this._stateBuffer = []; this.streaming = false;
-          this.ready = Promise.all([this.syncStream(), this.refreshRegistries()]);
+          this._entitiesFull = true; this.subscribeEntities(connection, generation); this.registry.clear(); this._refreshing.clear(); this._queuedRefresh?.clear();
+          this.ready = this.refreshRegistries();
           this.smart?.retryTemplates(); return this.ready;
         };
         connection.addEventListener("ready", onReady);
         this.unsubscribers.push(() => connection.removeEventListener?.("ready", onReady));
       }
     }
-    this.ready = Promise.all([stateReady, typeof hass.callWS === "function" ? this.refreshRegistries() : Promise.resolve()]);
+    this.ready = typeof hass.callWS === "function" ? this.refreshRegistries() : Promise.resolve();
   }
-  syncStream() {
-    if (this._snapshotPromise) return this._snapshotPromise;
-    const generation = this.generation, epoch = this._snapshotEpoch || 0, hass = this.hass; this._stateBuffer ||= [];
-    const pending = Promise.resolve().then(() => hass.callWS({ type: "get_states" })).then(rows => {
-      if (generation !== this.generation || epoch !== (this._snapshotEpoch || 0)) return;
-      if (!Array.isArray(rows)) throw new Error("Invalid state snapshot");
-      const states = Object.fromEntries(rows.map(state => [state.entity_id, state]));
-      for (const event of this._stateBuffer || []) {
-        const previous = states[event.entity_id], next = event.new_state;
-        if (!next) delete states[event.entity_id];
-        else if (!previous || !previous.last_updated || !next.last_updated || next.last_updated >= previous.last_updated) states[event.entity_id] = next;
-      }
-      this._stateBuffer = null; this.syncStates(states); this.streaming = true; this.lastErrors.delete("states");
-    }).catch(error => {
-      if (generation !== this.generation || epoch !== (this._snapshotEpoch || 0)) return;
-      for (const event of this._stateBuffer || []) this.updateState(event.entity_id, event.new_state);
-      this._stateBuffer = null; this.streaming = false; this.lastErrors.set("states", error);
-    }).finally(() => { if (this._snapshotPromise === pending) this._snapshotPromise = null; });
-    this._snapshotPromise = pending; return pending;
+  // M10: compressed subscribe_entities; its first message is the full state, so no get_states is needed. A rejected
+  // subscription leaves hass.states as the source and is tried again at the next ready.
+  subscribeEntities(connection, generation) {
+    if (this._entitiesActive || typeof connection?.subscribeMessage !== "function") return;
+    this._entitiesActive = true; this._entitiesFull = true;
+    Promise.resolve().then(() => connection.subscribeMessage(message => { if (generation === this.generation) this.applyEntities(message); }, { type: "subscribe_entities" })).then(unsubscribe => {
+      if (generation !== this.generation) unsubscribe(); else this.unsubscribers.push(unsubscribe);
+    }).catch(error => { if (generation === this.generation) { this._entitiesActive = false; this.streaming = false; this.lastErrors.set("states", error); } });
   }
-  syncStates(states) {
-    const ids = new Set([...this.index.states.keys(), ...Object.keys(states)]);
-    const changes = [];
-    for (const id of ids) {
-      if (this.index.states.get(id) === states[id]) continue;
-      this.metrics.stateUpdates++;
-      const change = this.index.update(id, states[id]);
-      for (const device of [change.old?.device_id, change.next?.device_id]) if (device && this._deviceListeners.has(device)) this._dirtyDevices.add(device);
-      changes.push(change);
+  // True when the index is current for this hass: fed by the entity stream, or synced with exactly its states.
+  // Cards may then trust track/unchanged (Unraid #641 guard, device card M15).
+  synced(hass) { return !!hass && this.connection === (hass.connection || hass) && (!!this.streaming || this._states === hass.states); }
+  // M10: one subscribe_entities message (a: added/full, c: changed with +/-, r: removed), decoded like
+  // home-assistant-js-websocket does for hass.states. A full message replaces the index; equal states keep their object.
+  applyEntities(message) {
+    if (!message || typeof message !== "object") return;
+    const known = this.index.states, next = new Map(), full = this._entitiesFull, added = message.a || {};
+    const iso = seconds => new Date(seconds * 1000).toISOString();
+    this._entitiesFull = false;
+    for (const id in added) {
+      const row = added[id], previous = known.get(id);
+      const last_changed = iso(row.lc), last_updated = row.lu ? iso(row.lu) : last_changed;
+      const context = typeof row.c === "string" ? { id: row.c, parent_id: null, user_id: null } : row.c;
+      if (previous && previous.state === row.s && previous.last_changed === last_changed && previous.last_updated === last_updated && previous.context?.id === context?.id) continue;
+      next.set(id, { entity_id: id, state: row.s, attributes: row.a || {}, context, last_changed, last_updated });
     }
-    this._states = states;
-    if (changes.length === 1) this.engine?.changed(changes[0]);
-    else if (changes.length > 1) this.engine?.refresh();
+    if (full) for (const id of known.keys()) if (!(id in added)) next.set(id, null);
+    if (Array.isArray(message.r)) for (const id of message.r) next.set(id, null);
+    for (const id in message.c || {}) {
+      const previous = next.has(id) ? next.get(id) : known.get(id);
+      if (!previous) continue;
+      const { "+": add, "-": remove } = message.c[id] || {}, state = { ...previous };
+      const attributes = add?.a || remove?.a ? { ...previous.attributes } : previous.attributes;
+      if (add) {
+        if (add.s !== undefined) state.state = add.s;
+        if (add.c) state.context = typeof add.c === "string" ? { ...previous.context, id: add.c } : { ...previous.context, ...add.c };
+        if (add.lc) state.last_updated = state.last_changed = iso(add.lc); else if (add.lu) state.last_updated = iso(add.lu);
+        if (add.a) Object.assign(attributes, add.a);
+      }
+      if (remove?.a) for (const key of remove.a) delete attributes[key];
+      state.attributes = attributes; next.set(id, state);
+    }
+    this.streaming = true; this.lastErrors.delete("states");
+    for (const [id, state] of next) this.applyState(id, state || undefined);
     this.notifyDevices();
   }
-  updateState(id, state) {
+  // Fallback without the stream (and until its first message): one pass over the new states object (Map lookups, no id
+  // set); removed ids are searched only when fewer known ids were seen. Every change goes through engine.changed (M4).
+  syncStates(states) {
+    const known = this.index.states, ids = [];
+    let seen = 0;
+    for (const id in states) {
+      const state = states[id], previous = known.get(id);
+      if (previous !== undefined) seen++;
+      if (previous !== state) ids.push(id);
+    }
+    if (seen < known.size) for (const id of known.keys()) if (states[id] === undefined) ids.push(id);
+    this._states = states;
+    for (const id of ids) this.applyState(id, states[id]);
+    this.notifyDevices();
+  }
+  // One state change into the index; queries get it bundled per microtask through engine.changed (M4).
+  applyState(id, state) {
     this.metrics.stateUpdates++; const change = this.index.update(id, state); this.engine?.changed(change);
     for (const device of [change.old?.device_id, change.next?.device_id]) if (device && this._deviceListeners.has(device)) this._dirtyDevices.add(device);
-    this.notifyDevices();
   }
+  updateState(id, state) { this.applyState(id, state); this.notifyDevices(); }
   notifyDevices() {
     if (this._dirtyDevices.size && !this._deviceNotifyQueued) {
       this._deviceNotifyQueued = true;
@@ -640,7 +661,7 @@ class BuschCardsCore {
   debugSnapshot() { return { version: this.version, sourceHash: this.sourceHash, ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
   dispose() {
     if (this._releaseTimer) { clearTimeout(this._releaseTimer); this._releaseTimer = null; } this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
-    this.streaming = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set(); this._snapshotPromise = null; this._stateBuffer = null;
+    this._registryLive = false; this.streaming = false; this._entitiesActive = false; this._entitiesFull = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set();
     if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this._dirtyDevices.clear(); this.engine?.stop();
   }
 }
