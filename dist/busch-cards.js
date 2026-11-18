@@ -923,7 +923,7 @@ class BuschSmartQueries {
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
 
-const CARD_VERSION = "0.22.2";
+const CARD_VERSION = "0.22.3";
 
 /*
  * #1011 Kartenwähler: Vorgaben für getStubConfig aus EINEM Durchlauf über
