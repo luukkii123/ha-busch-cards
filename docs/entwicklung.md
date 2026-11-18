@@ -209,6 +209,8 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**18.11.2026 · 0.22.3, Buschcheck Etappe A (#1265, Tag `v0.22.3`)** — Zeitplan fällt nach Speicherfehler auf den bestätigten Stand zurück und lädt neu (M2); Gerätekarte zeigt fehlgeschlagenes Toggle als Dienstfehler (M40). 425 Node-Tests (1 skip), 02-zeitplan und 05-geraet sichtgeprüft (unverändert). Abschlusslauf `karten-20261118-115150-b741a7` grün (38/38, 908 Node-Tests), `--beleg-pruefen` gleich; `node --check`, `ui-regeln-pruefen.py` (0), `hacs-contract-lint.py` (0), Kern bytegleich.
+
 **12.11.2026 · 0.22.2, Kartenwähler ohne Live-Vorschau (#1011, Tag `v0.22.2`)** — Zeitplan, Landkarte, Kalender, Gerät, Smart Entities, Netzwerk, FRITZ!: Namen einheitlich „Busch …“ (neu: „Busch Netzwerk“, „Busch FRITZ!-Gerät“), Beschreibung je ein Satz; `getStubConfig` über einen gemeinsamen Index (`buschStubIndex`, ein Durchlauf je Register, gemerkt am Entitätsregister).
 
 1. `node --check` grün; neue Tests `tests/kartenwaehler.test.js` (preview false, ein Satz Beschreibung de/en, höchstens ein Durchlauf je Register, kein Netz) zuerst rot, danach grün.
