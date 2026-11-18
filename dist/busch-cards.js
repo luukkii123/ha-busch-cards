@@ -5364,7 +5364,14 @@ function devFuehreAus(karte, hass, aktion, kontext) {
     return;
   }
   if (art === "toggle") {
-    if (kontext.entity && hass) hass.callService("homeassistant", "toggle", { entity_id: kontext.entity });
+    // Sent at once; the executor turns a synchronous throw into a rejection.
+    // Toggle keeps no optimistic state, the card only shows the error.
+    if (kontext.entity && hass) {
+      new Promise((ok) => ok(hass.callService("homeassistant", "toggle", { entity_id: kontext.entity })))
+        .catch((fehler) => {
+          if (karte && typeof karte._zeigeDienstFehler === "function") karte._zeigeDienstFehler(fehler);
+        });
+    }
     return;
   }
   if (art === "navigate") {

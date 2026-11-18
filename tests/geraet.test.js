@@ -601,6 +601,33 @@ test("ein fehlgeschlagener Dienstaufruf landet bei der Karte, nicht im Nichts", 
   assert.ok(/Dienst kaputt/.test(karte.fehler[0]));
 });
 
+test("a rejected toggle reaches the card and leaves no unhandled rejection (M40)", async () => {
+  const unhandled = [];
+  const merken = (grund) => unhandled.push(grund);
+  process.on("unhandledRejection", merken);
+  try {
+    const karte = karteAttrappe();
+    const hass = hassAttrappe(true);
+    devFuehreAus(karte, hass, { action: "toggle" }, KONTEXT);
+    assert.strictEqual(hass.aufrufe.length, 1, "toggle is sent at once");
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepStrictEqual(unhandled, []);
+    assert.strictEqual(karte.fehler.length, 1);
+    assert.ok(/Dienst kaputt/.test(karte.fehler[0]));
+    // Toggle keeps no optimistic state: nothing else on the card changed.
+    assert.strictEqual(karte.umschaltungen, 0);
+    assert.strictEqual(karte.ereignisse.length, 0);
+    // A synchronous throw takes the same path.
+    const wirft = { callService() { throw new Error("sofort kaputt"); } };
+    devFuehreAus(karte, wirft, { action: "toggle" }, KONTEXT);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(karte.fehler.length, 2);
+    assert.deepStrictEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", merken);
+  }
+});
+
 test("toggle, more-info, expand und none tun genau eines", async () => {
   const karte = karteAttrappe();
   const hass = hassAttrappe(false);
