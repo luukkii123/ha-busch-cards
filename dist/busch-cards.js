@@ -1609,7 +1609,6 @@ class BuschScheduleCard extends HTMLElement {
 
   async _save() {
     if (this._readonly || !this._hass || !this._item || !this._scheduleId) return;
-    const snapshot = JSON.stringify(this._model);
     this._saving = true;
     this._renderStatus(this._texte.speichernLaeuft);
 
@@ -1641,12 +1640,15 @@ class BuschScheduleCard extends HTMLElement {
       this._error = null;
       this._renderStatus("");
     } catch (err) {
-      // Zurück auf den letzten bestätigten Stand — ein halb gespeicherter
-      // Zeitplan wäre schlimmer als gar keine Änderung.
-      this._model = JSON.parse(snapshot);
+      // Back to the last state HA confirmed. `_model` already holds the
+      // rejected edit, `_item` only changes on load or after a successful
+      // save. The reload covers errors that came after HA wrote the plan
+      // (timeout, dropped connection).
+      this._acceptScheduleItem(this._item);
       this._error = err?.message || String(err);
       this._notify(buschFuellen(this._texte.nichtGespeichert, { grund: this._error }));
       this._renderAll();
+      this._load(false);
     } finally {
       this._saving = false;
     }
