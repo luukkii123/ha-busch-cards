@@ -232,13 +232,19 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.3.0 sha256:8b570747b1f02202707d66e0a6efa67096ea1945bb80eeb3166178a9561bff82 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.3.0", sourceHash: "8b570747b1f0" });
-/* Busch Cards Core 1.3.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.4.0 sha256:172e75b5c8c37a0a37f6b82e9aed61fa452ae94255fc99bfbec0bfe32e7b5719 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.4.0", sourceHash: "172e75b5c8c3" });
+/* Busch Cards Core 1.4.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
   return new Map((Array.isArray(rows) ? rows : Object.values(rows || {})).map(row => [row[key], row]));
+}
+// M11: equal content of two registry collections (object or array rows, same order), for the display registries after a reconnect.
+function buschCoreSameRows(a, b) {
+  if (a === b) return true;
+  const rows = value => Array.isArray(value) ? value : Object.values(value || {}), x = rows(a), y = rows(b);
+  return x.length === y.length && x.every((row, index) => buschCoreKey(row) === buschCoreKey(y[index]));
 }
 function buschCoreSet(map, key, id, add = true) {
   if (key === undefined || key === null || key === "") return;
@@ -468,13 +474,17 @@ class BuschCardsCore {
       this.lastErrors.delete(name);
       // #641: Mehrere Registerladungen bauen den Index höchstens einmal je Mikrotask neu.
       if (!this._rebuildQueued) { this._rebuildQueued = true; Promise.resolve().then(() => { this._rebuildQueued = false; this.index.rebuild(); this.engine?.refresh(); }); }
-      if (!this._notifyQueued) { this._notifyQueued = true; Promise.resolve().then(() => {
-        this._notifyQueued = false;
-        for (const listener of this._listeners) { try { listener(); } catch (error) { console.warn("Busch Core registry listener failed", error?.name); } }
-      }); }
+      this.notifyRegistry();
     });
     this._listeners = new Set(); this._deviceListeners = new Map(); this._dirtyDevices = new Set(); this.lastErrors = new Map(); this.unsubscribers = []; this.generation = 0; this.users = 0;
     this.ready = Promise.resolve(); this.engine = new BuschQueryEngine(this);
+  }
+  notifyRegistry() {
+    if (this._notifyQueued) return;
+    this._notifyQueued = true; Promise.resolve().then(() => {
+      this._notifyQueued = false;
+      for (const listener of this._listeners) { try { listener(); } catch (error) { console.warn("Busch Core registry listener failed", error?.name); } }
+    });
   }
   get entities() { return this.index.entities; }
   get devices() { return this.index.devices; }
@@ -495,7 +505,7 @@ class BuschCardsCore {
     this.index.registry = buschCoreMap(hass.entities, "entity_id"); this.index.devices = buschCoreMap(hass.devices, "id");
     this.index.areas = buschCoreMap(hass.areas, "area_id"); this.index.floors = buschCoreMap(hass.floors, "floor_id");
     this.index.states = new Map(Object.entries(hass.states || {})); this.index.rebuild(); this._states = hass.states;
-    this._display = [hass.entities, hass.devices, hass.areas, hass.floors]; this.engine?.refresh();
+    this._display = [hass.entities, hass.devices, hass.areas, hass.floors]; this._shown = this._display; this.engine?.refresh();
   }
   attach(hass) {
     if (!hass) return;
@@ -506,6 +516,7 @@ class BuschCardsCore {
       if (languageChanged) this.engine.refresh();
       // Registries follow their own events; without them the display registries of the frontend are the source.
       if (!this._registryLive && [hass.entities, hass.devices, hass.areas, hass.floors].some((value, index) => value !== this._display[index])) this.seed(hass);
+      else if (this._registryLive) this.checkDisplay(hass);
       // M10: one state source. Until the entity stream delivers, hass.states (compared by reference); then the stream alone.
       if (!this.streaming && this._states !== hass.states) this.syncStates(hass.states || {});
       return;
@@ -521,17 +532,32 @@ class BuschCardsCore {
           if (generation !== this.generation) unsubscribe(); else this.unsubscribers.push(unsubscribe);
         }).catch(() => { if (generation === this.generation) this._registryLive = false; });
       };
-      for (const name of Object.keys(BUSCH_REGISTRY_IDS)) subscribe(`${name}_registry_updated`, () => {
-        this._dirtyRegistries ||= new Set(); this._dirtyRegistries.add(name);
+      for (const name of Object.keys(BUSCH_REGISTRY_IDS)) subscribe(`${name}_registry_updated`, event => {
+        this._dirtyRegistries ||= new Set(); this._dirtyEntities ||= new Map();
+        // M11: an entity event with a known action and id updates only that entry; anything else loads the full list.
+        const data = event?.data;
+        if (name === "entity" && ["create", "update", "remove"].includes(data?.action) && typeof data.entity_id === "string") {
+          if (typeof data.old_entity_id === "string" && data.old_entity_id !== data.entity_id) this._dirtyEntities.set(data.old_entity_id, "remove");
+          this._dirtyEntities.set(data.entity_id, data.action);
+        } else this._dirtyRegistries.add(name);
         if (this._registryTimer) return;
-        this._registryTimer = setTimeout(() => { this._registryTimer = null; const names = [...this._dirtyRegistries]; this._dirtyRegistries.clear(); this.refreshRegistries(names, true); }, 50);
+        this._registryTimer = setTimeout(() => {
+          this._registryTimer = null; const names = [...this._dirtyRegistries], entries = [...this._dirtyEntities]; this._dirtyRegistries.clear(); this._dirtyEntities.clear();
+          if (entries.length && !names.includes("entity")) this.refreshEntityEntries(entries);
+          this.refreshRegistries(names, true);
+        }, 50);
       });
       if (typeof connection.addEventListener === "function") {
         // After a reconnect the socket library resubscribes subscribe_entities; its next message is a full state again.
+        // M11: loaded registries stay. Only a load that was in flight or failed starts again; the others wait until the
+        // frontend hands over display registries with other content (checkDisplay), as their events may have been missed.
         const onReady = () => {
           if (generation !== this.generation) return;
-          this._entitiesFull = true; this.subscribeEntities(connection, generation); this.registry.clear(); this._refreshing.clear(); this._queuedRefresh?.clear();
-          this.ready = this.refreshRegistries();
+          this._entitiesFull = true; this.subscribeEntities(connection, generation);
+          const names = Object.keys(BUSCH_REGISTRY_IDS).filter(name => this._refreshing.has(name) || this.lastErrors.has(name) || !this.registry.promises.has(name));
+          for (const name of names) { this.registry.invalidate(name); this._refreshing.delete(name); this._queuedRefresh?.delete(name); }
+          this._staleDisplay = this._shown ? [...this._shown] : null; this._staleLabels = !!this._staleDisplay;
+          this.ready = this.refreshRegistries(names);
           this.smart?.retryTemplates(); return this.ready;
         };
         connection.addEventListener("ready", onReady);
@@ -539,6 +565,50 @@ class BuschCardsCore {
       }
     }
     this.ready = typeof hass.callWS === "function" ? this.refreshRegistries() : Promise.resolve();
+  }
+  // M11: the first new display registry after a reconnect is the frontend's fresh copy. A registry loads its full list
+  // only when that copy differs in content from the one seen before the reconnect; labels follow once with any change.
+  checkDisplay(hass) {
+    const shown = [hass.entities, hass.devices, hass.areas, hass.floors], stale = this._staleDisplay, names = [];
+    this._shown = shown;
+    if (!stale) return;
+    ["entity", "device", "area", "floor"].forEach((name, index) => {
+      if (stale[index] === null || shown[index] === stale[index]) return;
+      if (!buschCoreSameRows(stale[index], shown[index])) names.push(name);
+      stale[index] = null;
+    });
+    if (names.length && this._staleLabels) { names.push("label"); this._staleLabels = false; }
+    if (stale.every(value => value === null)) this._staleDisplay = null;
+    if (names.length) this.refreshRegistries(names, true);
+  }
+  // M11: fields the cards read from the full entity registry that hass.entities (display registry) lacks:
+  // unique_id (FRITZ and Unraid roles), disabled_by (the display list leaves disabled entities out), hidden_by (display
+  // has only a flag), config_entry_id (index, integration rule, Unraid entry) and name (display falls back to the
+  // original name). So the core keeps the full entries; an entity event fetches only its entry with
+  // config/entity_registry/get (no admin needed, like list). Removals are applied locally; many changes at once,
+  // an in-flight full list or a failed get fall back to the full list as before.
+  refreshEntityEntries(entries) {
+    if (entries.length > 25 || this._refreshing?.has("entity") || typeof this.hass?.callWS !== "function") return this.refreshRegistries(["entity"], true);
+    const generation = this.generation, hass = this.hass;
+    return Promise.all(entries.map(([id, action]) => {
+      if (action === "remove") { this.applyEntityEntry(id, null); return null; }
+      this.registry.requests.entity_get = (this.registry.requests.entity_get || 0) + 1;
+      return Promise.resolve().then(() => hass.callWS({ type: "config/entity_registry/get", entity_id: id })).then(entry => {
+        if (generation !== this.generation) return;
+        if (!entry || typeof entry !== "object" || entry.entity_id !== id) throw new Error("Invalid entity registry entry");
+        this.applyEntityEntry(id, entry);
+      }, error => {
+        if (generation !== this.generation) return;
+        if (error?.code === "not_found") this.applyEntityEntry(id, null); else throw error;
+      }).catch(() => { if (generation === this.generation) return this.refreshRegistries(["entity"], true); });
+    }));
+  }
+  // One entry into a new registry map (its identity marks a registry change for caches) and the index; queries get it
+  // bundled through engine.changed, registry listeners once per microtask.
+  applyEntityEntry(id, entry) {
+    const registry = new Map(this.index.registry);
+    if (entry) registry.set(id, entry); else if (!registry.delete(id)) return;
+    this.index.registry = registry; this.applyState(id, this.index.states.get(id)); this.notifyDevices(); this.notifyRegistry();
   }
   // M10: compressed subscribe_entities; its first message is the full state, so no get_states is needed. A rejected
   // subscription leaves hass.states as the source and is tried again at the next ready.
@@ -662,7 +732,7 @@ class BuschCardsCore {
   dispose() {
     if (this._releaseTimer) { clearTimeout(this._releaseTimer); this._releaseTimer = null; } this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
     this._registryLive = false; this.streaming = false; this._entitiesActive = false; this._entitiesFull = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set();
-    if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this._dirtyDevices.clear(); this.engine?.stop();
+    if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this._dirtyEntities?.clear(); this._staleDisplay = null; this._shown = null; this._dirtyDevices.clear(); this.engine?.stop();
   }
 }
 let buschCoreConflictReported = false;
