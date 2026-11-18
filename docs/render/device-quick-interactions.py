@@ -1,7 +1,9 @@
 """Quick-control identity and draft races with browser DOM; only mock services.
 
 M14 (#1283): keyboard batch (one call for five arrows), sent value held until a 1500 ms echo, busy power button;
-the waiting state is captured at 320/960 px light and dark as wartet-power-<width>-<theme>.png."""
+the waiting state is captured at 320/960 px light and dark as wartet-power-<width>-<theme>.png.
+M14 rest findings (#1300): the busy button carries a ring and a progress mark (not only its text), and a select
+holds the chosen option until its echo."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
@@ -51,6 +53,8 @@ with sync_playwright() as pw:
  assert 0<=busy_ms<=17,busy_ms
  assert p.evaluate("calls.at(-1)[1]==='turn_on'&&card.querySelector('.dev-quick button').textContent==='Switching …'")
  p.evaluate("()=>{card.querySelector('.dev-quick button').click()}");assert p.evaluate("calls.filter(c=>c[1]==='turn_on').length===1"),'second click while busy'
+ busy_marker=p.evaluate("()=>{const b=card.querySelector('.dev-quick button[aria-busy=\"true\"]'),mark=getComputedStyle(b,'::before');return {ring:getComputedStyle(b).boxShadow!=='none',mark:mark.content!=='none'&&mark.content!=='normal'&&parseFloat(mark.width)>0}}")
+ assert busy_marker['ring'] and busy_marker['mark'],busy_marker
  p.evaluate("()=>{document.body.style.margin='0';document.body.style.background='var(--card-background-color)'}")
  for dark in [False,True]:
   p.evaluate("dark=>{for(const [k,v]of Object.entries({'--primary-text-color':dark?'#eee':'#222','--secondary-text-color':dark?'#bbb':'#555','--card-background-color':dark?'#222':'#fff','--secondary-background-color':dark?'#333':'#eee','--primary-color':'#03a9f4','--divider-color':dark?'#555':'#ddd'}))document.documentElement.style.setProperty(k,v)}",dark)
@@ -60,4 +64,14 @@ with sync_playwright() as pw:
    p.locator('busch-device-card').screenshot(path=str(out/f"wartet-power-{width}-{'dark' if dark else 'light'}.png"))
  p.evaluate("()=>{h={...h,states:{...h.states,'switch.a':{...h.states['switch.a'],state:'on'}}};card.hass=h}")
  assert p.evaluate("!card.querySelector('[aria-busy=\"true\"]')&&card.querySelector('.dev-quick button').textContent==='Turn off'")
- result={'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'pendingHeldUntilEcho':pending_held,'keyboardCoalesced':keyboard_coalesced,'heldSamples':held,'busyMs':round(busy_ms,2),'waitingShots':['wartet-power-320-light.png','wartet-power-960-light.png','wartet-power-320-dark.png','wartet-power-960-dark.png'],'mockServices':p.evaluate('calls.length'),'pageErrors':errors};(out/'interactions-report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors;b.close()
+ # M14 rest finding: a select holds the chosen option through an own update until the 1500 ms echo.
+ p.evaluate("()=>build('climate',[['climate.test','heat',{supported_features:0,hvac_modes:['off','heat','cool']}]])");p.wait_for_function("!!card.querySelector('.dev-quick select')")
+ p.evaluate("()=>{window.sel=card.querySelector('.dev-quick select');sel.value='cool';sel.dispatchEvent(new Event('input',{bubbles:true}));sel.dispatchEvent(new Event('change',{bubbles:true}));}")
+ select_held=[]
+ for at in [0,500,1400]:
+  if at==500:p.evaluate("()=>{const s=h.states['climate.test'];h={...h,states:{...h.states,'climate.test':{...s,attributes:{...s.attributes,current_temperature:20}}}};card.hass=h}")
+  p.wait_for_timeout(at-(select_held[-1][0] if select_held else 0));select_held.append([at,p.evaluate('sel.value')])
+ p.evaluate("()=>{h={...h,states:{...h.states,'climate.test':{...h.states['climate.test'],state:'cool'}}};card.hass=h}")
+ select_held_until_echo=all(v=='cool' for _,v in select_held) and p.evaluate("sel.value==='cool'&&calls.at(-1)[1]==='set_hvac_mode'")
+ assert select_held_until_echo,select_held
+ result={'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'pendingHeldUntilEcho':pending_held,'keyboardCoalesced':keyboard_coalesced,'heldSamples':held,'busyMs':round(busy_ms,2),'busyMarker':busy_marker,'selectHeldUntilEcho':select_held_until_echo,'selectSamples':select_held,'waitingShots':['wartet-power-320-light.png','wartet-power-960-light.png','wartet-power-320-dark.png','wartet-power-960-dark.png'],'mockServices':p.evaluate('calls.length'),'pageErrors':errors};(out/'interactions-report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors;b.close()

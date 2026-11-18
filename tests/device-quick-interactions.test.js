@@ -41,5 +41,5 @@ test('I2 blur and Escape abandon a draft and resync current state without anothe
 });
 test('I2 select input drafts and ordinary focus obey same sync boundaries',()=>{
  const {card,doc,calls}=fixture();card._entityId='climate.test';const attributes={supported_features:0,hvac_modes:['off','heat','cool']};card._hass.states['climate.test']={state:'heat',attributes};card._zeichneQuick();const el=card._quickNodes[0];doc.activeElement=el;card._hass.states['climate.test'].state='cool';card._zeichneQuick();assert.equal(el.value,'cool');
- el.value='heat';el.handlers.input?.();card._hass.states['climate.test'].state='off';card._zeichneQuick();assert.equal(el.value,'heat');el.handlers.change();assert.equal(calls[0][2].hvac_mode,'heat');card._zeichneQuick();assert.equal(el.value,'off');
+ el.value='heat';el.handlers.input?.();card._hass.states['climate.test'].state='off';card._zeichneQuick();assert.equal(el.value,'heat');el.handlers.change();assert.equal(calls[0][2].hvac_mode,'heat');card._zeichneQuick();assert.equal(el.value,'heat','M14 rest finding: the sent option is held until HA reports a change');card._hass.states['climate.test'].state='cool';card._zeichneQuick();assert.equal(el.value,'cool','HA moved on, its value counts again');
 });

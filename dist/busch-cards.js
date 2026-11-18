@@ -6599,6 +6599,11 @@ const DEV_STIL = `
   .dev-quick input { width:var(--dev-range-width); }
   .dev-quick :disabled { opacity:var(--disabled-opacity,.5);cursor:default; }
   .dev-quick .dev-quick-pending { cursor:progress; }
+  /* M14: the busy power button shows a ring and a progress mark on the button itself, not only its text. */
+  .dev-quick button.dev-quick-pending { display:inline-flex;align-items:center;justify-content:center;gap:var(--ha-space-1,4px);box-shadow:inset 0 0 0 2px var(--primary-color); }
+  .dev-quick button.dev-quick-pending::before { content:"";flex:none;box-sizing:border-box;width:1em;height:1em;border-radius:50%;border:2px solid currentColor;border-inline-end-color:transparent;animation:dev-quick-spin 1s linear infinite; }
+  @keyframes dev-quick-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .dev-quick button.dev-quick-pending::before { animation:none;border-style:dotted; } }
   .dev-quick :focus-visible { outline:2px solid var(--primary-color);outline-offset:var(--ha-space-1,4px); }
   @container (max-width:600px) { .dev-kopf:has(.dev-quick:not([hidden])) { flex-wrap:wrap; } .dev-kopf:has(.dev-quick:not([hidden])) .dev-titel { flex-basis:calc(100% - var(--dev-control-size) * 3); } .dev-quick:not([hidden]) { order:4;flex:1 1 100%; } }
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
@@ -7134,7 +7139,13 @@ class BuschDeviceCard extends HTMLElement {
             if(el._devQuickKeyboard){el._devQuickFlush=()=>{el._devQuickFlush=null;send(value,pending);};el._devQuickKeyTimer=setTimeout(()=>{el._devQuickKeyTimer=null;el._devQuickFlush?.();},DEV_QUICK_KEY_MS);}
             else send(value,pending);
           }else{
-            if(c.id==='power'){
+            if(c.kind==='select'){
+              // M14: a chosen option stays at the element until HA reports it, the call fails or the hold ends.
+              clearTimeout(el._devQuickTimer);
+              const pending=el._devQuickPending={value,from:el._devQuickHa};
+              el._devQuickTimer=setTimeout(()=>drop(pending),DEV_QUICK_HOLD_MS);
+              send(value,pending);
+            }else if(c.id==='power'){
               const pendingLabel=this._texte.power_pending;
               el._devQuickBusy={state:this._hass.states[entityId]};
               el.setAttribute('aria-busy','true');el.classList.add('dev-quick-pending');el.textContent=pendingLabel;el.setAttribute('aria-label',pendingLabel);el.title=pendingLabel;
@@ -7149,7 +7160,7 @@ class BuschDeviceCard extends HTMLElement {
     }
     controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.disabled)el._devQuickDraft=false;
       // M14: HA moved away from the value seen at send time (echo or other change), reached the held value, or the control went unavailable.
-      const p=el._devQuickPending;if(p&&(c.disabled||Number(c.value)!==Number(p.from)||Math.abs(Number(c.value)-p.value)<c.step/2)){clearTimeout(el._devQuickTimer);el._devQuickPending=null;}
+      const p=el._devQuickPending,select=c.kind==='select';if(p&&(c.disabled||(select?c.value!==p.from||c.value===p.value:Number(c.value)!==Number(p.from)||Math.abs(Number(c.value)-p.value)<c.step/2))){clearTimeout(el._devQuickTimer);el._devQuickPending=null;}
       el._devQuickHa=c.value;
       if(el._devQuickBusy&&(c.disabled||state!==el._devQuickBusy.state))el._devQuickIdle?.();
       if(c.kind&&!el._devQuickDraft)el.value=el._devQuickPending?el._devQuickPending.value:c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});

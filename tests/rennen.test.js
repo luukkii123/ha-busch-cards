@@ -22,7 +22,9 @@ async function thermostat({ echo = true } = {}) {
     states: { "climate.room": { state: "heat", attributes: { friendly_name: "Room", supported_features: 1, temperature: 21, min_temp: 7, max_temp: 35, target_temp_step: 0.5, hvac_modes: ["off", "heat"] } } },
     entities: { "climate.room": { entity_id: "climate.room", device_id: "dev", platform: "zha", labels: [] } },
     devices: { dev: { id: "dev", name: "Thermostat", manufacturer: "Example", model: "T1", area_id: null, labels: [] } },
-    echo: (call) => (echo && call.service === "set_temperature" ? { [call.data.entity_id]: { attributes: { temperature: call.data.temperature } } } : null),
+    echo: (call) => (!echo ? null
+      : call.service === "set_temperature" ? { [call.data.entity_id]: { attributes: { temperature: call.data.temperature } } }
+      : call.service === "set_hvac_mode" ? { [call.data.entity_id]: { state: call.data.hvac_mode } } : null),
   });
   const card = env.document.createElement("busch-device-card");
   card.setConfig({ entity: "climate.room", quick_controls: true });
@@ -170,4 +172,60 @@ test("M14: the busy power button clears on error and after 10 s; German label", 
   await clock.advance(200);
   assert.equal(button().getAttribute("aria-busy"), null, "10 s limit clears busy");
   assert.equal(card.querySelector('[aria-busy="true"]'), null);
+});
+
+// M14 rest findings (user 18.11.2026): selects hold the chosen value like the sliders, and the busy power
+// button shows its waiting state on the button itself, not only in its text.
+function choose(select, env, value) {
+  select.focus();
+  select.value = value;
+  select.dispatchEvent(new env.Event("input", { bubbles: true }));
+  select.dispatchEvent(new env.Event("change", { bubbles: true }));
+}
+
+test("M14: a select holds the chosen value until the 1500 ms echo instead of jumping back", async () => {
+  const { clock, ha, card, env } = await thermostat();
+  const select = card._quickNodes.find((el) => el.dataset.control === "hvac_mode");
+  assert.equal(select.value, "heat");
+  choose(select, env, "off");
+  const seen = [];
+  for (const at of [0, 100, 500, 1000, 1499]) { await clock.advance(at - (seen.at(-1)?.[0] ?? 0)); seen.push([at, select.value]); }
+  assert.deepEqual(seen.map(([, v]) => v), ["off", "off", "off", "off", "off"], "held while the echo is on its way");
+  assert.equal(ha.count("climate.set_hvac_mode"), 1);
+  await clock.advance(10);
+  assert.equal(select.value, "off", "echo confirms");
+  ha.patchState("climate.room", { state: "heat" });
+  await clock.advance(10);
+  assert.equal(select.value, "heat", "after the echo HA's value counts again");
+});
+
+test("M14: a select drops the held value on error and after 10 s without echo", async () => {
+  const { clock, ha, card, env } = await thermostat({ echo: false });
+  const select = () => card._quickNodes.find((el) => el.dataset.control === "hvac_mode");
+  ha.behave("climate.set_hvac_mode", { delay: 100, reject: new Error("offline") });
+  choose(select(), env, "off");
+  await clock.advance(50);
+  assert.equal(select().value, "off", "held while the call runs");
+  await clock.advance(100);
+  assert.equal(select().value, "heat", "error shows HA's value again");
+  ha.behave("climate.set_hvac_mode", null);
+  choose(select(), env, "off");
+  await clock.advance(9900);
+  assert.equal(select().value, "off");
+  await clock.advance(200);
+  assert.equal(select().value, "heat", "10 s limit ends the hold");
+});
+
+test("M14: the busy power button shows its state on the button, not only in its text", async () => {
+  const { clock, button } = await lamp();
+  const el = button();
+  el.click();
+  assert.ok(el.classList.contains("dev-quick-pending"));
+  const { DEV_STIL } = kit.loadScript(BUNDLE, { expose: ["DEV_STIL"] }).exposed;
+  const rule = (selector) => new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{([^}]*)\\}").exec(DEV_STIL)?.[1] || "";
+  assert.match(rule(".dev-quick button.dev-quick-pending::before"), /animation:/, "a progress mark on the button");
+  assert.match(rule(".dev-quick button.dev-quick-pending"), /box-shadow:[^;]*var\(--primary-color/, "the button frame changes");
+  assert.match(DEV_STIL, /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*dev-quick-pending::before\s*\{[^}]*animation:\s*none/, "no spin with reduced motion");
+  await clock.advance(1500);
+  assert.ok(!button().classList.contains("dev-quick-pending"));
 });
