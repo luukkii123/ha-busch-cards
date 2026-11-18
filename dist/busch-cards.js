@@ -4061,7 +4061,8 @@ function calStufenFolge(stufe) {
 const CAL_TAKT_MS = 15 * 60 * 1000;
 const CAL_TEILEN_MS = 2000;
 const CAL_CACHE_MAX = 100;
-const calTermineCache = new Map();
+// One cache per HA connection (the hass object stands in without one): another connection's events never count.
+const calTermineCaches = new WeakMap();
 
 function calVerborgen() {
   return typeof document !== "undefined" && !!document && document.hidden === true;
@@ -4075,6 +4076,9 @@ function calBisMitternacht(jetzt) {
 
 /** The events of one calendar in one window, shared between card instances. */
 function calTermineHolen(hass, entity, start, ende, stempel, maxAlter) {
+  const verbindung = hass.connection && typeof hass.connection === "object" ? hass.connection : hass;
+  let calTermineCache = calTermineCaches.get(verbindung);
+  if (!calTermineCache) calTermineCaches.set(verbindung, calTermineCache = new Map());
   const schluessel = `${entity}|${start.toISOString()}|${ende.toISOString()}`;
   const jetzt = Date.now();
   const treffer = calTermineCache.get(schluessel);

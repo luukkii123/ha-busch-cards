@@ -120,3 +120,20 @@ test("M39: retention call counts as in docs/render/calendar-state-retention.py",
   assert.equal(w.ha.count("call_api"), 1, "a new last_changed fetches the month shown");
   assert.equal(card._versatzLaufend, 1, "the browsed month stays");
 });
+
+test("M39: the month cache belongs to one connection; another HA connection fetches its own events", async () => {
+  const w = world(new Date(2027, 2, 10, 12, 0, 0).getTime());
+  const other = kit.createHass({ clock: w.clock, states: { "calendar.a": { state: "off", attributes: { friendly_name: "A" } } } });
+  other.respond("call_api", () => []);
+  const cards = [w.ha.hass, other.hass].map((hass) => {
+    const card = w.env.document.createElement("busch-calendar-card");
+    card.setConfig({ entities: ["calendar.a"] });
+    w.env.document.body.appendChild(card);
+    card.hass = hass;
+    card.connectedCallback?.();
+    return card;
+  });
+  await w.clock.advance(50);
+  assert.deepEqual([w.ha.count("call_api"), other.count("call_api")], [1, 1], "each connection fetches its own events, also while the other fetch runs");
+  assert.ok(cards.every((card) => Array.isArray(card._tage)));
+});
