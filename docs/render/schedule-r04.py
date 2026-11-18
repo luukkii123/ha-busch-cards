@@ -137,11 +137,12 @@ with sync_playwright() as p:
  assert page.evaluate("card._els.blockDialog.open && card._els.blockDialog.querySelector('.f-from').value==='08:30'"), page.evaluate("({open:card._els.blockDialog.open,value:card._els.blockDialog.querySelector('.f-from').value,target:card._dialogTarget,config:card._config})")
  page.evaluate("card.setConfig({entity:'schedule.synthetic',title:'Kandidatstitel'});card._els.blockDialog.querySelector('.f-from').value='08:45';card.setConfig({title:'Kandidatstitel',entity:'schedule.synthetic'})")
  assert page.evaluate("card._els.blockDialog.open && card._els.blockDialog.querySelector('.f-from').value==='08:45' && card._config.title==='Kandidatstitel'")
- # The newest load wins if an older websocket response arrives last.
- page.evaluate("""async()=>{window.pendingLoads=[];card._hass.callWS=()=>new Promise(resolve=>pendingLoads.push(resolve));const old=card._load(false);while(pendingLoads.length<1)await new Promise(r=>setTimeout(r,0));const latest=card._load(false);while(pendingLoads.length<2)await new Promise(r=>setTimeout(r,0));pendingLoads[1]([{id:'synthetic',name:'latest',monday:[{from:'06:00',to:'06:30'}]}]);await latest;pendingLoads[0]([{id:'synthetic',name:'stale',monday:[{from:'05:00',to:'05:30'}]}]);await old;}""")
+ # The newest load wins if an older websocket response arrives last. Each load gets its own
+ # connection: M12 shares one schedule/list per connection for 1 s, which would join both loads.
+ page.evaluate("""async()=>{window.pendingLoads=[];card._hass.callWS=()=>new Promise(resolve=>pendingLoads.push(resolve));card._hass={...card._hass,connection:{}};const old=card._load(false);while(pendingLoads.length<1)await new Promise(r=>setTimeout(r,0));card._hass={...card._hass,connection:{}};const latest=card._load(false);while(pendingLoads.length<2)await new Promise(r=>setTimeout(r,0));pendingLoads[1]([{id:'synthetic',name:'latest',monday:[{from:'06:00',to:'06:30'}]}]);await latest;pendingLoads[0]([{id:'synthetic',name:'stale',monday:[{from:'05:00',to:'05:30'}]}]);await old;}""")
  assert page.evaluate("card._item.name==='latest' && card._model.monday[0].start===360")
  # A genuinely missing resource closes the editor and emits a visible notice.
- page.evaluate("window.notices=[];card.addEventListener('hass-notification',e=>notices.push(e.detail.message));card._hass.callWS=async()=>[];card._load(false)")
+ page.evaluate("window.notices=[];card.addEventListener('hass-notification',e=>notices.push(e.detail.message));card._hass.callWS=async()=>[];card._hass={...card._hass,connection:{}};card._load(false)")
  page.wait_for_function("!card._loading")
  page.wait_for_timeout(350)
  assert page.evaluate("!card._els.blockDialog.open && notices.length===1 && notices[0].includes('schedule.synthetic') && !notices[0].includes('{entity}')")
