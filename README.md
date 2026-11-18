@@ -482,6 +482,30 @@ count: 10
 
 ---
 
+## Datenschutz
+
+Die Karten selbst senden nichts an Dritte. Einige Bilder lädt aber der Browser
+jedes Betrachters direkt von fremden Servern; diese sehen dabei dessen
+IP-Adresse:
+
+| Karte | Quelle | Was der Server erfährt |
+| --- | --- | --- |
+| `busch-map-card`, `map_style: osm` | OpenStreetMap (`tile.openstreetmap.org`) | sichtbarer Kartenausschnitt |
+| `busch-map-card`, `carto`, `voyager` | CARTO (`basemaps.cartocdn.com`), mit Kachelschlüssel | sichtbarer Kartenausschnitt |
+| `busch-map-card`, `satellite` | Esri (`server.arcgisonline.com`) | sichtbarer Kartenausschnitt |
+| `busch-map-card`, `topo` | OpenTopoMap (`tile.opentopomap.org`) | sichtbarer Kartenausschnitt |
+| `busch-map-card`, `custom` | die eingetragene `tile_url` | sichtbarer Kartenausschnitt |
+| `busch-map-card`, `ha` | die Kacheln von Home Assistant, unverändert | wie bei der eingebauten Karte |
+| `busch-device-card` | Markenbilder von `brands.home-assistant.io` | welche Integration das Gerät nutzt |
+
+Die Markenbilder lädt das Home-Assistant-Frontend an vielen Stellen genauso.
+Eigene Bild-URLs (`image`) lädt der Browser von dort, wo sie liegen.
+Kachelbilder aller Vorlagen außer `ha` tragen die Referrer-Regel
+`strict-origin-when-cross-origin`: Der Kachelserver erfährt nur den Ursprung
+der Home-Assistant-Seite (Schema, Host, Port), nie den Pfad des Dashboards.
+
+---
+
 ## Lizenz
 
 MIT, siehe [LICENSE](LICENSE). Hinweise zu Entwicklung, Tests und Prüfläufen:
