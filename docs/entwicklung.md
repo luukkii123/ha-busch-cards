@@ -88,6 +88,12 @@ einmal **Strg+F5**.
   `ha-localtrack-cards`). Wer nur Zeitplan oder Kalender nutzt, zahlt nichts
   dafür — außer den Bytes beim Herunterladen: die Datei wächst dadurch von
   rund 92 kB auf rund 242 kB.
+
+  Der Leaflet-Code steht unverändert zwischen `/* BEGIN VENDOR leaflet 1.9.4 sha256:… */`
+  und `/* END VENDOR leaflet */`: Herkunft `unpkg.com/leaflet@1.9.4/dist/leaflet.js`, nur die
+  Sourcemap-Zeile entfernt, Hash `dc71f8a6…` über die Bytes zwischen den Markern, geprüft am
+  18.11.2026. CI-Schritt „Vendor blocks match their hash“ und `tests/vendor.test.js` prüfen
+  ihn; ein Update läuft gleichzeitig in `ha-localtrack-cards` (gleicher Hash).
 - **Kein Zwischenspeicher, kein Schlüssel.** Wer einen Anbieter mit Token
   braucht, trägt ihn in die eigene URL ein.
 - **Kein eigenes Zeichnen.** Marker, Zonen und Spuren gehören der eingebauten
