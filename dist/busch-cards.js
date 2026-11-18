@@ -1170,6 +1170,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       speichernLaeuft: "Speichere …",
       nichtGefunden: "Zeitplan zu {entity} nicht gefunden. In YAML festgelegte Zeitpläne lassen sich nicht über die Oberfläche ändern.",
       nichtGespeichert: "Zeitplan nicht gespeichert: {grund}",
+      fremdGeaendert: "Zeitplan nicht gespeichert: Er wurde inzwischen anderswo geändert. Der aktuelle Stand wird angezeigt.",
       entitaetFehlt: "Entität nicht gefunden",
       ein: "Ein",
       aus: "Aus",
@@ -1232,6 +1233,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       speichernLaeuft: "Saving …",
       nichtGefunden: "No schedule found for {entity}. Schedules defined in YAML cannot be changed from the interface.",
       nichtGespeichert: "Schedule not saved: {grund}",
+      fremdGeaendert: "Schedule not saved: it was changed elsewhere in the meantime. Showing the current state.",
       entitaetFehlt: "Entity not found",
       ein: "On",
       aus: "Off",
@@ -1393,6 +1395,50 @@ function gapAt(blocks, minute) {
   return min >= MINUTES_PER_DAY ? null : { min, max: MINUTES_PER_DAY };
 }
 
+/* M12 (#1283): one `schedule/list` per connection for a second. Three cards
+ * returning to the tab, or mounting together, share one read. The write path
+ * never uses it: the check before `schedule/update` always reads fresh, and a
+ * write drops the entry so the follow-up read sees the new plan.
+ *
+ * `schedule/subscribe`: nothing in this repo (code, docs, render scripts)
+ * shows that HA offers a subscription for the schedule storage collection,
+ * and the HA core source is not at hand here. So the card stays with
+ * `schedule/list` on state changes; an unproven command is not guessed. */
+const SCHEDULE_LIST_SHARE_MS = 1000;
+const scheduleListShared = new WeakMap();
+
+function scheduleListKey(hass) {
+  return hass.connection && typeof hass.connection === "object" ? hass.connection : hass;
+}
+
+function scheduleListRead(hass) {
+  const key = scheduleListKey(hass);
+  const hit = scheduleListShared.get(key);
+  if (hit && Date.now() - hit.at < SCHEDULE_LIST_SHARE_MS) return hit.promise;
+  const promise = Promise.resolve(hass.callWS({ type: "schedule/list" }));
+  const entry = { at: Date.now(), promise };
+  scheduleListShared.set(key, entry);
+  promise.catch(() => {
+    if (scheduleListShared.get(key) === entry) scheduleListShared.delete(key);
+  });
+  return promise;
+}
+
+function scheduleListForget(hass) {
+  scheduleListShared.delete(scheduleListKey(hass));
+}
+
+/** What `schedule/update` replaces: name, icon and the seven days. Extra
+ *  fields and an empty `data` do not count as a change. */
+function scheduleSignature(item) {
+  if (!item) return "";
+  const days = SCHEDULE_DAYS.map((day) => (item[day] || []).map((range) => [
+    String(range.from), String(range.to),
+    range.data && Object.keys(range.data).length ? buschCoreKey(range.data) : "",
+  ]));
+  return JSON.stringify([item.name || "", item.icon || "", days]);
+}
+
 class BuschScheduleCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("busch-schedule-card-editor");
@@ -1415,7 +1461,8 @@ class BuschScheduleCard extends HTMLElement {
     this._drag = null;
     this._blockKeyCounter = 0;
     this._onVisibility = () => {
-      if (document.visibilityState === "visible") this._load(true);
+      // P19: back in the tab the old plan stays visible while it re-reads.
+      if (document.visibilityState === "visible") this._load(false);
     };
   }
 
@@ -1560,6 +1607,8 @@ class BuschScheduleCard extends HTMLElement {
 
   async _load(showSpinner) {
     if (!this._hass || !this._config) return;
+    // A read during a save would race the write; the save reads once when it is done.
+    if (this._saving) return;
     const generation = ++this._loadGeneration;
     const hass = this._hass;
     const entity = this._config.entity;
@@ -1571,8 +1620,10 @@ class BuschScheduleCard extends HTMLElement {
         if (generation !== this._loadGeneration) return;
         this._scheduleId = scheduleId;
       }
-      const items = await hass.callWS({ type: "schedule/list" });
+      const items = await scheduleListRead(hass);
       if (generation !== this._loadGeneration) return;
+      // The list is shared between cards: `_item` is never edited in place,
+      // a save replaces it with a new object.
       const item = items.find((entry) => entry.id === this._scheduleId);
       if (!item) {
         if (this._els?.blockDialog?.open && this._dialogTarget) {
@@ -1663,10 +1714,73 @@ class BuschScheduleCard extends HTMLElement {
     return entityId.slice("schedule.".length);
   }
 
-  async _save() {
-    if (this._readonly || !this._hass || !this._item || !this._scheduleId) return;
+  /**
+   * Saves one after the other, newest state wins (pattern of LiveSession in
+   * ha-busch-lightcards): while a save runs, a new edit only marks the queue;
+   * when the save is done, the then current `_model` is sent once more. A
+   * save bumps `_loadGeneration`, so a read started before it cannot bring
+   * back the old plan, and it reads once at the end for the reads it skipped.
+   */
+  _save() {
+    if (this._readonly || !this._hass || !this._item || !this._scheduleId) return undefined;
+    if (this._saving) {
+      this._saveQueued = true;
+      return this._saveRun;
+    }
     this._saving = true;
+    this._saveRun = this._saveQueue();
+    return this._saveRun;
+  }
+
+  async _saveQueue() {
+    let result = "ok";
+    try {
+      this._loadGeneration++;
+      do {
+        this._saveQueued = false;
+        result = await this._saveOnce();
+      } while (result === "ok" && this._saveQueued);
+    } finally {
+      this._saveQueued = false;
+      this._saving = false;
+      this._saveRun = null;
+    }
+    // Error: HA may have written before the answer got lost. Ok: reads
+    // skipped while saving are caught up. A conflict already shows the server plan.
+    if (result !== "conflict") this._load(false);
+  }
+
+  /** One write. Returns "ok", "conflict" or "error". */
+  async _saveOnce() {
+    const hass = this._hass;
     this._renderStatus(this._texte.speichernLaeuft);
+    try {
+      // No ETag in HA: compare the stored plan with the base of this edit
+      // right before writing. What changes in the few milliseconds between
+      // this read and the write is still lost (last writer wins); a known limit.
+      scheduleListForget(hass);
+      const items = await hass.callWS({ type: "schedule/list" });
+      const stored = (items || []).find((entry) => entry.id === this._scheduleId);
+      if (!stored || scheduleSignature(stored) !== scheduleSignature(this._item)) {
+        this._loadGeneration++;
+        if (stored) {
+          this._acceptScheduleItem(stored);
+          this._error = null;
+        }
+        if (this._dialogTarget && this._els?.blockDialog?.open) {
+          this._dialogTarget.conflict = true;
+          this._els.blockDialog.querySelector(".msg").textContent = this._texte.konflikt;
+        }
+        this._notify(stored
+          ? this._texte.fremdGeaendert
+          : buschFuellen(this._texte.nichtGefunden, { entity: this._config.entity }));
+        this._renderStatus("");
+        this._renderAll();
+        return "conflict";
+      }
+    } catch (err) {
+      return this._saveFailed(err);
+    }
 
     const payload = {
       type: "schedule/update",
@@ -1689,25 +1803,30 @@ class BuschScheduleCard extends HTMLElement {
     }
 
     try {
-      await this._hass.callWS(payload);
-      for (const day of SCHEDULE_DAYS) {
-        this._item[day] = payload[day];
-      }
+      await hass.callWS(payload);
+      scheduleListForget(hass);
+      const saved = { ...this._item };
+      for (const day of SCHEDULE_DAYS) saved[day] = payload[day];
+      this._item = saved;
       this._error = null;
       this._renderStatus("");
+      return "ok";
     } catch (err) {
-      // Back to the last state HA confirmed. `_model` already holds the
-      // rejected edit, `_item` only changes on load or after a successful
-      // save. The reload covers errors that came after HA wrote the plan
-      // (timeout, dropped connection).
-      this._acceptScheduleItem(this._item);
-      this._error = err?.message || String(err);
-      this._notify(buschFuellen(this._texte.nichtGespeichert, { grund: this._error }));
-      this._renderAll();
-      this._load(false);
-    } finally {
-      this._saving = false;
+      scheduleListForget(hass);
+      return this._saveFailed(err);
     }
+  }
+
+  _saveFailed(err) {
+    // Back to the last state HA confirmed. `_model` already holds the
+    // rejected edit (and any queued one), `_item` only changes on load or
+    // after a successful save. The queue then reloads, which covers errors
+    // that came after HA wrote the plan (timeout, dropped connection).
+    this._acceptScheduleItem(this._item);
+    this._error = err?.message || String(err);
+    this._notify(buschFuellen(this._texte.nichtGespeichert, { grund: this._error }));
+    this._renderAll();
+    return "error";
   }
 
   _notify(message) {
