@@ -215,6 +215,8 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**18.11.2026 · 0.22.4, Buschcheck Etappe B (#1273, Tag `v0.22.4`)** — Kern als `BUSCH SHARED CORE 1.1.1` mit Hash, CI prüft alle geteilten Blöcke (M8); fremder Kernstand warnt einmal, `core.version`/`core.sourceHash` lesbar (M9); werfende Listener als Warnung (M43); Leaflet 1.9.4 als Vendor-Block, gegen unpkg geprüft (M46); Testkit `tests/_testkit.cjs`, Rennen M14 als TODO rot, Netz-Basiswert (M5). 436 Node-Tests (1 TODO, 1 skip). Keine sichtbare Änderung. Abschlusslauf `karten-20261118-131312-6dd1c4` grün (51/51, 1003 Node-Tests, Block `statisch` grün), `--beleg-pruefen` gleich; Bilder gegen Etappe A: 1836/1901 bytegleich, Rest Uhrzeit-/Animationsrauschen.
+
 **18.11.2026 · 0.22.3, Buschcheck Etappe A (#1265, Tag `v0.22.3`)** — Zeitplan fällt nach Speicherfehler auf den bestätigten Stand zurück und lädt neu (M2); Gerätekarte zeigt fehlgeschlagenes Toggle als Dienstfehler (M40). 425 Node-Tests (1 skip), 02-zeitplan und 05-geraet sichtgeprüft (unverändert). Abschlusslauf `karten-20261118-115150-b741a7` grün (38/38, 908 Node-Tests), `--beleg-pruefen` gleich; `node --check`, `ui-regeln-pruefen.py` (0), `hacs-contract-lint.py` (0), Kern bytegleich.
 
 **12.11.2026 · 0.22.2, Kartenwähler ohne Live-Vorschau (#1011, Tag `v0.22.2`)** — Zeitplan, Landkarte, Kalender, Gerät, Smart Entities, Netzwerk, FRITZ!: Namen einheitlich „Busch …“ (neu: „Busch Netzwerk“, „Busch FRITZ!-Gerät“), Beschreibung je ein Satz; `getStubConfig` über einen gemeinsamen Index (`buschStubIndex`, ein Durchlauf je Register, gemerkt am Entitätsregister).
