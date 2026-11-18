@@ -40,8 +40,14 @@ jobs:
             text=p.read_text();names=re.findall(r'/\* BEGIN BUSCH SHARED (\w+) ',text)
             if not names: print(p,'kein Shared-Block');continue
             for n in sorted(set(names)):
-              blocks=re.findall(r'/\* BEGIN BUSCH SHARED '+n+r' \S+ sha256:([0-9a-f]{64}) \*/\n(.*?)/\* END BUSCH SHARED '+n+r' \*/',text,re.S)
-              ok=len(blocks)==1==names.count(n)==text.count('/* END BUSCH SHARED '+n+' */') and hashlib.sha256(blocks[0][1].encode()).hexdigest()==blocks[0][0]
+              blocks=re.findall(r'/\* BEGIN BUSCH SHARED '+n+r' (\S+) sha256:([0-9a-f]{64}) \*/\n(.*?)/\* END BUSCH SHARED '+n+r' \*/',text,re.S)
+              ok=len(blocks)==1==names.count(n)==text.count('/* END BUSCH SHARED '+n+' */')
+              if ok:
+                ver,digest,body=blocks[0]
+                # Optional generated first line: const BUSCH_<NAME>_STAMP with version and hash prefix.
+                stamp=re.match(r'const BUSCH_'+n+r'_STAMP = Object\.freeze\(\{ version: "([^"]+)", sourceHash: "([0-9a-f]{12})" \}\);\n',body)
+                if stamp: ok=stamp[1]==ver and stamp[2]==digest[:12];body=body[stamp.end():]
+                ok=ok and hashlib.sha256(body.encode()).hexdigest()==digest
               print(p,n,'ok' if ok else 'ABWEICHUNG');bad|=not ok
           sys.exit(1 if bad else 0)
           PY

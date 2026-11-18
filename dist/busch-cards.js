@@ -224,7 +224,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.0.0 sha256:aa8dfb5f9143641fcb897ef299ff5d733d07ba634b52b8b273b40312db84a3eb */
+/* BEGIN BUSCH SHARED CORE 1.1.0 sha256:fa4e15287878dc8917bcebf922fc765cbc616ac6967d2af4123e62ca1e153be9 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.1.0", sourceHash: "fa4e15287878" });
+/* Busch Cards Core 1.1.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -436,7 +438,7 @@ class BuschQueryEngine {
 }
 class BuschCardsCore {
   constructor() {
-    this.apiVersion = "1.0"; this.version = "1.0.0"; this.index = new BuschEntityIndex(); this.metrics = { stateUpdates: 0, queriesSkipped: 0, queriesRecalculated: 0, resultChanges: 0, domRenders: null, structuralBuilds: 0 };
+    this.apiVersion = "1.0"; this.version = BUSCH_CORE_STAMP.version; this.sourceHash = BUSCH_CORE_STAMP.sourceHash; this.index = new BuschEntityIndex(); this.metrics = { stateUpdates: 0, queriesSkipped: 0, queriesRecalculated: 0, resultChanges: 0, domRenders: null, structuralBuilds: 0 };
     this.registry = new BuschRegistryCache(null, (name, map) => {
       this.index[name === "entity" ? "registry" : name === "device" ? "devices" : name === "area" ? "areas" : name === "floor" ? "floors" : "labels"] = map;
       this.lastErrors.delete(name);
@@ -610,18 +612,24 @@ class BuschCardsCore {
   query(spec) { return this.engine.query(spec); }
   smartQuery(spec, scopeDeviceId) { this.smart ||= new BuschSmartQueries(this); return this.smart.query(spec, scopeDeviceId); }
   subscribe(query, callback) { return this.engine.subscribe(query, callback); }
-  debugSnapshot() { return { ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
+  debugSnapshot() { return { version: this.version, sourceHash: this.sourceHash, ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
   dispose() {
     if (this._releaseTimer) { clearTimeout(this._releaseTimer); this._releaseTimer = null; } this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
     this.streaming = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set(); this._snapshotPromise = null; this._stateBuffer = null;
     if (this._registryTimer) clearTimeout(this._registryTimer); this._registryTimer = null; this._dirtyRegistries?.clear(); this._dirtyDevices.clear(); this.engine?.stop();
   }
 }
+let buschCoreConflictReported = false;
 function ensureBuschCore(requiredApiVersion = 1) {
   const major = Number(String(requiredApiVersion).split(".")[0]);
   if (major !== 1) throw new Error(`Busch Cards Core API ${major} is incompatible with API 1 / ist mit API 1 nicht kompatibel.`);
   const core = globalThis[BUSCH_CORE_KEY] || (globalThis[BUSCH_CORE_KEY] = new BuschCardsCore());
   if (Number(String(core.apiVersion).split(".")[0]) !== major) throw new Error("Busch Cards Core API mismatch / inkompatible API-Version.");
+  // The first loaded core stays (cards already hold it); a different one is reported once per bundle.
+  if (core.sourceHash !== BUSCH_CORE_STAMP.sourceHash && !buschCoreConflictReported) {
+    buschCoreConflictReported = true;
+    console.warn(`Busch Core ${BUSCH_CORE_STAMP.version} (${BUSCH_CORE_STAMP.sourceHash}) differs from the loaded core ${core.version} (${core.sourceHash || "unknown"}); keeping the loaded core. Update busch-cards and ha-unraid-cards together.`);
+  }
   return core;
 }
 
