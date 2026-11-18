@@ -96,3 +96,20 @@ test('C1: mehrere gleichzeitige Registerladungen ergeben ein rebuild', async () 
   assert.ok(c.getDeviceEntities('d1').some(e => e.entity_id === 'light.decke'), 'Index ist danach aktuell');
   c.dispose();
 });
+
+// M10: subscribe_entities. A full message after a reconnect must not count as a change for untouched devices,
+// otherwise every guarded card renders again (Unraid #641, device card M15).
+test('M10: voller Strom nach Reconnect lässt unveränderte Geräte unverändert, geänderte zählen hoch', async () => {
+  const c = kern(), h = baueHass(); let push; h.connection = { subscribeMessage: async (cb, msg) => { if (msg.type === 'subscribe_entities') push = cb; return () => {}; } };
+  const stamp = id => ({ ...h.states[id], entity_id: id, last_changed: '2026-11-18T10:00:00.000Z', last_updated: '2026-11-18T10:00:00.000Z', context: { id: 'c-' + id } });
+  h.states = Object.fromEntries(Object.keys(h.states).map(id => [id, stamp(id)]));
+  const voll = states => push({ a: Object.fromEntries(Object.entries(states).map(([id, s]) => [id, { s: s.state, a: s.attributes, c: s.context.id, lc: Date.parse(s.last_changed) / 1000 }])) });
+  c.attach(h); await new Promise(r => setImmediate(r)); voll(h.states);
+  const deps1 = c.track(() => c.getDeviceEntities('d1')), deps2 = c.track(() => c.getDeviceEntities('d2'));
+  c._entitiesFull = true; // as after a ready event
+  voll({ ...h.states, 'sensor.anderes': { ...h.states['sensor.anderes'], state: '6', last_updated: '2026-11-18T10:00:05.000Z', last_changed: '2026-11-18T10:00:05.000Z', context: { id: 'neu' } } });
+  assert.ok(c.unchanged(deps1), 'd1 unverändert');
+  assert.ok(!c.unchanged(deps2), 'd2 geändert');
+  assert.equal(c.getEntity('sensor.anderes').state, '6');
+  c.dispose();
+});

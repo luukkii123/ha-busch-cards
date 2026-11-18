@@ -47,7 +47,7 @@ async function lamp(config = {}) {
 
 test("M15: a foreign state change does not render the device card, an own change renders once", async () => {
   const { clock, ha, card, renders, reset } = await lamp();
-  assert.ok(card._core.streaming, "core stream active");
+  assert.ok(card._core.synced(ha.hass), "core synced with hass.states");
   for (let i = 0; i < 5; i++) ha.patchState("sensor.other", { state: String(10 + i) });
   await clock.advance(50);
   assert.equal(renders(), 0, "foreign updates must not render");

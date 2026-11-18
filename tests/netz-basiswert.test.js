@@ -55,6 +55,7 @@ function snapshot(ha) {
     registry_list_by_type: Object.fromEntries(Object.keys(ha.stats.count).filter((k) => REGISTRY.test(k)).sort().map((k) => [k, count(k)])),
     subscribe_events: count("subscribe_events"),
     subscribe_state_changed: count("subscribe_events:state_changed"),
+    subscribe_entities: count("subscribe_entities"),
   };
 }
 

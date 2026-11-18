@@ -35,7 +35,7 @@ test('M38: first template subscription rejected, second succeeds and shows rows 
 });
 test('M38: rejected subscriptions back off 2 s, 10 s, 60 s and a core ready retries at once',async()=>{
  const t=fakeTimers(),{c,h}=setup({setTimeout:t.setTimeout,clearTimeout:t.clearTimeout});let calls=0,ready;
- h.connection={subscribeEvents:async()=>()=>{},addEventListener:(type,fn)=>{if(type==='ready')ready=fn;},removeEventListener(){},subscribeMessage:async()=>{calls++;throw {code:3,message:'Connection lost'};}};
+ h.connection={subscribeEvents:async()=>()=>{},addEventListener:(type,fn)=>{if(type==='ready')ready=fn;},removeEventListener(){},subscribeMessage:async(cb,message)=>{if(message.type!=='render_template')return ()=>{};calls++;throw {code:3,message:'Connection lost'};}};
  h.callWS=async m=>m.type==='get_states'?Object.values(h.states):[];c.attach(h);await c.ready;
  const q=c.smartQuery({filter:{template:'{{ states.light | list }}'}}),off=c.subscribe(q,()=>{});
  await ticks();assert.equal(calls,1);
