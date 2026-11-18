@@ -145,7 +145,7 @@ map_style: carto
 | `map_style` | Auswahl | `carto` | Kachelvorlage, siehe unten |
 | `tile_url` | Text | leer | eigene Kachel-URL mit Platzhaltern für Zoom, Spalte, Zeile; nur bei `map_style: custom` |
 | `tile_url_dark` | Text | leer | URL für das dunkle Theme; leer heißt: die helle gilt auch dunkel |
-| `tile_attribution` | Text | leer | Quellenangabe unten rechts; bei eigener URL Pflicht der meisten Anbieter |
+| `tile_attribution` | Text | leer | Quellenangabe unten rechts, als reiner Text (HTML wird nicht ausgewertet); bei eigener URL Pflicht der meisten Anbieter |
 | `tile_max_zoom` | Zahl 1–22 | `19` | größte Zoomstufe der eigenen Kachelquelle; nur bei `custom` |
 | `tile_api_key` | Text | leer | Kachelschlüssel nur für diese Karte; überschreibt den Helfer |
 | `tile_api_key_entity` | `input_text.*` | `input_text.carto_api_key` | Helfer, in dem der Schlüssel steht |
@@ -198,7 +198,7 @@ show_total: true
 
 | Schlüssel | Typ | Vorgabe | Bedeutung |
 | --- | --- | --- | --- |
-| `entities` | Liste | leer | Kalender: `calendar.x` oder `{entity: calendar.x, color: "#hex"}` |
+| `entities` | Liste | leer | Kalender: `calendar.x` oder `{entity: calendar.x, color: "#hex"}`; eine ungültige Farbe ersetzt die Karte durch eine aus ihrer Palette |
 | `month_offset` | Ganzzahl −24…24 | `0` | Startmonat; `-1` Vormonat, `1` Folgemonat |
 | `title` | Text | leer | Überschrift über dem Monatsnamen |
 | `navigation` | ja/nein | `true` | Pfeile zum Blättern (ändert die Konfiguration nicht) |
@@ -331,6 +331,13 @@ Ausdrücke und Vergleiche (`"< 20"`, `"!= off"`).
 | `last_changed`, `last_updated`, `last_triggered` | Zeitvergleich, z. B. `"> 2 h"` |
 | `and`, `or`, `not` | Verschachtelung |
 | `options`, `type`, `sort` | Zeilenoptionen, feste Zeile, lokale Sortierung (nur in Smart Entities) |
+
+**Achtung bei `eval_js`:** Steht in den `options` einer Regel `eval_js: true`
+(wie bei auto-entities), werden die Zeilenoptionen als JavaScript-Vorlage
+ausgewertet. Das **führt JavaScript im Browser aller Betrachter aus**; nur
+eigenen Code verwenden, nie ungeprüft aus Foren oder fremden Dashboards
+übernehmen. Die Karte meldet die aktive Option einmal je Konfiguration in der
+Browserkonsole.
 
 **Eine Karte pro Ergebnis:**
 

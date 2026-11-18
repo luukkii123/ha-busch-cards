@@ -3362,6 +3362,17 @@ const CAL_STANDARD = {
   read_only: false,
 };
 
+/** M69 (S9.3): a calendar colour lands in `style="background:…"`, so only a real CSS colour may pass.
+ *  In the browser `CSS.supports` decides. Without `CSS` (Node tests, very old engines) a strict
+ *  syntax check is the fallback: hex, a bare colour keyword, rgb()/hsl() with numbers only, or
+ *  var(--name). It can reject an exotic valid colour (that one falls back to the palette), but it
+ *  never lets `;`, `:`, `url(` or quotes through, which is the safe direction. */
+function calFarbeGueltig(wert) {
+  if (typeof wert !== "string" || !wert.trim() || /[;{}<>"'\\]/.test(wert)) return false;
+  if (typeof CSS !== "undefined" && CSS && typeof CSS.supports === "function") return CSS.supports("color", wert);
+  return /^(#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|[a-z]+|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s\/+-]*(?:deg)?[0-9.,%\s\/+-]*\)|var\(--[a-z0-9_-]+\))$/i.test(wert.trim());
+}
+
 function calNormalisiereKonfig(config) {
   const roh = Array.isArray(config && config.entities) ? config.entities : [];
   const entities = roh.map((eintrag, i) => {
@@ -3373,7 +3384,7 @@ function calNormalisiereKonfig(config) {
     // es nicht gibt. Deshalb entfernt statt nachgebaut.
     return {
       entity: objekt.entity,
-      color: objekt.color || calPalette[i % calPalette.length],
+      color: calFarbeGueltig(objekt.color) ? objekt.color : calPalette[i % calPalette.length],
     };
   }).filter((e) => Boolean(e.entity));
   return { ...CAL_STANDARD, ...config, entities };
@@ -4862,7 +4873,8 @@ class BuschMapCard extends HTMLElement {
       name: stil.name,
       light: this._config.tile_url || "",
       dark: this._config.tile_url_dark || "",
-      attribution: this._config.tile_attribution || "",
+      // M69 (S9.2): Leaflet sets the attribution via innerHTML; an own attribution is plain text.
+      attribution: calEscape(this._config.tile_attribution || ""),
       maxZoom: Number(this._config.tile_max_zoom) || 19,
     };
   }
