@@ -113,3 +113,25 @@ test('M10: voller Strom nach Reconnect lässt unveränderte Geräte unverändert
   assert.equal(c.getEntity('sensor.anderes').state, '6');
   c.dispose();
 });
+
+// #1297: the first full stream message after attach carries the state the core already indexed from hass.states.
+// It must not index anything again, recalculate a query or call a subscriber (checked against an M6 regression).
+test('M10: erste a-Meldung mit dem Stand aus hass.states indiziert nichts neu und benachrichtigt keine Abfrage', async () => {
+  const c = kern(), h = baueHass(); let push; h.connection = { subscribeMessage: async (cb, msg) => { if (msg.type === 'subscribe_entities') push = cb; return () => {}; } };
+  const stamp = id => ({ ...h.states[id], entity_id: id, last_changed: '2026-11-18T10:00:00.000Z', last_updated: '2026-11-18T10:00:05.000Z', context: { id: 'c-' + id } });
+  h.states = Object.fromEntries(Object.keys(h.states).map(id => [id, stamp(id)]));
+  c.attach(h); let calls = 0;
+  c.subscribe(c.query({ filter: { include: [{ domain: 'light' }] } }), () => calls++);
+  c.subscribe(c.smartQuery({ filter: { include: [{ domain: 'sensor' }] } }), () => calls++);
+  await new Promise(r => setImmediate(r));
+  const vorher = { ...c.metrics }, epoch = c.index.epoch, deps = c.track(() => c.getDeviceEntities('d1')); calls = 0;
+  push({ a: Object.fromEntries(Object.entries(h.states).map(([id, s]) => [id, { s: s.state, a: s.attributes, c: s.context.id, lc: Date.parse(s.last_changed) / 1000, lu: Date.parse(s.last_updated) / 1000 }])) });
+  await new Promise(r => setImmediate(r));
+  assert.ok(c.streaming, 'Strom aktiv');
+  assert.equal(c.metrics.stateUpdates - vorher.stateUpdates, 0, 'Indexupdates');
+  assert.equal(c.metrics.queriesRecalculated - vorher.queriesRecalculated, 0, 'neu berechnete Abfragen');
+  assert.equal(calls, 0, 'Abonnenten benachrichtigt');
+  assert.equal(c.index.epoch, epoch, 'kein rebuild');
+  assert.ok(c.unchanged(deps), 'Gerät unverändert');
+  c.dispose();
+});
