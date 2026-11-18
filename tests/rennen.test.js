@@ -86,6 +86,18 @@ test("M14: five arrow keys within 300 ms send one call with the last value; the 
   assert.deepEqual(report, { pendingHeldUntilEcho: true, keyboardCoalesced: 1, sent: [23.5], final: 23.5 });
 });
 
+test("M14: arrow keys step from the shown value like a browser; one step stays held and five steps send their sum", async () => {
+  const { clock, ha, slider, env } = await thermostat();
+  key(slider, env, Number(slider.value) + 0.5);
+  assert.equal(Number(slider.value), 21.5, "one step is not mistaken for the echo");
+  for (let i = 2; i <= 5; i++) { key(slider, env, Number(slider.value) + 0.5); await clock.advance(60); }
+  await clock.advance(400);
+  assert.deepEqual(ha.services.map((s) => s.data.temperature), [23.5]);
+  assert.equal(Number(slider.value), 23.5);
+  await clock.advance(1600);
+  assert.equal(Number(slider.value), 23.5, "echo keeps the value");
+});
+
 test("M14: a failed call drops the held value and shows HA's value again", async () => {
   const { clock, ha, card, slider, env } = await thermostat();
   ha.behave("climate.set_temperature", { delay: 200, reject: new Error("offline") });

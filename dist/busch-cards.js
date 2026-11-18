@@ -6945,7 +6945,7 @@ class BuschDeviceCard extends HTMLElement {
           el._devQuickDraft=false;
           if(c.kind==='range'){
             clearTimeout(el._devQuickTimer);
-            const pending=el._devQuickPending={value};
+            const pending=el._devQuickPending={value,from:el._devQuickHa};
             el._devQuickTimer=setTimeout(()=>drop(pending),DEV_QUICK_HOLD_MS);
             clearTimeout(el._devQuickKeyTimer);el._devQuickKeyTimer=null;
             // M14: keyboard steps are collected for DEV_QUICK_KEY_MS and only the last value is sent.
@@ -6966,8 +6966,9 @@ class BuschDeviceCard extends HTMLElement {
       }
     }
     controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.disabled)el._devQuickDraft=false;
-      // M14: HA reached the held value (within one step), or the control went unavailable.
-      const p=el._devQuickPending;if(p&&(c.disabled||Math.abs(Number(c.value)-p.value)<=c.step)){clearTimeout(el._devQuickTimer);el._devQuickPending=null;}
+      // M14: HA moved away from the value seen at send time (echo or other change), reached the held value, or the control went unavailable.
+      const p=el._devQuickPending;if(p&&(c.disabled||Number(c.value)!==Number(p.from)||Math.abs(Number(c.value)-p.value)<c.step/2)){clearTimeout(el._devQuickTimer);el._devQuickPending=null;}
+      el._devQuickHa=c.value;
       if(el._devQuickBusy&&(c.disabled||state!==el._devQuickBusy.state))el._devQuickIdle?.();
       if(c.kind&&!el._devQuickDraft)el.value=el._devQuickPending?el._devQuickPending.value:c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});
   }
