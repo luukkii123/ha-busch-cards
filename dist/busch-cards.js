@@ -5901,6 +5901,9 @@ function devDomainName(texte, entityId) {
   return (texte && texte["domain_" + domain]) || domain || entityId;
 }
 
+// M15: one shared collator, same options as the former localeCompare call.
+const DEV_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base" });
+
 function devGruppieren(hass, eintraege, konfig) {
   const koerbe = { control: [], sensor: [], config: [], diagnostic: [] };
   for (const e of eintraege) koerbe[devGruppe(e)].push(e);
@@ -5910,9 +5913,7 @@ function devGruppieren(hass, eintraege, konfig) {
     if (!sichtbar.includes(gruppe)) continue;
     const liste = koerbe[gruppe];
     if (!liste.length) continue;
-    liste.sort((a, b) =>
-      devAnzeigename(hass, a).localeCompare(devAnzeigename(hass, b), undefined, { sensitivity: "base" })
-    );
+    liste.sort((a, b) => DEV_COLLATOR.compare(devAnzeigename(hass, a), devAnzeigename(hass, b)));
     aus.push({ gruppe, ids: liste.map((e) => e.entity_id) });
   }
   return aus;
@@ -6523,6 +6524,26 @@ function devQuickControls(state) {
   return out;
 }
 
+/** M15: what of `hass` besides states the card shows: language, number/time format, time zone, unit, theme mode. */
+function devHassSchluessel(hass) {
+  const l = hass.locale || {};
+  return [hass.language, l.language, l.number_format, l.time_format, hass.config?.time_zone, hass.config?.unit_system?.temperature, hass.themes?.darkMode].join("\n");
+}
+
+/** M15: true when the last render still holds for `hass` (same guard idea as `unraidHassRender`): same config,
+ *  same language/format key, same filter result, unchanged core versions of everything the render read
+ *  (`core.track`/`unchanged`) and the same state objects of the entities it showed (HA sends new objects on change,
+ *  so this also covers a hass that arrives before the core stream). Etappe E: `unchanged` must stay fed. */
+function devHassUnveraendert(karte, vorher, hass) {
+  const g = karte._gesehen, core = karte._core;
+  if (!g || !vorher || !hass || !core || typeof core.unchanged !== "function") return false;
+  if (g.config !== karte._config || g.key !== devHassSchluessel(hass) || g.filter !== karte._filterQuery?.result) return false;
+  if (!core.unchanged(karte._deps)) return false;
+  const states = hass.states || {};
+  for (const [id, state] of g.states) if (states[id] !== state) return false;
+  return true;
+}
+
 class BuschDeviceCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("busch-device-card-editor");
@@ -6553,6 +6574,7 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const vorher = this._hass;
     this._hass = hass;
     if (hass) {
       this._core = ensureBuschCore(1);
@@ -6562,6 +6584,7 @@ class BuschDeviceCard extends HTMLElement {
       } else this._core.attach(hass);
     }
     this._labels = this._core?.labels || new Map();
+    if (devHassUnveraendert(this, vorher, hass)) return;
     this._render();
   }
 
@@ -6769,8 +6792,21 @@ class BuschDeviceCard extends HTMLElement {
     return new Set(query.error?[]:query.result.map(row=>row.entity));
   }
 
+  /** Every render runs under `core.track`, so `set hass` can tell own from foreign changes (M15). */
   _render() {
     if (!this._config || !this._hass) return;
+    this._gesehen = null;
+    if (typeof this._core?.track === "function") this._deps = this._core.track(() => this._zeichneAlles());
+    else { this._deps = null; this._zeichneAlles(); }
+  }
+
+  /** M15: remembers what this render showed, for `devHassUnveraendert`. */
+  _merkeGesehen(ids) {
+    const states = this._hass.states || {};
+    this._gesehen = { config: this._config, key: devHassSchluessel(this._hass), filter: this._filterQuery?.result, states: [...new Set(ids)].filter(Boolean).map(id => [id, states[id]]) };
+  }
+
+  _zeichneAlles() {
     this._geruest();
     const t = this._texte;
     const a = devGeraetAufloesen(this._hass, this._config.entity, this._config.device_id, this._core);
@@ -6796,6 +6832,7 @@ class BuschDeviceCard extends HTMLElement {
       this._hinweis.textContent = buschFuellen(t[a.fehler], { entity: this._config.entity });
       this._hinweis.className = "dev-hinweis dev-fehler";
       this._hinweis.hidden = false;
+      this._merkeGesehen([this._config.entity, this._entityId]);
       return;
     }
 
@@ -6823,6 +6860,7 @@ class BuschDeviceCard extends HTMLElement {
     this._zeichneMedia(a);
     this._zeigeListe();
     if(this._filterQuery?.error){this._hinweis.textContent=t.filterFehler;this._hinweis.className='dev-hinweis dev-fehler';this._hinweis.hidden=false;this._filterErrorVisible=true;}else if(this._filterErrorVisible){this._hinweis.hidden=true;this._filterErrorVisible=false;}
+    this._merkeGesehen([this._config.entity, this._entityId, ...(this._core ? this._core.getDeviceEntities(a.geraet.id).map(e => e?.entity_id) : alle.map(e => e.entity_id))]);
   }
 
   _zeichneKopf(a) {
