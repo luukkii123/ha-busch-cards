@@ -53,3 +53,13 @@ test('M38: real template errors are not retried until the configuration changes'
  receive({error:'bad',level:'ERROR'});await ticks();c.updateState('sensor.decke_leistung',{...h.states['sensor.decke_leistung'],state:'4'});await ticks();
  assert.ok(again.error);assert.equal(calls,2);assert.equal(t.due(2000).length,0);off2();c.dispose();
 });
+test('M50 change of a non-member inside the guard skips the projection, members and static rows still project',async()=>{const {c,h}=setup();const q=c.smartQuery(config);let count=0;const off=c.subscribe(q,()=>count++);count=0;const set=(id,patch)=>{c.updateState(id,{...c.index.states.get(id),...patch});};
+ set('sensor.decke_leistung',{state:'30'});await Promise.resolve();assert.ok(!q.result.some(r=>r.entity==='sensor.decke_leistung'),'member leaves');assert.equal(count,1);
+ const skipped=q.metrics.projectionsSkipped??0,result=q.result,evaluated=q.metrics.evaluated;
+ set('sensor.decke_leistung',{state:'31'});await Promise.resolve();assert.equal(q.metrics.evaluated,evaluated+1,'membership still evaluated');assert.equal(q.metrics.projectionsSkipped,skipped+1,'no projection for a non-member before and after');assert.equal(q.result,result);assert.equal(count,1);
+ set('sensor.decke_leistung',{state:'5'});await Promise.resolve();assert.ok(q.result.some(r=>r.entity==='sensor.decke_leistung'),'entry projects');assert.equal(q.metrics.projectionsSkipped,skipped+1);assert.equal(count,2);off();
+ const s=c.smartQuery({entities:['sensor.decke_leistung'],filter:{include:[{domain:'sensor',integration:'shelly',state:'> 1000'}]},value:{type:'attribute',attribute:'friendly_name'}});const off2=c.subscribe(s,()=>{});assert.deepEqual([...s.result],['Wohnzimmer Deckenlampe Leistung']);
+ set('sensor.decke_leistung',{attributes:{...c.index.states.get('sensor.decke_leistung').attributes,friendly_name:'Neu'}});await Promise.resolve();assert.deepEqual([...s.result],['Neu'],'static row is projected although it never matches');off2();c.dispose();});
+test('M50 buschSmartMatch compiles each pattern once and bounds its cache',()=>{const api=ladeKarte(['buschSmartMatch','BUSCH_SMART_REGEX']);const cache=api.BUSCH_SMART_REGEX;cache.clear();
+ assert.equal(api.buschSmartMatch('sensorXa','sensor.*'),true);const first=cache.get('^sensor..*$');assert.ok(first);assert.equal(api.buschSmartMatch('lightXa','sensor.*'),false);assert.equal(cache.get('^sensor..*$'),first);assert.equal(cache.size,1);
+ assert.equal(api.buschSmartMatch('abc','/b/'),true);assert.equal(cache.size,2);for(let i=0;i<600;i++)api.buschSmartMatch('x','/x'+i+'/');assert.ok(cache.size<=256,`cache size ${cache.size}`);assert.throws(()=>api.buschSmartMatch('x','/(/'));});

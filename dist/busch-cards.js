@@ -232,9 +232,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.4.0 sha256:172e75b5c8c37a0a37f6b82e9aed61fa452ae94255fc99bfbec0bfe32e7b5719 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.4.0", sourceHash: "172e75b5c8c3" });
-/* Busch Cards Core 1.4.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.5.0 sha256:9d35b2364dda1b9591f38143235af431b2c57f8938bb82d6a3f9d7ab282b0d02 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.5.0", sourceHash: "9d35b2364dda" });
+/* Busch Cards Core 1.5.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -752,13 +752,22 @@ function ensureBuschCore(requiredApiVersion = 1) {
 // auto-entities 1.16.1 compatibility semantics, adapted for Busch's shared index.
 // Upstream: https://github.com/thomasloven/lovelace-auto-entities
 // Attribution and MIT permission notice follow this compatibility section.
+// M50: one compiled RegExp per pattern string; patterns come from card configs, so the map stays small and is bounded.
+const BUSCH_SMART_REGEX = new Map();
+function buschSmartRegex(source) {
+  let regex = BUSCH_SMART_REGEX.get(source);
+  if (!regex) { regex = new RegExp(source); if (BUSCH_SMART_REGEX.size >= 256) BUSCH_SMART_REGEX.clear(); BUSCH_SMART_REGEX.set(source, regex); }
+  return regex;
+}
+// Comparison operators in upstream order, built once instead of per call (M50).
+const BUSCH_SMART_OPS = Object.entries({'<=':(a,b)=>a<=b,'>=':(a,b)=>a>=b,'==':(a,b)=>a===b,'!=':(a,b)=>a!==b,'<':(a,b)=>a<b,'>':(a,b)=>a>b,'!':(a,b)=>a!==b,'=':(a,b)=>a===b});
 function buschSmartMatch(value, pattern, now = Date.now()) {
   const checks = [];
   if (typeof pattern === 'string') {
     if (pattern.startsWith('$$')) { pattern = pattern.slice(2); value = JSON.stringify(value); }
     if ((pattern.startsWith('/') && pattern.endsWith('/')) || pattern.includes('*')) {
       if (!pattern.startsWith('/')) pattern = '/^' + pattern.replace(/\*/g, '.*') + '$/';
-      const regex = new RegExp(pattern.slice(1, -1));
+      const regex = buschSmartRegex(pattern.slice(1, -1));
       checks.push(v => typeof v === 'string' && regex.test(v));
     }
     const age = /([mhd])\s+ago\s*$/i.exec(pattern);
@@ -768,8 +777,7 @@ function buschSmartMatch(value, pattern, now = Date.now()) {
     }
     // Deliberately independent: upstream's overlapping != / ! comparisons
     // and unescaped glob punctuation are part of the imported config contract.
-    const ops = {'<=':(a,b)=>a<=b,'>=':(a,b)=>a>=b,'==':(a,b)=>a===b,'!=':(a,b)=>a!==b,'<':(a,b)=>a<b,'>':(a,b)=>a>b,'!':(a,b)=>a!==b,'=':(a,b)=>a===b};
-    for (const [op, test] of Object.entries(ops)) if (pattern.startsWith(op)) {
+    for (const [op, test] of BUSCH_SMART_OPS) if (pattern.startsWith(op)) {
       const limit = parseFloat(pattern.slice(op.length)); checks.push(v => test(parseFloat(v), limit));
     }
   }
@@ -984,7 +992,7 @@ class BuschSmartQueries {
     const key = 'smart:' + buschCoreKey(scopeDeviceId?{scopeDeviceId,spec:cacheSpec}:cacheSpec), engine = this.core.engine;
     if (engine.cache.has(key)) return engine.cache.get(key);
     const include = copy.filter?.include || [];
-    const query = { key, scopeDeviceId, spec: copy, smart: this, javascript:(copy.filter?.include||[]).some(rule=>rule.options?.eval_js===true), include: include.map(buschSmartPlan), extraPlans:(copy.filter?.exclude||[]).map(buschSmartPlan), matched:include.map(()=>new Set()), subscribers:new Set(), result:Object.freeze([]), nextDeadline:Infinity, deadlines:new Map(), metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}, templateRows:[], templateGeneration:0 };
+    const query = { key, scopeDeviceId, spec: copy, smart: this, javascript:(copy.filter?.include||[]).some(rule=>rule.options?.eval_js===true), include: include.map(buschSmartPlan), extraPlans:(copy.filter?.exclude||[]).map(buschSmartPlan), matched:include.map(()=>new Set()), subscribers:new Set(), result:Object.freeze([]), nextDeadline:Infinity, deadlines:new Map(), metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0,projectionsSkipped:0}, templateRows:[], templateGeneration:0 };
     engine.cache.set(key,query); this.calculate(query); engine.evict(); return query;
   }
   candidates(plan, query) { return this.core.engine.candidates({lookups:query.scopeDeviceId?[...plan.constraints,['device',query.scopeDeviceId]]:plan.constraints}); }
@@ -1006,6 +1014,8 @@ class BuschSmartQueries {
   compute(query, ids) {
     const start=performance.now(),now=Date.now(); query.metrics.calculations++;this.core.metrics.queriesRecalculated++;
     let touched=new Set();
+    // M50: ids that were a match before this change; with the matches after it they decide whether the result can change.
+    const members=ids&&!query.error?new Set(ids.filter(id=>query.matched.some(set=>set.has(id)))):null;
     for (const [index,rule] of (query.spec.filter?.include||[]).entries()) {
       if (rule.type !== undefined) continue;
       const plan=query.include[index], candidates=ids || this.candidates(plan,query);
@@ -1029,6 +1039,11 @@ class BuschSmartQueries {
     }
     query.nextDeadline=Infinity;for(const at of query.deadlines.values())query.nextDeadline=Math.min(query.nextDeadline,at);
     query.metrics.candidates=touched.size;
+    // M50: no match before and after, and no static or template row: the projection cannot change, skip it.
+    if(members&&!ids.some(id=>members.has(id)||query.matched.some(set=>set.has(id)))){
+      const statics=new Set([...(query.spec.entities||[]),...query.templateRows].map(row=>typeof row==='string'?row.trim():row?.entity));
+      if(!ids.some(id=>statics.has(id))){query.metrics.projectionsSkipped++;query.metrics.executionMs=performance.now()-start;if(query.subscribers.size)this.startTemplate(query);return;}
+    }
     try {
       const result=buschSmartResult(this.core,query.spec,query.templateRows,query.matched.map(set=>[...set].sort((a,b)=>this.core.index.order.get(a)-this.core.index.order.get(b))));
       const signature=buschCoreKey(result);
