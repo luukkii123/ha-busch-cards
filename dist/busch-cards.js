@@ -7234,13 +7234,15 @@ function buschNetworkIPVersion(value){
  if(parts.some(p=>! /^[0-9a-f]{1,4}$/i.test(p)))return 2;
  return (split.length===2?parts.length<8:parts.length===8)?1:2;
 }
+// M4: one shared collator with the options the field comparison used with localeCompare.
+const BUSCH_NETWORK_COLLATOR=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 function buschNetworkCompare(a,b,sort={}){
  const method=sort.method||'name',direction=sort.reverse?-1:1,tie=()=>a.entity_id.localeCompare(b.entity_id),empty=v=>v===null||v===undefined||v==='';
  if(method==='ip'){
   const version=r=>buschNetworkIPVersion(r.ip),va=version(a),vb=version(b);if(va!==vb)return va-vb;if(va===2)return tie();const n=va===0?buschNetworkIPv4(a.ip)-buschNetworkIPv4(b.ip):a.ip.localeCompare(b.ip);return n*direction||tie();
  }
  const field=method==='state'?'status':method==='network_device'?'network_name':method,va=a[field],vb=b[field];if(empty(va)!==empty(vb))return empty(va)?1:-1;
- const delta=['last_changed','last_time_reachable'].includes(field)?(Date.parse(va)-Date.parse(vb)):String(va??'').localeCompare(String(vb??''),undefined,{numeric:true,sensitivity:'base'});return delta*direction||tie();
+ const delta=['last_changed','last_time_reachable'].includes(field)?(Date.parse(va)-Date.parse(vb)):BUSCH_NETWORK_COLLATOR.compare(String(va??''),String(vb??''));return delta*direction||tie();
 }
 class BuschNetworkQueries {
  startTemplate(){}
@@ -7248,23 +7250,36 @@ class BuschNetworkQueries {
  constructor(core){this.core=core;this.resolver=new BuschNetworkClientResolver(core);}
  query(config={}){
   const spec=buschNetworkConfig(config),cacheSpec={config_entry_id:spec.config_entry_id,platform:spec.platform,source_type:spec.source_type,include_unavailable:spec.include_unavailable,filter:spec.filter,sort:spec.sort},key='network:'+buschCoreKey(cacheSpec),engine=this.core.engine;if(engine.cache.has(key))return engine.cache.get(key);
-  const query={key,spec,smart:this,include:(spec.filter.include||[]).map(buschNetworkRule),exclude:(spec.filter.exclude||[]).map(buschNetworkRule),rows:new Map(),result:Object.freeze([]),subscribers:new Set(),nextDeadline:Infinity,deadlines:new Map(),metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0}};engine.cache.set(key,query);this.calculate(query);engine.evict();return query;
+  const query={key,spec,smart:this,include:(spec.filter.include||[]).map(buschNetworkRule),exclude:(spec.filter.exclude||[]).map(buschNetworkRule),rows:new Map(),rowSignatures:new Map(),order:[],result:Object.freeze([]),subscribers:new Set(),nextDeadline:Infinity,deadlines:new Map(),metrics:{calculations:0,evaluated:0,candidates:0,executionMs:0,rowSignatures:0}};engine.cache.set(key,query);this.calculate(query);engine.evict();return query;
  }
  scope(query,info){return !!info&&info.domain==='device_tracker'&&!!info.stateObject&&!info.registry?.disabled_by&&(!query.spec.config_entry_id||info.config_entry_id===query.spec.config_entry_id)&&(!query.spec.platform||info.platform===query.spec.platform)&&(!query.spec.source_type||info.attributes.source_type===query.spec.source_type)&&(query.spec.include_unavailable||!['unknown','unavailable'].includes(info.state));}
- changed(query,{id,old,next}){
-  if(this.scope(query,old)||this.scope(query,next))this.calculate(query,[id]);
-  else if([old,next].some(e=>e?.platform==='fritz'&&['switch','button'].includes(e.domain))){const ids=[...(this.core.index.indices.device.get(next?.device_id||old?.device_id)||[])].filter(id=>query.rows.has(id));if(ids.length)this.calculate(query,ids);else this.core.metrics.queriesSkipped++;}
-  else this.core.metrics.queriesSkipped++;
+ changed(query,change){this.changedBatch(query,[change]);}
+ changedBatch(query,changes){
+  const ids=new Set();
+  for(const {id,old,next}of changes){
+   if(this.scope(query,old)||this.scope(query,next))ids.add(id);
+   else if([old,next].some(e=>e?.platform==='fritz'&&['switch','button'].includes(e.domain)))for(const sibling of this.core.index.indices.device.get(next?.device_id||old?.device_id)||[])if(query.rows.has(sibling))ids.add(sibling);
+  }
+  if(ids.size)this.calculate(query,[...ids]);else this.core.metrics.queriesSkipped++;
  }
+ rowSignature(query,row){query.metrics.rowSignatures++;return buschCoreKey({id:row.entity_id,state:row.info.stateObject,registry:row.info.registry,name:row.name,manufacturer:row.manufacturer,labels:row.labels,ap:row.network_name,internet:row.internet?.state,wol:row.wol?.state});}
+ // M4: binary search keeps query.order sorted without a full sort.
+ insert(query,id){const order=query.order,row=query.rows.get(id),sort=query.spec.sort;let low=0,high=order.length;while(low<high){const mid=(low+high)>>1;if(buschNetworkCompare(query.rows.get(order[mid]),row,sort)<=0)low=mid+1;else high=mid;}order.splice(low,0,id);}
  calculate(query,ids){
   const start=performance.now(),now=Date.now();query.metrics.calculations++;this.core.metrics.queriesRecalculated++;
-  const candidates=ids||[...(this.core.index.indices.domain.get('device_tracker')||[])];if(!ids){query.rows.clear();query.deadlines.clear();}query.metrics.candidates=candidates.length;
-  for(const id of candidates){query.metrics.evaluated++;query.deadlines.delete(id);if(!this.scope(query,this.core.getEntity(id))){query.rows.delete(id);continue;}const row=this.resolver.resolve(id,now),match=(!query.include.length||query.include.some(r=>r.test(row,now)))&&!query.exclude.some(r=>r.test(row,now));if(match)query.rows.set(id,row);else query.rows.delete(id);
+  const candidates=ids||[...(this.core.index.indices.domain.get('device_tracker')||[])],previous=ids?null:query.rowSignatures;if(!ids){query.rows.clear();query.rowSignatures=new Map();query.deadlines.clear();}query.metrics.candidates=candidates.length;
+  // M4: per-row signatures; an incremental pass rebuilds only changed rows and moves a row only when its sort position changed.
+  let changed=false;const drop=id=>{if(!query.rows.has(id))return;query.rows.delete(id);query.rowSignatures.delete(id);if(ids){const index=query.order.indexOf(id);if(index>=0)query.order.splice(index,1);}changed=true;};
+  for(const id of candidates){query.metrics.evaluated++;query.deadlines.delete(id);if(!this.scope(query,this.core.getEntity(id))){drop(id);continue;}const row=this.resolver.resolve(id,now),match=(!query.include.length||query.include.some(r=>r.test(row,now)))&&!query.exclude.some(r=>r.test(row,now));
+   if(!match)drop(id);
+   else{const signature=this.rowSignature(query,row),before=query.rows.get(id),known=ids?query.rowSignatures.get(id):previous.get(id);query.rows.set(id,row);query.rowSignatures.set(id,signature);if(signature!==known)changed=true;
+    if(ids&&!before)this.insert(query,id);else if(ids&&buschNetworkCompare(before,row,query.spec.sort)!==0){const index=query.order.indexOf(id);if(index>=0)query.order.splice(index,1);this.insert(query,id);}}
    let deadline=Infinity;for(const t of [...query.include,...query.exclude].flatMap(r=>r.times)){const stamp=Date.parse(t.key==='last_changed'?row?.info.stateObject.last_changed:row?.info.attributes.last_time_reachable);if(Number.isFinite(stamp))for(const at of [stamp,stamp+t.duration,stamp+t.duration+1])if(at>now)deadline=Math.min(deadline,at);}if(Number.isFinite(deadline))query.deadlines.set(id,deadline);
   }
   query.nextDeadline=Infinity;for(const at of query.deadlines.values())query.nextDeadline=Math.min(query.nextDeadline,at);
-  const rows=[...query.rows.values()].sort((a,b)=>buschNetworkCompare(a,b,query.spec.sort)),signature=buschCoreKey(rows.map(r=>({id:r.entity_id,state:r.info.stateObject,registry:r.info.registry,name:r.name,manufacturer:r.manufacturer,labels:r.labels,ap:r.network_name,internet:r.internet?.state,wol:r.wol?.state})));
-  if(signature!==query.signature){query.signature=signature;query.result=Object.freeze(rows);this.core.metrics.resultChanges++;for(const fn of query.subscribers){try{fn(query.result);}catch(error){console.warn('Busch Network subscriber failed',error?.name);}}}query.metrics.executionMs=performance.now()-start;
+  if(!ids){const before=query.order;query.order=[...query.rows.values()].sort((a,b)=>buschNetworkCompare(a,b,query.spec.sort)).map(r=>r.entity_id);if(!changed)changed=query.rows.size!==previous.size||before.length!==query.order.length||before.some((id,index)=>id!==query.order[index]);}
+  else if(!changed)changed=query.result.length!==query.order.length||query.order.some((id,index)=>id!==query.result[index].entity_id);
+  if(changed){query.result=Object.freeze(query.order.map(id=>query.rows.get(id)));this.core.metrics.resultChanges++;for(const fn of query.subscribers){try{fn(query.result);}catch(error){console.warn('Busch Network subscriber failed',error?.name);}}}query.metrics.executionMs=performance.now()-start;
  }
 }
 /* A minute clock lives in the existing Core engine: one scheduler for all cards. */
