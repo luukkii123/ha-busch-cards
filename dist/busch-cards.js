@@ -4042,6 +4042,59 @@ function calStufenFolge(stufe) {
   return i < 0 ? [CAL_STUFE_ENTITAET] : CAL_STUFEN.slice(i);
 }
 
+/* M39 (#1283): when the calendar card reloads, and one module-wide cache for
+ * all its instances.
+ *
+ * Reloads: on becoming visible, every 15 minutes while visible, at local
+ * midnight (new day, maybe new month) and after an own edit through HA's
+ * dialog. A hidden tab fetches nothing; becoming visible catches up.
+ *
+ * Cache: `(entity, start, end)` -> `{ stamp, at, promise }`. `stamp` is the
+ * calendar's `last_changed`; a different one is a miss. A load asks for an
+ * entry no older than `maxAlter`, so two cards share one fetch: a running
+ * fetch is shared as its promise, a finished one as its result.
+ *
+ * A calendar subscription (`calendar/event/subscribe` or similar): nothing
+ * in this repo (code, docs, render scripts) shows that HA offers one, and the
+ * HA core source is not at hand here. So the card polls as above; an
+ * unproven command is not guessed. */
+const CAL_TAKT_MS = 15 * 60 * 1000;
+const CAL_TEILEN_MS = 2000;
+const CAL_CACHE_MAX = 100;
+const calTermineCache = new Map();
+
+function calVerborgen() {
+  return typeof document !== "undefined" && !!document && document.hidden === true;
+}
+
+/** Milliseconds to one second past the next local midnight. */
+function calBisMitternacht(jetzt) {
+  const naechste = new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate() + 1, 0, 0, 1, 0);
+  return Math.max(1000, naechste.getTime() - jetzt.getTime());
+}
+
+/** The events of one calendar in one window, shared between card instances. */
+function calTermineHolen(hass, entity, start, ende, stempel, maxAlter) {
+  const schluessel = `${entity}|${start.toISOString()}|${ende.toISOString()}`;
+  const jetzt = Date.now();
+  const treffer = calTermineCache.get(schluessel);
+  if (treffer && treffer.stempel === stempel && jetzt - treffer.at < maxAlter) return treffer.promise;
+  const promise = Promise.resolve(hass.callApi(
+    "GET",
+    `calendars/${entity}?start=${encodeURIComponent(start.toISOString())}` +
+      `&end=${encodeURIComponent(ende.toISOString())}`
+  ));
+  const eintrag = { stempel, at: jetzt, promise };
+  calTermineCache.delete(schluessel);
+  calTermineCache.set(schluessel, eintrag);
+  while (calTermineCache.size > CAL_CACHE_MAX) calTermineCache.delete(calTermineCache.keys().next().value);
+  // A failed fetch is not kept: the next load tries again.
+  promise.catch(() => {
+    if (calTermineCache.get(schluessel) === eintrag) calTermineCache.delete(schluessel);
+  });
+  return promise;
+}
+
 class BuschCalendarCard extends HTMLElement {
   set preview(value) { this._preview=!!value; this.toggleAttribute('data-preview',this._preview); }
   get preview() { return !!this._preview; }
@@ -4095,6 +4148,45 @@ class BuschCalendarCard extends HTMLElement {
     else this._ladeWennVeraendert();
   }
 
+  connectedCallback() {
+    if (!this._beiSichtbarkeit) {
+      this._beiSichtbarkeit = () => {
+        if (calVerborgen()) return;
+        this._letzterStempel = this._stempel();
+        this._lade(CAL_TEILEN_MS);
+      };
+    }
+    document.addEventListener("visibilitychange", this._beiSichtbarkeit);
+    clearInterval(this._takt);
+    this._takt = setInterval(() => {
+      if (!calVerborgen()) this._lade(CAL_TAKT_MS);
+    }, CAL_TAKT_MS);
+    this._mitternachtStellen();
+    // Back in the DOM (view switch): from the cache when fresh, else fetched.
+    if (this._hass && this._config && !calVerborgen()) this._lade();
+  }
+
+  disconnectedCallback() {
+    if (this._beiSichtbarkeit) document.removeEventListener("visibilitychange", this._beiSichtbarkeit);
+    clearInterval(this._takt);
+    clearTimeout(this._mitternacht);
+    this._takt = null;
+    this._mitternacht = null;
+  }
+
+  _mitternachtStellen() {
+    clearTimeout(this._mitternacht);
+    this._mitternacht = setTimeout(() => {
+      this._mitternachtStellen();
+      if (!calVerborgen()) this._lade(CAL_TEILEN_MS);
+    }, calBisMitternacht(new Date()));
+  }
+
+  /** After an edit through HA's dialog: past the cache, the result then serves the other cards too. */
+  _nachEigenerAenderung() {
+    return this._lade(0);
+  }
+
   getCardSize() {
     return this._config && this._config.show_empty_days ? 12 : 6;
   }
@@ -4110,21 +4202,28 @@ class BuschCalendarCard extends HTMLElement {
     return buschTexte(TEXTE_BUSCH_CALENDAR_CARD, this._hass).texte;
   }
 
-  _ladeWennVeraendert() {
-    if (!this._config || !this._hass) return;
-    const stempel = this._config.entities
+  _stempel() {
+    return this._config.entities
       .map((e) => {
         const zustand = this._hass.states[e.entity];
         return zustand ? `${e.entity}:${zustand.last_changed}` : `${e.entity}:fehlt`;
       })
       .join("|");
+  }
+
+  _ladeWennVeraendert() {
+    if (!this._config || !this._hass) return;
+    // Hidden: nothing now, becoming visible loads anyway.
+    if (calVerborgen()) return;
+    const stempel = this._stempel();
     if (stempel !== this._letzterStempel) {
       this._letzterStempel = stempel;
       this._lade();
     }
   }
 
-  async _lade() {
+  /** `maxAlter`: how old a cached result may be, in ms (0 = always fetch). */
+  async _lade(maxAlter = CAL_TAKT_MS) {
     if (!this._hass || !this._config) return;
     const { start, ende } = calMonatsGrenzen(new Date(), this._versatzLaufend);
     // Ein monoton steigender Zaehler, KEINE Marke aus Monat und Kalenderanzahl.
@@ -4146,13 +4245,11 @@ class BuschCalendarCard extends HTMLElement {
       return;
     }
 
-    const anfragen = this._config.entities.map((e) =>
-      this._hass.callApi(
-        "GET",
-        `calendars/${e.entity}?start=${encodeURIComponent(start.toISOString())}` +
-          `&end=${encodeURIComponent(ende.toISOString())}`
-      )
-    );
+    const anfragen = this._config.entities.map((e) => {
+      const zustand = this._hass.states && this._hass.states[e.entity];
+      const stempel = zustand ? String(zustand.last_changed) : "fehlt";
+      return calTermineHolen(this._hass, e.entity, start, ende, stempel, maxAlter);
+    });
     const ergebnisse = await Promise.allSettled(anfragen);
     // Eine neuere Ladung ist gestartet — diese Antwort ist ueberholt.
     if (this._ladeZaehler !== meineLadung) return;
@@ -4186,7 +4283,8 @@ class BuschCalendarCard extends HTMLElement {
     this._versatzLaufend += schritt;
     // `_tage` wird BEWUSST nicht geleert: die alte Liste bleibt stehen, bis
     // die neue da ist. Sonst blitzt zwischen zwei Monaten „Wird geladen …" auf.
-    this._lade();
+    // Blaettern ist ein ausdruecklicher Wunsch: immer frisch, am Cache vorbei.
+    this._lade(0);
     this._render();
   }
 
@@ -4264,14 +4362,14 @@ class BuschCalendarCard extends HTMLElement {
             // `updated` ist das EINZIGE Pflichtfeld des Vertrags: HA wartet es
             // nach jedem Erfolg unbedingt ab. Fehlt es, wirft der Dialog nach
             // dem Speichern.
-            updated: () => this._lade(),
+            updated: () => this._nachEigenerAenderung(),
           });
           return;
         }
         if (stufe === CAL_STUFE_ANSICHT && parameter && importe.ansicht) {
           this._zeigeDialog(CAL_DIALOG_TAG, importe.ansicht, {
             ...parameter,
-            updated: () => this._lade(),
+            updated: () => this._nachEigenerAenderung(),
           });
           return;
         }
