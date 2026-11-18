@@ -67,3 +67,30 @@ test('core: the same core loaded twice stays silent', () => {
   assert.equal(second.ensureBuschCore(1), first.ensureBuschCore(1));
   assert.equal(warnings.length, 0, warnings.join('\n'));
 });
+
+// M43: A failing listener must not be swallowed silently; each failure logs one warning.
+test('core: a throwing device listener logs exactly one warning', async () => {
+  const text = fs.readFileSync(KARTE, 'utf8');
+  const { warnings, first } = evaluateTwice(text, text);
+  const core = first.ensureBuschCore(1);
+  let after = 0;
+  core.watchDevice('d1', () => { throw new Error('render failed'); });
+  core.watchDevice('d1', () => { after++; });
+  core._dirtyDevices.add('d1'); core.notifyDevices();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.match(warnings[0], /Busch Core device listener failed/);
+  assert.equal(after, 1, 'later listeners still run');
+});
+
+test('core: a throwing registry listener after a failed refresh logs exactly one warning', async () => {
+  const text = fs.readFileSync(KARTE, 'utf8');
+  const { warnings, first } = evaluateTwice(text, text);
+  const core = first.ensureBuschCore(1);
+  core.registry.hass = { callWS: async () => { throw new Error('denied'); } };
+  core.watch(() => { throw new Error('render failed'); });
+  await core.refreshRegistries(['label']);
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.match(warnings[0], /Busch Core registry listener failed/);
+  assert.ok(core.lastErrors.has('label'));
+});

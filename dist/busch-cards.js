@@ -224,9 +224,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.1.0 sha256:fa4e15287878dc8917bcebf922fc765cbc616ac6967d2af4123e62ca1e153be9 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.1.0", sourceHash: "fa4e15287878" });
-/* Busch Cards Core 1.1.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.1.1 sha256:a3217faebd1d497c8ffb7a77c97d4fa1acb474dc4e27f340157a2231e2d6914e */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.1.1", sourceHash: "a3217faebd1d" });
+/* Busch Cards Core 1.1.1. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -566,7 +566,7 @@ class BuschCardsCore {
       this._deviceNotifyQueued = true;
       Promise.resolve().then(() => {
         this._deviceNotifyQueued = false; const ids = [...this._dirtyDevices]; this._dirtyDevices.clear();
-        for (const device of ids) for (const listener of this._deviceListeners.get(device) || []) { try { listener(); } catch {} }
+        for (const device of ids) for (const listener of this._deviceListeners.get(device) || []) { try { listener(); } catch (error) { console.warn("Busch Core device listener failed", error?.name); } }
       });
     }
   }
@@ -585,7 +585,7 @@ class BuschCardsCore {
       }
       if (this.registry.promises.has(name)) this.registry.invalidate(name);
       const pending = this.registry.load(name).catch(error => {
-        if (generation === this.generation) { this.lastErrors.set(name, error); for (const listener of this._listeners) { try { listener(); } catch {} } }
+        if (generation === this.generation) { this.lastErrors.set(name, error); for (const listener of this._listeners) { try { listener(); } catch (listenerError) { console.warn("Busch Core registry listener failed", listenerError?.name); } } }
         return null;
       }).finally(() => {
         if (generation !== this.generation || this._refreshing.get(name) !== pending) return;
