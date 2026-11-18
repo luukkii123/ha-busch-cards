@@ -1,0 +1,61 @@
+{
+  "note": "M5 baseline for M10/M11: WS requests of the device card with the shared test kit; regenerate with BUSCH_BASISWERT_SCHREIBEN=1",
+  "measured": {
+    "build_1_card": {
+      "get_states": 1,
+      "registry_list": 5,
+      "registry_list_by_type": {
+        "config/area_registry/list": 1,
+        "config/device_registry/list": 1,
+        "config/entity_registry/list": 1,
+        "config/floor_registry/list": 1,
+        "config/label_registry/list": 1
+      },
+      "subscribe_events": 6,
+      "subscribe_state_changed": 1
+    },
+    "get_states_bytes_in_fixture": 4045,
+    "build_3_cards": {
+      "get_states": 1,
+      "registry_list": 5,
+      "registry_list_by_type": {
+        "config/area_registry/list": 1,
+        "config/device_registry/list": 1,
+        "config/entity_registry/list": 1,
+        "config/floor_registry/list": 1,
+        "config/label_registry/list": 1
+      },
+      "subscribe_events": 6,
+      "subscribe_state_changed": 1
+    },
+    "after_10_state_changes": {
+      "get_states": 0,
+      "registry_list": 0,
+      "registry_list_by_type": {},
+      "subscribe_events": 0,
+      "subscribe_state_changed": 0
+    },
+    "after_entity_registry_updated": {
+      "get_states": 0,
+      "registry_list": 1,
+      "registry_list_by_type": {
+        "config/entity_registry/list": 1
+      },
+      "subscribe_events": 0,
+      "subscribe_state_changed": 0
+    },
+    "after_reconnect": {
+      "get_states": 1,
+      "registry_list": 5,
+      "registry_list_by_type": {
+        "config/area_registry/list": 1,
+        "config/device_registry/list": 1,
+        "config/entity_registry/list": 1,
+        "config/floor_registry/list": 1,
+        "config/label_registry/list": 1
+      },
+      "subscribe_events": 0,
+      "subscribe_state_changed": 0
+    }
+  }
+}
