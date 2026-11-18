@@ -6106,6 +6106,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       display_mode_icon: "Icon",
       power_on: "Einschalten",
       power_off: "Ausschalten",
+      power_pending: "Schaltet …",
       brightness: "Helligkeit",
       percentage: "Geschwindigkeit",
       preset_mode: "Lüftermodus",
@@ -6262,6 +6263,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       display_mode_icon: "Icon",
       power_on: "Turn on",
       power_off: "Turn off",
+      power_pending: "Switching …",
       brightness: "Brightness",
       percentage: "Speed",
       preset_mode: "Fan preset",
@@ -6414,6 +6416,7 @@ const DEV_STIL = `
   .dev-quick button,.dev-quick select { padding-inline:var(--ha-space-2,8px); }
   .dev-quick input { width:var(--dev-range-width); }
   .dev-quick :disabled { opacity:var(--disabled-opacity,.5);cursor:default; }
+  .dev-quick .dev-quick-pending { cursor:progress; }
   .dev-quick :focus-visible { outline:2px solid var(--primary-color);outline-offset:var(--ha-space-1,4px); }
   @container (max-width:600px) { .dev-kopf:has(.dev-quick:not([hidden])) { flex-wrap:wrap; } .dev-kopf:has(.dev-quick:not([hidden])) .dev-titel { flex-basis:calc(100% - var(--dev-control-size) * 3); } .dev-quick:not([hidden]) { order:4;flex:1 1 100%; } }
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
@@ -6543,6 +6546,9 @@ function devHassUnveraendert(karte, vorher, hass) {
   for (const [id, state] of g.states) if (states[id] !== state) return false;
   return true;
 }
+
+/** M14: how long a sent slider value or a busy power button waits for HA, and the keyboard batch window. */
+const DEV_QUICK_HOLD_MS = 10000, DEV_QUICK_KEY_MS = 400;
 
 class BuschDeviceCard extends HTMLElement {
   static getConfigElement() {
@@ -6892,6 +6898,7 @@ class BuschDeviceCard extends HTMLElement {
     this._quick.hidden=!controls.length;
     const key=JSON.stringify([this._entityId,controls.map(({value,disabled,...c})=>c)]);
     if(key!==this._quickKey){
+      for(const old of this._quickNodes||[]){clearTimeout(old._devQuickTimer);clearTimeout(old._devQuickKeyTimer);old._devQuickPending=old._devQuickBusy=null;}
       this._quickKey=key;this._quickGeneration=(this._quickGeneration||0)+1;this._quick.replaceChildren();this._quickNodes=[];this._quickOutputs=[];
       const entityId=this._entityId,generation=this._quickGeneration;
       for(const c of controls){
@@ -6909,27 +6916,60 @@ class BuschDeviceCard extends HTMLElement {
         else{el.type='button';el.textContent=label;}
         const current=()=>entityId===this._entityId&&generation===this._quickGeneration;
         const reset=()=>{if(!current())return;el._devQuickDraft=false;this._zeichneQuick();};
+        // M14: a sent slider value stays at the element until HA reports it, the call fails or the hold ends.
+        const drop=pending=>{if(el._devQuickPending!==pending)return;clearTimeout(el._devQuickTimer);el._devQuickPending=null;if(current())this._zeichneQuick();};
+        const send=(value,pending)=>this._quickAction(c.id,value,entityId,generation).then(ok=>{if(!ok&&pending)drop(pending);});
+        // M14: the power button is busy in the same tick; new state, error or the hold end release it.
+        const idle=()=>{if(!el._devQuickBusy)return;clearTimeout(el._devQuickTimer);el._devQuickBusy=null;el.removeAttribute('aria-busy');el.classList.remove('dev-quick-pending');el.textContent=label;el.setAttribute('aria-label',label);el.title=label;};
+        el._devQuickIdle=idle;
         if(c.kind){
           el.addEventListener('input',()=>{
             if(!current()||el.disabled)return;
             el._devQuickDraft=true;
             if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}
           });
-          el.addEventListener('blur',reset);
+          // M14: a pending keyboard batch goes out on blur instead of waiting for its timer.
+          el.addEventListener('blur',()=>{if(el._devQuickKeyTimer){clearTimeout(el._devQuickKeyTimer);el._devQuickKeyTimer=null;el._devQuickFlush?.();}reset();});
           el.addEventListener('pointercancel',reset);
-          el.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();reset();}});
+          // M14: a change between keydown and keyup comes from the keyboard.
+          el.addEventListener('pointerdown',()=>{el._devQuickKeyboard=false;});
+          el.addEventListener('keyup',()=>{el._devQuickKeyboard=false;});
+          el.addEventListener('keydown',event=>{
+            if(event.key==='Escape'){event.preventDefault();if(el._devQuickKeyTimer){clearTimeout(el._devQuickKeyTimer);el._devQuickKeyTimer=null;drop(el._devQuickPending);}reset();return;}
+            if(event.key!=='Tab')el._devQuickKeyboard=true;
+          });
         }
         el.addEventListener(c.kind?'change':'click',()=>{
-          if(!current())return;
+          if(!current()||el._devQuickBusy)return;
           const value=c.kind==='range'?Number(el.value):el.value;
           el._devQuickDraft=false;
-          this._quickAction(c.id,value,entityId,generation);
+          if(c.kind==='range'){
+            clearTimeout(el._devQuickTimer);
+            const pending=el._devQuickPending={value};
+            el._devQuickTimer=setTimeout(()=>drop(pending),DEV_QUICK_HOLD_MS);
+            clearTimeout(el._devQuickKeyTimer);el._devQuickKeyTimer=null;
+            // M14: keyboard steps are collected for DEV_QUICK_KEY_MS and only the last value is sent.
+            if(el._devQuickKeyboard){el._devQuickFlush=()=>{el._devQuickFlush=null;send(value,pending);};el._devQuickKeyTimer=setTimeout(()=>{el._devQuickKeyTimer=null;el._devQuickFlush?.();},DEV_QUICK_KEY_MS);}
+            else send(value,pending);
+          }else{
+            if(c.id==='power'){
+              const pendingLabel=this._texte.power_pending;
+              el._devQuickBusy={state:this._hass.states[entityId]};
+              el.setAttribute('aria-busy','true');el.classList.add('dev-quick-pending');el.textContent=pendingLabel;el.setAttribute('aria-label',pendingLabel);el.title=pendingLabel;
+              el._devQuickTimer=setTimeout(idle,DEV_QUICK_HOLD_MS);
+              this._quickAction(c.id,value,entityId,generation).then(ok=>{if(!ok)idle();});
+            }else send(value,null);
+          }
           this._zeichneQuick();
         });
         wrap.appendChild(el);this._quick.appendChild(wrap);this._quickNodes.push(el);this._quickOutputs.push(output);
       }
     }
-    controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.disabled)el._devQuickDraft=false;if(c.kind&&!el._devQuickDraft)el.value=c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});
+    controls.forEach((c,i)=>{const el=this._quickNodes[i];el.disabled=c.disabled;if(c.disabled)el._devQuickDraft=false;
+      // M14: HA reached the held value (within one step), or the control went unavailable.
+      const p=el._devQuickPending;if(p&&(c.disabled||Math.abs(Number(c.value)-p.value)<=c.step)){clearTimeout(el._devQuickTimer);el._devQuickPending=null;}
+      if(el._devQuickBusy&&(c.disabled||state!==el._devQuickBusy.state))el._devQuickIdle?.();
+      if(c.kind&&!el._devQuickDraft)el.value=el._devQuickPending?el._devQuickPending.value:c.value??'';const output=this._quickOutputs[i];if(output){output.textContent=this._quickValue(c,Number(el.value));el.setAttribute('aria-valuetext',output.textContent);}});
   }
 
   _quickValue(control,value) {
@@ -6940,14 +6980,15 @@ class BuschDeviceCard extends HTMLElement {
   }
 
   async _quickAction(id,value,entityId=this._entityId,generation=this._quickGeneration) {
-    if(entityId!==this._entityId||generation!==this._quickGeneration)return;
-    if(!this._config.quick_controls||!this._filterShowPrimary)return;
+    if(entityId!==this._entityId||generation!==this._quickGeneration)return false;
+    if(!this._config.quick_controls||!this._filterShowPrimary)return false;
     const state=this._hass?.states?.[this._entityId],c=devQuickControls(state?{...state,entity_id:this._entityId}:null).find(c=>c.id===id);
-    if(!c||c.disabled)return;
+    if(!c||c.disabled)return false;
     const data={entity_id:this._entityId};
-    if(c.kind==='range'){if(typeof value!=='number'||!Number.isFinite(value)||value<c.min||value>c.max)return;data[c.param]=value;}
-    if(c.kind==='select'){if(!c.options.includes(value))return;data[c.param]=value;}
-    try{await this._hass.callService(this._entityId.split('.')[0],c.service,data);}catch(error){this._zeigeDienstFehler(error);}
+    if(c.kind==='range'){if(typeof value!=='number'||!Number.isFinite(value)||value<c.min||value>c.max)return false;data[c.param]=value;}
+    if(c.kind==='select'){if(!c.options.includes(value))return false;data[c.param]=value;}
+    // M14: true once HA accepted the call; false lets the caller drop its held value or busy state.
+    try{await this._hass.callService(this._entityId.split('.')[0],c.service,data);return true;}catch(error){this._zeigeDienstFehler(error);return false;}
   }
 
   _zeichneChips() {

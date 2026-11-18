@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{ladeKarte}=require('./laden');
 function fixture(){
  const doc={activeElement:null,createElement(){return {children:[],dataset:{},handlers:{},setAttribute(){},addEventListener(e,f){this.handlers[e]=f},appendChild(e){this.children.push(e)},replaceChildren(){this.children=[]}}}};
- const {BuschDeviceCard,devGeraetAufloesen}=ladeKarte(['BuschDeviceCard','devGeraetAufloesen'],{document:doc});
+ const {BuschDeviceCard,devGeraetAufloesen}=ladeKarte(['BuschDeviceCard','devGeraetAufloesen'],{document:doc,setTimeout:()=>0,clearTimeout(){}});
  const card=new BuschDeviceCard(),calls=[];card._config={quick_controls:true};card._filterShowPrimary=true;card._quick=doc.createElement();
  card._hass={locale:{language:'en'},states:{},entities:{},devices:{d:{id:'d'}},config:{unit_system:{temperature:'°C'}},callService(...a){calls.push(a)}};
  return {card,calls,doc,devGeraetAufloesen};
