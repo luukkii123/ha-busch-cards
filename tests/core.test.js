@@ -61,7 +61,7 @@ test('fresh full snapshots recalculate a global smart query at most once and ret
  assert.deepEqual(ids(),['sensor.synthetic_0','sensor.synthetic_1']);
  off();c.dispose();
 });
-test('a one-state snapshot keeps global smart queries incremental',()=>{
+test('a one-state snapshot keeps global smart queries incremental',async()=>{
  const c=fresh(),states=Object.fromEntries(Array.from({length:100},(_,i)=>{
   const entity_id=`sensor.delta_${i}`;
   return [entity_id,{entity_id,state:i===0?'unavailable':'on',attributes:{}}];
@@ -71,7 +71,7 @@ test('a one-state snapshot keeps global smart queries incremental',()=>{
  const q=c.smartQuery({filter:{include:[{state:'unavailable'}]}}),off=c.subscribe(q,()=>{});
  const next={...states,'sensor.delta_1':{...states['sensor.delta_1'],state:'unavailable'}};
  const before=q.metrics.evaluated;
- c.syncStates(next);
+ c.syncStates(next);await Promise.resolve();
  assert.equal(q.metrics.evaluated-before,1);
  assert.deepEqual([...q.result].map(row=>row.entity),['sensor.delta_0','sensor.delta_1']);
  off();c.dispose();
@@ -120,3 +120,16 @@ test('reconnect replaces an in-flight state snapshot and rejects its late answer
  pending[0]([{entity_id:'light.decke',state:'old',attributes:{}}]);await old;assert.equal(c.getEntity('light.decke').state,'new');c.dispose();
 });
 test('device watchers batch relevant stream updates and ignore unrelated devices',async()=>{const c=fresh(),h=baueHass();c.seed(h);let calls=0;const off=c.watchDevice('d1',()=>calls++);c.updateState('sensor.anderes',{...h.states['sensor.anderes'],state:'9'});await Promise.resolve();assert.equal(calls,0);c.updateState('light.decke',{...h.states['light.decke'],state:'off'});c.updateState('sensor.decke_leistung',{...h.states['sensor.decke_leistung'],state:'8'});await Promise.resolve();assert.equal(calls,1);off();c.updateState('light.decke',h.states['light.decke']);await Promise.resolve();assert.equal(calls,1);c.dispose();});
+test('M4: changes within one microtask reach each query once as a bundle, no ID is lost',async()=>{
+ const c=fresh(),states={},entities={};for(let i=0;i<10;i++){const id='sensor.n_'+i;states[id]={entity_id:id,state:'5',attributes:{}};entities[id]={entity_id:id,platform:'mqtt'};}
+ c.seed({states,entities,devices:{},areas:{}});const q=c.query({filter:{include:[{domain:'sensor',state:'< 10'}]}});let calls=0,last;const off=c.subscribe(q,rows=>{calls++;last=rows;});calls=0;
+ const before=q.metrics.calculations;
+ for(let i=0;i<10;i++)c.updateState('sensor.n_'+i,{...states['sensor.n_'+i],state:i%2?'50':'5'});
+ c.updateState('sensor.n_0',{...states['sensor.n_0'],state:'50'});c.updateState('sensor.n_0',{...states['sensor.n_0'],state:'5'});
+ assert.equal(q.metrics.calculations,before,'nothing is recalculated synchronously');
+ await Promise.resolve();
+ assert.equal(q.metrics.calculations,before+1);assert.equal(calls,1);
+ assert.deepEqual([...last],['sensor.n_0','sensor.n_2','sensor.n_4','sensor.n_6','sensor.n_8']);
+ c.updateState('sensor.n_1',{...states['sensor.n_1'],state:'1'});await Promise.resolve();assert.equal(calls,2);assert.ok(last.includes('sensor.n_1'));
+ off();c.dispose();
+});

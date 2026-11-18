@@ -232,9 +232,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.1.2 sha256:0d0ba9fad0110d75998abc0fffa3661b01033be72547a515fc421ff0fab1b3d5 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.1.2", sourceHash: "0d0ba9fad011" });
-/* Busch Cards Core 1.1.2. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.2.0 sha256:97c46ba559da5a1bb27b3304272a197be3d36b3a9f250af94f2042c4318b2707 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.2.0", sourceHash: "97c46ba559da" });
+/* Busch Cards Core 1.2.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -361,7 +361,7 @@ function buschCompileRule(rule) {
   return { test: (info, now) => !!info?.stateObject && tests.length > 0 && tests.every(fn => fn(info, now)), guard: info => !!info && guards.every(fn => fn(info)), lookups, timeRules };
 }
 class BuschQueryEngine {
-  constructor(core) { this.core = core; this.cache = new Map(); this.timer = null; }
+  constructor(core) { this.core = core; this.cache = new Map(); this.timer = null; this.pending = new Map(); this.flushQueued = false; }
   query(spec) {
     const copy = JSON.parse(JSON.stringify(spec)), key = buschCoreKey(copy);
     if (this.cache.has(key)) return this.cache.get(key);
@@ -412,14 +412,30 @@ class BuschQueryEngine {
     }
     query.metrics.executionMs = performance.now() - start;
   }
+  // M4: changes are collected per microtask; each query evaluates a bundle once and notifies its subscribers at most once.
+  // An entity keeps its first old and its latest next info, so no ID is lost and the order inside a bundle does not matter.
   changed({ id, old, next }) {
-    for (const query of this.cache.values()) {
-      if (query.smart) { query.smart.changed(query, {id,old,next}); continue; }
-      if (query.include.some(rule => rule.guard(old) || rule.guard(next))) this.calculate(query, [id]); else this.core.metrics.queriesSkipped++;
+    const known = this.pending.get(id);
+    this.pending.set(id, known ? { id, old: known.old, next } : { id, old, next });
+    if (this.flushQueued) return;
+    this.flushQueued = true; Promise.resolve().then(() => this.flush());
+  }
+  flush() {
+    this.flushQueued = false;
+    if (!this.pending.size) return;
+    const changes = [...this.pending.values()]; this.pending.clear();
+    for (const query of [...this.cache.values()]) {
+      if (query.smart) {
+        if (typeof query.smart.changedBatch === 'function') query.smart.changedBatch(query, changes);
+        else for (const change of changes) query.smart.changed(query, change);
+        continue;
+      }
+      const ids = changes.filter(({ old, next }) => query.include.some(rule => rule.guard(old) || rule.guard(next))).map(change => change.id);
+      if (ids.length) this.calculate(query, ids); else this.core.metrics.queriesSkipped++;
     }
     this.schedule();
   }
-  refresh() { for (const query of this.cache.values()) this.calculate(query); this.schedule(); }
+  refresh() { this.pending.clear(); for (const query of this.cache.values()) this.calculate(query); this.schedule(); }
   subscribe(query, fn) {
     if (typeof fn !== 'function') throw new Error('A query subscriber must be a function');
     if (!this.cache.has(query.key)) { this.cache.set(query.key, query); this.calculate(query); }
@@ -442,7 +458,7 @@ class BuschQueryEngine {
       this.schedule();
     }, Math.min(2147483647, Math.max(1, deadline - Date.now())));
   }
-  stop() { for (const query of this.cache.values()) query.smart?.stop(query); if (this.timer !== null) clearTimeout(this.timer); this.timer = null; }
+  stop() { this.pending.clear(); for (const query of this.cache.values()) query.smart?.stop(query); if (this.timer !== null) clearTimeout(this.timer); this.timer = null; }
 }
 class BuschCardsCore {
   constructor() {
@@ -521,7 +537,8 @@ class BuschCardsCore {
           if (generation !== this.generation) return;
           this.registry.clear(); this._refreshing.clear(); this._queuedRefresh?.clear();
           this._snapshotEpoch = (this._snapshotEpoch || 0) + 1; this._snapshotPromise = null; this._stateBuffer = []; this.streaming = false;
-          this.ready = Promise.all([this.syncStream(), this.refreshRegistries()]); return this.ready;
+          this.ready = Promise.all([this.syncStream(), this.refreshRegistries()]);
+          this.smart?.retryTemplates(); return this.ready;
         };
         connection.addEventListener("ready", onReady);
         this.unsubscribers.push(() => connection.removeEventListener?.("ready", onReady));
@@ -880,13 +897,17 @@ class BuschSmartQueries {
     engine.cache.set(key,query); this.calculate(query); engine.evict(); return query;
   }
   candidates(plan, query) { return this.core.engine.candidates({lookups:query.scopeDeviceId?[...plan.constraints,['device',query.scopeDeviceId]]:plan.constraints}); }
-  changed(query, change) {
-    const id = change.id;
-    if (query.javascript || [...query.include,...query.extraPlans].some(p=>p.groups.has(id))) return this.calculate(query);
-    if(query.scopeDeviceId && ![change.old,change.next].some(info=>info?.device_id===query.scopeDeviceId)){this.core.metrics.queriesSkipped++;return;}
-    const statics = [...(query.spec.entities||[]),...query.templateRows];
-    if (query.include.some(p=>p.guard(change.old)||p.guard(change.next)) || statics.some(row=>(typeof row==='string'?row.trim():row?.entity)===id)) this.calculate(query,[id]);
-    else this.core.metrics.queriesSkipped++;
+  changed(query, change) { return this.changedBatch(query, [change]); }
+  changedBatch(query, changes) {
+    const plans = [...query.include,...query.extraPlans];
+    if (query.javascript || changes.some(change=>plans.some(p=>p.groups.has(change.id)))) return this.calculate(query);
+    const statics = new Set([...(query.spec.entities||[]),...query.templateRows].map(row=>typeof row==='string'?row.trim():row?.entity));
+    const ids = [];
+    for (const {id,old,next} of changes) {
+      if (query.scopeDeviceId && ![old,next].some(info=>info?.device_id===query.scopeDeviceId)) continue;
+      if (query.include.some(p=>p.guard(old)||p.guard(next)) || statics.has(id)) ids.push(id);
+    }
+    if (ids.length) this.calculate(query,ids); else this.core.metrics.queriesSkipped++;
   }
   calculate(query, ids) {
     try { return this.compute(query, ids); } catch (error) { query.error=error; this.notify(query); }
@@ -928,21 +949,33 @@ class BuschSmartQueries {
   notify(query){this.core.metrics.resultChanges++;for(const fn of query.subscribers){try{fn(query.result);}catch(error){console.warn('Busch Smart subscriber failed',error?.name);}}}
   startTemplate(query){
     const template=query.spec.filter?.template;
-    if(!template || query.templateActive || !/\{[{%#]/.test(template))return;
+    if(!template || query.templateActive || query.templateRetry || !/\{[{%#]/.test(template))return;
     query.templateActive=true;const generation=++query.templateGeneration;
     const connection=this.core.hass?.connection;
     if(typeof connection?.subscribeMessage!=='function'){query.error=query.templateError=new Error('template_unavailable');this.notify(query);return;}
     Promise.resolve().then(()=>connection.subscribeMessage(message=>{
       if(generation!==query.templateGeneration)return;
       if(message.error){query.error=query.templateError=new Error('template_error');this.notify(query);return;}
-      query.templateError=null;const raw=message.result;query.templateRows=typeof raw==='string'?raw.split(/[\s,]+/).filter(Boolean):Array.isArray(raw)?raw:[];
+      query.templateError=null;query.templateAttempts=0;const raw=message.result;query.templateRows=typeof raw==='string'?raw.split(/[\s,]+/).filter(Boolean):Array.isArray(raw)?raw:[];
       if(query.templateQueued)return;query.templateQueued=true;
       Promise.resolve().then(()=>{query.templateQueued=false;if(generation!==query.templateGeneration)return;this.calculate(query);this.core.engine.schedule();});
     },{type:'render_template',template,variables:{config:query.spec},strict:true})).then(off=>{
-      if(generation!==query.templateGeneration)off();else query.templateOff=off;
-    }).catch(()=>{if(generation===query.templateGeneration){query.error=query.templateError=new Error('template_error');this.notify(query);}});
+      if(generation!==query.templateGeneration)off();else{query.templateOff=off;query.templateAttempts=0;}
+    }).catch(error=>{
+      if(generation!==query.templateGeneration)return;
+      query.error=query.templateError=new Error('template_error');this.notify(query);
+      // M38: a rejected subscription (e.g. during a reconnect) is retried; a template error answer stays until the config changes.
+      if(error?.code!=='template_error'){query.templateActive=false;this.scheduleTemplate(query);}
+    });
   }
-  stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
+  scheduleTemplate(query){
+    const attempt=query.templateAttempts||0;query.templateAttempts=attempt+1;
+    query.templateRetry=setTimeout(()=>{query.templateRetry=null;if(query.subscribers.size)this.startTemplate(query);},[2000,10000,60000][Math.min(attempt,2)]);
+  }
+  retryTemplates(){
+    for(const query of [...this.core.engine.cache.values()]) if(query.smart===this&&query.templateRetry){clearTimeout(query.templateRetry);query.templateRetry=null;if(query.subscribers.size)this.startTemplate(query);}
+  }
+  stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;if(query.templateRetry)clearTimeout(query.templateRetry);query.templateRetry=null;query.templateAttempts=0;}
 }
 /* END BUSCH SHARED CORE */
 
