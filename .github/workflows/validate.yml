@@ -31,14 +31,19 @@ jobs:
           node-version: 22
       - name: Syntax
         run: for f in dist/*.js; do node --check "$f"; done
-      - name: Shared UI block matches its hash
+      - name: Shared blocks match their hash
         run: |
           python3 - <<'PY'
           import hashlib,pathlib,re,sys
+          bad=False
           for p in sorted(pathlib.Path('dist').glob('*.js')):
-            m=re.search(r'/\* BEGIN BUSCH SHARED UI \S+ sha256:([0-9a-f]{64}) \*/\n(.*?)/\* END BUSCH SHARED UI \*/',p.read_text(),re.S)
-            if not m: print(p,'kein Shared-UI-Block');continue
-            ok=hashlib.sha256(m[2].encode()).hexdigest()==m[1]; print(p,'ok' if ok else 'ABWEICHUNG'); ok or sys.exit(1)
+            text=p.read_text();names=re.findall(r'/\* BEGIN BUSCH SHARED (\w+) ',text)
+            if not names: print(p,'kein Shared-Block');continue
+            for n in sorted(set(names)):
+              blocks=re.findall(r'/\* BEGIN BUSCH SHARED '+n+r' \S+ sha256:([0-9a-f]{64}) \*/\n(.*?)/\* END BUSCH SHARED '+n+r' \*/',text,re.S)
+              ok=len(blocks)==1==names.count(n)==text.count('/* END BUSCH SHARED '+n+' */') and hashlib.sha256(blocks[0][1].encode()).hexdigest()==blocks[0][0]
+              print(p,n,'ok' if ok else 'ABWEICHUNG');bad|=not ok
+          sys.exit(1 if bad else 0)
           PY
       - name: Tests
         run: if ls tests/*.test.js >/dev/null 2>&1; then node --test tests/*.test.js; else echo "no tests"; fi

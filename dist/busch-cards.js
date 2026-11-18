@@ -220,7 +220,11 @@ const BuschUI = (() => {
  * hat.
  */
 
-/* Shared runtime for this repository only. Public API major: 1. */
+/* Shared Busch core, also embedded byte-identically in ha-unraid-cards and shared at
+ * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
+ * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
+ * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
+/* BEGIN BUSCH SHARED CORE 1.0.0 sha256:aa8dfb5f9143641fcb897ef299ff5d733d07ba634b52b8b273b40312db84a3eb */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -922,6 +926,7 @@ class BuschSmartQueries {
   }
   stop(query){query.templateGeneration++;query.templateOff?.();query.templateOff=null;query.templateActive=false;query.templateRows=[];query.templateError=null;}
 }
+/* END BUSCH SHARED CORE */
 
 const CARD_VERSION = "0.22.3";
 
