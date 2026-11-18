@@ -93,11 +93,11 @@ test('registry changes notify every attached consumer and failures stay inspecta
  const c=fresh(),h=baueHass();c.attach(h);await c.ready;let count=0;const unwatch=c.watch(()=>count++);
  h.devices={...h.devices,d1:{...h.devices.d1,name_by_user:'Renamed'}};await c.refreshRegistries(['device']);await Promise.resolve();assert.equal(c.getDevice('d1').name_by_user,'Renamed');assert.equal(count,1);unwatch();c.dispose();
 });
-test('registry subscriptions are cleaned up and a ready event reloads registries, states follow the next hass',async()=>{
+test('registry subscriptions are cleaned up and a ready event keeps loaded registries (M11), states follow the next hass',async()=>{
  const c=fresh(),h=baueHass();let unsubscribed=0;const events={},types=[];h.connection={subscribeEvents:async(fn,type)=>{types.push(type);return ()=>unsubscribed++;},addEventListener:(n,fn)=>events[n]=fn,removeEventListener:(n)=>delete events[n]};
  const original=h.callWS.bind(h);h.callWS=async msg=>{if(msg.type==='get_states')throw Error('no snapshot expected');return original(msg);};
  c.attach(h);await c.ready;await new Promise(r=>setImmediate(r));assert.equal(typeof events.ready,'function');assert.ok(!types.includes('state_changed'));
- const lists=h.aufrufe.length;await events.ready();assert.equal(h.aufrufe.length-lists,5,'ready reloads the five registries');
+ const lists=h.aufrufe.length;await events.ready();assert.equal(h.aufrufe.length-lists,0,'M11: ready keeps the loaded registries');
  c.attach({...h,states:{...h.states,'light.decke':{...h.states['light.decke'],state:'off'}}});assert.equal(c.getEntity('light.decke').state,'off');
  c.dispose();assert.equal(unsubscribed,5);assert.equal(events.ready,undefined);
 });
@@ -152,7 +152,7 @@ test('M10: building and reconnecting send neither get_states nor subscribe_event
  const counts=()=>({get_states:ha.count('get_states'),state_changed:ha.count('subscribe_events:state_changed'),subscribe_entities:ha.count('subscribe_entities'),subscribe_events:ha.count('subscribe_events'),registry_list:ha.countMatching(/^config\/\w+_registry\/list$/)});
  assert.deepEqual(counts(),{get_states:0,state_changed:0,subscribe_entities:1,subscribe_events:5,registry_list:5},'build');
  ha.resetStats();ha.reconnect();await kit.flush();stream.full();
- assert.deepEqual(counts(),{get_states:0,state_changed:0,subscribe_entities:0,subscribe_events:0,registry_list:5},'reconnect (the socket library resubscribes)');
+ assert.deepEqual(counts(),{get_states:0,state_changed:0,subscribe_entities:0,subscribe_events:0,registry_list:0},'reconnect (the socket library resubscribes; M11: no full list without a registry change)');
  stream.change('sensor.a',{state:'2'});assert.equal(c.getEntity('sensor.a').state,'2');c.dispose();
 });
 test('M10: after a reconnect the stream alone brings correct values, removed entities go, no snapshot request',async()=>{
@@ -220,4 +220,63 @@ test('M10: track/unchanged stay fed by hass.states',()=>{
  const deps=c.track(()=>c.getDeviceEntities('d1'));
  c.attach({...h,states:{...h.states,'sensor.anderes':{...h.states['sensor.anderes'],state:'9'}}});assert.ok(c.unchanged(deps),'foreign device');
  c.attach({...c.hass,states:{...c.hass.states,'sensor.decke_leistung':{...h.states['sensor.decke_leistung'],state:'1'}}});assert.ok(!c.unchanged(deps),'own device');c.dispose();
+});
+// M11: entity registry events fetch only their entry; a reconnect loads full lists only when the display registries differ.
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const lists=ha=>ha.countMatching(/^config\/\w+_registry\/list$/);
+function entryServer(ha){ha.respond('config/entity_registry/get',message=>{const entry=ha.server.entities[message.entity_id];if(!entry)throw Object.assign(Error('Entity not found'),{code:'not_found'});return {...entry,unique_id:'uid-'+message.entity_id};});return ha;}
+test('M11: a registry update or create fetches one entry with get, no full list; queries and watchers follow',async()=>{
+ const {c,ha}=await streamed();entryServer(ha);ha.resetStats();let notified=0;const unwatch=c.watch(()=>notified++);
+ const q=c.query({filter:{include:[{integration:'renamed'}]}});const off=c.subscribe(q,()=>{});
+ ha.setRegistry('entity',{...ha.server.entities,'sensor.a':{entity_id:'sensor.a',platform:'renamed',name:'Neu'}},{action:'update',entity_id:'sensor.a',changes:{name:null}});
+ await wait(70);await kit.flush();
+ assert.equal(ha.count('config/entity_registry/list'),0,'no full entity list');assert.equal(lists(ha),0);assert.equal(ha.count('config/entity_registry/get'),1);
+ assert.equal(c.getEntity('sensor.a').registry.name,'Neu');assert.equal(c.getEntity('sensor.a').registry.unique_id,'uid-sensor.a');assert.deepEqual([...q.result],['sensor.a']);assert.ok(notified>=1);
+ ha.setRegistry('entity',{...ha.server.entities,'sensor.new':{entity_id:'sensor.new',platform:'renamed'}},{action:'create',entity_id:'sensor.new'});
+ await wait(70);await kit.flush();assert.equal(lists(ha),0);assert.equal(ha.count('config/entity_registry/get'),2);assert.equal(c.index.registry.get('sensor.new').platform,'renamed');
+ assert.equal(c.debugSnapshot().registryRequests.entity_get,2);off();unwatch();c.dispose();
+});
+test('M11: remove is applied locally and an entity_id change moves the entry, a missing entry counts as removed',async()=>{
+ const {c,ha}=await streamed();entryServer(ha);ha.resetStats();
+ const without={...ha.server.entities};delete without['sensor.b'];ha.setRegistry('entity',without,{action:'remove',entity_id:'sensor.b'});
+ await wait(70);await kit.flush();assert.equal(lists(ha),0);assert.equal(ha.count('config/entity_registry/get'),0,'remove needs no request');
+ assert.equal(c.index.registry.has('sensor.b'),false);assert.equal(c.getEntity('sensor.b').platform,undefined);assert.equal(c.getEntity('sensor.b').state,'1','the state stays');
+ const moved={...ha.server.entities,'sensor.a2':{entity_id:'sensor.a2',platform:'demo'}};delete moved['sensor.a'];
+ ha.setRegistry('entity',moved,{action:'update',entity_id:'sensor.a2',old_entity_id:'sensor.a',changes:{entity_id:'sensor.a'}});
+ await wait(70);await kit.flush();assert.equal(lists(ha),0);assert.equal(c.index.registry.has('sensor.a'),false);assert.equal(c.index.registry.get('sensor.a2').platform,'demo');
+ ha.fireEvent('entity_registry_updated',{action:'update',entity_id:'sensor.gone',changes:{}});c.index.registry.set('sensor.gone',{entity_id:'sensor.gone'});
+ await wait(70);await kit.flush();assert.equal(lists(ha),0);assert.equal(c.index.registry.has('sensor.gone'),false,'not_found removes the entry');c.dispose();
+});
+test('M11: a reconnect without registry change loads no full list, also when the frontend hands over an equal copy',async()=>{
+ const {c,ha,stream}=await streamed();ha.resetStats();
+ ha.reconnect();await kit.flush();stream.full();await c.ready;
+ c.attach({...ha.hass,entities:plain(ha.server.entities),devices:{...ha.server.devices},areas:{...ha.server.areas},floors:{...ha.server.floors}});
+ await wait(70);await kit.flush();assert.equal(lists(ha),0,'no full registry list');assert.equal(c._staleDisplay,null);
+ // Later display changes while the events are live are the frontend's echo of handled events: still no list.
+ c.attach({...ha.hass,entities:{...plain(ha.server.entities),'sensor.x':{entity_id:'sensor.x',platform:'demo'}}});await wait(70);assert.equal(lists(ha),0);c.dispose();
+});
+test('M11: a reconnect after which hass.entities differs loads the entity list once (labels follow), not the unchanged ones',async()=>{
+ const {c,ha,stream}=await streamed();ha.resetStats();
+ ha.disconnect();ha.server.entities={...ha.server.entities,'sensor.a':{entity_id:'sensor.a',platform:'demo',name:'Offline umbenannt'}};
+ ha.reconnect();await kit.flush();stream.full();
+ c.attach({...ha.hass,entities:plain(ha.server.entities),devices:{...ha.server.devices}});c.attach({...c.hass});
+ await wait(70);await kit.flush();
+ assert.equal(ha.count('config/entity_registry/list'),1,'one full entity list');assert.equal(ha.count('config/device_registry/list'),0);assert.equal(ha.count('config/area_registry/list'),0);
+ assert.equal(ha.count('config/label_registry/list'),1,'labels have no display copy and follow once');assert.equal(c.getEntity('sensor.a').registry.name,'Offline umbenannt');
+ c.attach({...ha.hass,entities:plain(ha.server.entities)});await wait(70);assert.equal(ha.count('config/entity_registry/list'),1,'only the first copy after the reconnect counts');c.dispose();
+});
+test('M11: non-admin users keep the targeted get; a rejected get falls back to the full list as before',async()=>{
+ const c=fresh(),clock=kit.createClock(),ha=entryServer(kit.createHass({clock,user:{id:'u',name:'Gast',is_admin:false},states:{'sensor.a':{state:'1'}},entities:{'sensor.a':{entity_id:'sensor.a',platform:'demo'}}}));
+ c.retain(ha.hass);ha.onUpdate(hass=>c.attach(hass));await c.ready;await kit.flush();ha.resetStats();
+ ha.setRegistry('entity',{'sensor.a':{entity_id:'sensor.a',platform:'demo',name:'Eins'}},{action:'update',entity_id:'sensor.a',changes:{}});
+ await wait(70);await kit.flush();assert.equal(lists(ha),0);assert.equal(c.getEntity('sensor.a').registry.name,'Eins');
+ ha.behaveOnce('config/entity_registry/get',{reject:Object.assign(Error('Unauthorized'),{code:'unauthorized'})});
+ ha.setRegistry('entity',{'sensor.a':{entity_id:'sensor.a',platform:'demo',name:'Zwei'}},{action:'update',entity_id:'sensor.a',changes:{}});
+ await wait(70);await kit.flush();assert.equal(ha.count('config/entity_registry/list'),1,'fallback: one full list');assert.equal(c.getEntity('sensor.a').registry.name,'Zwei');c.dispose();
+});
+test('M11: many entity events at once (HA start) or one without entity_id load one full list instead of many gets',async()=>{
+ const {c,ha}=await streamed();entryServer(ha);ha.resetStats();
+ for(let i=0;i<30;i++)ha.fireEvent('entity_registry_updated',{action:'create',entity_id:'sensor.burst_'+i});
+ await wait(70);await kit.flush();assert.equal(ha.count('config/entity_registry/get'),0);assert.equal(ha.count('config/entity_registry/list'),1);
+ ha.fireEvent('entity_registry_updated',{action:'update'});await wait(70);await kit.flush();assert.equal(ha.count('config/entity_registry/list'),2);c.dispose();
 });

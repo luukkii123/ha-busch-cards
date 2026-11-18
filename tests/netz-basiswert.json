@@ -50,14 +50,8 @@
     },
     "after_reconnect": {
       "get_states": 0,
-      "registry_list": 5,
-      "registry_list_by_type": {
-        "config/area_registry/list": 1,
-        "config/device_registry/list": 1,
-        "config/entity_registry/list": 1,
-        "config/floor_registry/list": 1,
-        "config/label_registry/list": 1
-      },
+      "registry_list": 0,
+      "registry_list_by_type": {},
       "subscribe_events": 0,
       "subscribe_state_changed": 0,
       "subscribe_entities": 0

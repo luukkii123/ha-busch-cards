@@ -62,3 +62,11 @@ test('M4: numeric hostname sort uses the shared collator and a burst notifies on
  assert.deepEqual(order(q),['device_tracker.renamed','device_tracker.t0','device_tracker.t1','device_tracker.t2','device_tracker.t3']);
  for(const [i,host] of [[0,'host-100'],[3,'HOST-1']]){const id='device_tracker.t'+i,prev=f.core.index.states.get(id);f.core.updateState(id,{...prev,attributes:{...prev.attributes,host_name:host}});}
  await Promise.resolve();assert.equal(calls,1);assert.deepEqual(order(q),['device_tracker.renamed','device_tracker.t3','device_tracker.t1','device_tracker.t2','device_tracker.t0']);off();});
+test('M11: a rename from the network card fetches one registry entry and no full entity list',async()=>{const kit=require('./_testkit.cjs'),l=load(),f=fixture(l),ha=kit.createHass({states:f.states,entities:f.entities,devices:f.devices});
+ ha.respond('config/entity_registry/update',message=>{const {type,entity_id,...changes}=message;ha.setRegistry('entity',{...ha.server.entities,[entity_id]:{...ha.server.entities[entity_id],...changes}},{action:'update',entity_id,changes:{name:null}});return {entity_entry:ha.server.entities[entity_id]};});
+ ha.respond('config/entity_registry/get',message=>({...ha.server.entities[message.entity_id]}));
+ const core=new l.BuschCardsCore(),release=core.retain(ha.hass);ha.onUpdate(hass=>core.attach(hass));await core.ready;await kit.flush();ha.resetStats();
+ const c=new l.BuschNetworkCard();c._core=core;c._config=l.buschNetworkConfig({show_rename:true});c._hass=ha.hass;c._render=()=>{};
+ await c._registryAction('rename','device_tracker.renamed','Neuer Name');await new Promise(r=>setTimeout(r,80));await kit.flush();
+ assert.equal(ha.count('config/entity_registry/update'),1);assert.equal(ha.count('config/entity_registry/list'),0,'no full entity list');assert.equal(ha.count('config/entity_registry/get'),1,'exactly one get');
+ assert.equal(core.getEntity('device_tracker.renamed').registry.name,'Neuer Name');assert.equal(new l.BuschNetworkClientResolver(core).resolve('device_tracker.renamed').name,'Neuer Name');release();core.dispose();});
