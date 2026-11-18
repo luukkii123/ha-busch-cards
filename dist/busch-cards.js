@@ -7230,7 +7230,7 @@ class BuschNetworkClock {
  changed(){this.core.metrics.queriesSkipped++;}
  calculate(query){const now=Date.now(),minute=Math.floor(now/60000);query.metrics.calculations++;query.nextDeadline=(minute+1)*60000;if(query.result[0]!==minute){query.result=Object.freeze([minute]);for(const callback of query.subscribers){try{callback(query.result);}catch(error){console.warn('Busch Network clock subscriber failed',error?.name);}}}}
 }
-const BUSCH_NETWORK_DEFAULTS={display_mode:'auto',layout:'detailed',show_header:true,show_status:true,show_details:true,show_clients:true,start_expanded:true,show_controls:true,show_wlan:true,show_reboot:true,show_reconnect:true,show_update:true,show_metrics:true,show_empty:true,include_unavailable:true,source_type:'router',show_ip:true,show_mac:true,show_hostname:true,show_network_device:true,show_last_changed:true,show_last_time_reachable:true,time_fallback:false,show_internet:true,show_wol:true,show_rename:false,show_labels:false,label_ids:[],confirm_reboot:true,confirm_reconnect:true,confirm_internet:true,count:20,columns:1,filter:{include:[],exclude:[]},sort:{method:'name',reverse:false},actions:[],roles:{},debug:false};
+const BUSCH_NETWORK_DEFAULTS={display_mode:'auto',layout:'detailed',show_header:true,show_status:true,show_details:true,show_clients:true,start_expanded:true,show_controls:true,show_wlan:true,show_reboot:true,show_reconnect:true,show_update:true,show_metrics:true,show_empty:true,include_unavailable:true,source_type:'router',show_ip:true,show_mac:true,show_hostname:true,show_network_device:true,show_last_changed:true,show_last_time_reachable:true,time_fallback:false,show_internet:true,show_wol:true,show_rename:false,show_labels:false,label_ids:[],confirm_reboot:true,confirm_reconnect:true,confirm_internet:true,confirm_wlan:false,admin_actions:false,count:20,columns:1,filter:{include:[],exclude:[]},sort:{method:'name',reverse:false},actions:[],roles:{},debug:false};
 function buschNetworkConfig(config={},kind='network'){
  const result=BuschUI.validateConfig(config,{normalize:copy=>({...BUSCH_NETWORK_DEFAULTS,...copy,filter:{include:[],exclude:[],...copy.filter},sort:{method:'name',reverse:false,...copy.sort},roles:{...copy.roles}})});if(!result.ok)throw result.error;const value=result.value;
  if(!['auto','image','icon'].includes(value.display_mode)||!['compact','detailed'].includes(value.layout)||!Number.isInteger(value.count)||value.count<0||![1,2,3].includes(value.columns))throw new Error('invalid_config');
@@ -7413,6 +7413,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
    confirm_reboot: "Neustart bestätigen",
    confirm_reconnect: "WAN-Aktion bestätigen",
    confirm_internet: "Internetzugang bestätigen",
+   confirm_wlan: "WLAN-Schalten bestätigen",
+   admin_actions: "Router-Aktionen nur für Admins",
    debug: "Diagnose anzeigen",
    tap_action: "Antippen",
    hold_action: "Halten",
@@ -7485,6 +7487,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
    confirm_reboot: "Neustart bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
    confirm_reconnect: "WAN-Aktion bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
    confirm_internet: "Internetzugang bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   confirm_wlan: "Fragt vor dem Ein- oder Ausschalten eines WLANs nach. Vorgabe aus.",
+   admin_actions: "Neustart, WAN-Neuverbindung, Update, Internetzugang und WLAN nur für Administratoren anzeigen und ausführen. Die Karte ist keine Sicherheitsgrenze. Vorgabe aus.",
    debug: "Diagnose anzeigen bei verfügbaren und belegten Daten. Vorgabe aus.",
    tap_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
    hold_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
@@ -7719,6 +7723,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
    confirm_reboot: "Confirm restart",
    confirm_reconnect: "Confirm WAN action",
    confirm_internet: "Confirm internet access",
+   confirm_wlan: "Confirm Wi-Fi switching",
+   admin_actions: "Router actions for admins only",
    debug: "Show diagnostics",
    tap_action: "Tap action",
    hold_action: "Hold action",
@@ -7791,6 +7797,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
    confirm_reboot: "Confirm restart when verified data and capabilities are available. Default on.",
    confirm_reconnect: "Confirm WAN action when verified data and capabilities are available. Default on.",
    confirm_internet: "Confirm internet access when verified data and capabilities are available. Default on.",
+   confirm_wlan: "Asks before switching a Wi-Fi network on or off. Default off.",
+   admin_actions: "Show and run restart, WAN reconnect, update, internet access and Wi-Fi for administrators only. The card is not a security boundary. Default off.",
    debug: "Show diagnostics when verified data and capabilities are available. Default off.",
    tap_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
    hold_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
@@ -8027,6 +8035,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    confirm_reboot: "Neustart bestätigen",
    confirm_reconnect: "WAN-Aktion bestätigen",
    confirm_internet: "Internetzugang bestätigen",
+   confirm_wlan: "WLAN-Schalten bestätigen",
+   admin_actions: "Router-Aktionen nur für Admins",
    debug: "Diagnose anzeigen",
    tap_action: "Antippen",
    hold_action: "Halten",
@@ -8099,6 +8109,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    confirm_reboot: "Neustart bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
    confirm_reconnect: "WAN-Aktion bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
    confirm_internet: "Internetzugang bestätigen bei verfügbaren und belegten Daten. Vorgabe ein.",
+   confirm_wlan: "Fragt vor dem Ein- oder Ausschalten eines WLANs nach. Vorgabe aus.",
+   admin_actions: "Neustart, WAN-Neuverbindung, Update, Internetzugang und WLAN nur für Administratoren anzeigen und ausführen. Die Karte ist keine Sicherheitsgrenze. Vorgabe aus.",
    debug: "Diagnose anzeigen bei verfügbaren und belegten Daten. Vorgabe aus.",
    tap_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
    hold_action: "Native HA-Aktion mit Ziel und Bestätigung. Vorgabe: Details beim Antippen, sonst nichts.",
@@ -8333,6 +8345,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    confirm_reboot: "Confirm restart",
    confirm_reconnect: "Confirm WAN action",
    confirm_internet: "Confirm internet access",
+   confirm_wlan: "Confirm Wi-Fi switching",
+   admin_actions: "Router actions for admins only",
    debug: "Show diagnostics",
    tap_action: "Tap action",
    hold_action: "Hold action",
@@ -8405,6 +8419,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    confirm_reboot: "Confirm restart when verified data and capabilities are available. Default on.",
    confirm_reconnect: "Confirm WAN action when verified data and capabilities are available. Default on.",
    confirm_internet: "Confirm internet access when verified data and capabilities are available. Default on.",
+   confirm_wlan: "Asks before switching a Wi-Fi network on or off. Default off.",
+   admin_actions: "Show and run restart, WAN reconnect, update, internet access and Wi-Fi for administrators only. The card is not a security boundary. Default off.",
    debug: "Show diagnostics when verified data and capabilities are available. Default off.",
    tap_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
    hold_action: "Native HA action with target and confirmation. Default: details on tap, otherwise none.",
@@ -8643,6 +8659,12 @@ const SCHEMA_BUSCH_NETWORK_CARD=[
  },
  {
   name: "confirm_internet",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "admin_actions",
   selector: {
    boolean: {}
   }
@@ -8973,6 +8995,18 @@ const SCHEMA_BUSCH_FRITZ_DEVICE_CARD=[
  },
  {
   name: "confirm_internet",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "confirm_wlan",
+  selector: {
+   boolean: {}
+  }
+ },
+ {
+  name: "admin_actions",
   selector: {
    boolean: {}
   }
@@ -9340,10 +9374,12 @@ class BuschNetworkBaseCard extends HTMLElement {
    if(id){const row=this._freshClient(id);if(!row)return;if(kind==='internet'&&this._config.show_internet){entity=row.internet;domain='switch';service=entity?.state==='on'?'turn_off':'turn_on';confirm=this._config.confirm_internet;}else if(kind==='wol'&&this._config.show_wol){entity=row.wol;domain='button';service='press';}}
    else{const model=buschFritzModel(this._core,this._config);if(!this._config['show_'+kind])return;entity=model.roles[kind];domain=kind==='update'?'update':'button';service=kind==='update'?'install':'press';confirm=kind==='reboot'?this._config.confirm_reboot:kind==='reconnect'?this._config.confirm_reconnect:true;if(kind==='update'&&(!(Number(entity?.attributes.supported_features)&1)||entity?.state!=='on'||entity?.attributes.in_progress))return;}
    if(!buschNetworkAvailable(entity)||entity.domain!==domain||(domain==='switch'&&!['on','off'].includes(entity.state)))return;
+   /* M17: re-checked at click time, so a button rendered while the user was still an admin cannot act. WOL stays a user action. */
+   if(kind!=='wol'&&!BuschUI.mayAct(this._hass,this._config,'admin'))return;
    if(confirm&&!window.confirm(this._text().confirm))return;const generation=this._generation;this._busy=true;await this._hass.callService(domain,service,{entity_id:entity.entity_id});if(generation===this._generation)this._error=null;
   }catch(error){this._error='failed';}finally{this._busy=false;this._render();}
  }
- async _wlanAction(id){if(this._configError||this._busy||!this._config.show_controls||!this._config.show_wlan)return;try{const model=buschFritzModel(this._core,this._config),e=model.wlan.find(e=>e.entity_id===id);if(!buschNetworkAvailable(e)||!['on','off'].includes(e.state))return;this._busy=true;await this._hass.callService('switch',e.state==='on'?'turn_off':'turn_on',{entity_id:id});}catch(error){this._error='failed';}finally{this._busy=false;this._render();}}
+ async _wlanAction(id){if(this._configError||this._busy||!this._config.show_controls||!this._config.show_wlan||!BuschUI.mayAct(this._hass,this._config,'admin'))return;try{const model=buschFritzModel(this._core,this._config),e=model.wlan.find(e=>e.entity_id===id);if(!buschNetworkAvailable(e)||!['on','off'].includes(e.state))return;if(this._config.confirm_wlan&&!window.confirm(this._text().confirm))return;this._busy=true;await this._hass.callService('switch',e.state==='on'?'turn_off':'turn_on',{entity_id:id});}catch(error){this._error='failed';}finally{this._busy=false;this._render();}}
  async _registryAction(kind,id,value){
   if(this._configError||this._busy||!this._hass?.user?.is_admin||!this._config['show_'+(kind==='rename'?'rename':'labels')])return;
   try{const row=this._freshClient(id);if(!row)throw new Error('scope_error');let update;if(kind==='rename'){if(typeof value!=='string'||!value.trim()||value.trim().length>200||/[\x00-\x1f]/.test(value))throw new Error('name_invalid');update={name:value.trim()};}else if(kind==='labels'){if(!Array.isArray(value)||value.some(id=>typeof id!=='string'||!this._core.labels.has(id)||(this._config.label_ids.length&&!this._config.label_ids.includes(id)&&!row.info.registry.labels?.includes(id))))throw new Error('label_invalid');update={labels:[...new Set(value)]};}else return;this._busy=true;await this._hass.callWS({type:'config/entity_registry/update',entity_id:id,...update});this._error=null;
@@ -9363,7 +9399,7 @@ class BuschNetworkBaseCard extends HTMLElement {
  _customButtons(parent,id){for(const action of this._config.actions){const icon=['icon-only','overflow'].includes(action.variant)?action.icon||'mdi:dots-horizontal':undefined;const button=this._button(parent,action.name,()=>{},action.variant||'secondary',icon);this._bindActions(button,action,id);}}
  _clientNode(row){const t=this._text(),c=this._config,root=buschNetworkNode('article',undefined,'client '+c.layout),head=buschNetworkNode('div',undefined,'client-head'),main=buschNetworkNode('div',undefined,'main');root.dataset.entityId=row.entity_id;head.appendChild(BuschUI.media({},row.media,'mdi:devices','row-icon'));const title=buschNetworkNode('p',row.name,'client-name');main.appendChild(title);head.appendChild(main);if(c.show_status){const badge=BuschUI.statusBadge(row.status==='home'?'online':row.status==='not_home'?'offline':row.status,t[row.status]);badge.className+=' client-status';head.appendChild(badge);}root.appendChild(head);const details=buschNetworkNode('div',undefined,'client-details'),add=(label,value)=>details.appendChild(buschNetworkNode('p',label+': '+value,'detail'));
   if(c.show_ip)add(t.ip,row.ip||t.unknown);if(c.show_hostname&&row.hostname)add(t.hostname,row.hostname);if(c.show_mac&&c.layout!=='compact')add(t.mac,row.mac||t.unknown);if(c.show_network_device)add(t.network_device,row.network_name||t.unknown);if(c.show_last_changed&&c.layout!=='compact')add(t.last_changed,buschNetworkTimestamp(row.last_changed,this._hass,t));if(c.show_last_time_reachable){const stamp=row.last_time_reachable|| (c.time_fallback?row.last_changed:null);add(row.last_time_reachable||!c.time_fallback?t.last_time_reachable:t.time_fallback_label,buschNetworkTimestamp(stamp,this._hass,t));}if(c.show_internet&&row.internet)add(t.internet,row.internet.state==='on'?t.allowed:row.internet.state==='off'?t.blocked:t.unavailable);if(c.layout!=='compact'){if(row.connection_type)add(t.network_device,row.connection_type);if(row.ssid)add(t.wlan,row.ssid);}root.appendChild(details);
-  const actions=buschNetworkNode('div',undefined,'actions');if(c.show_details){const button=this._button(actions,t.details,()=>{},'quiet','mdi:information-outline');this._bindActions(button,c,row.entity_id);}if(c.show_controls){if(c.show_internet&&buschNetworkAvailable(row.internet)&&['on','off'].includes(row.internet.state))this._button(actions,row.internet.state==='on'?t.internet_off:t.internet_on,()=>this._nativeAction('internet',row.entity_id),row.internet.state==='on'?'danger':'secondary');if(c.show_wol&&buschNetworkAvailable(row.wol))this._button(actions,t.wol,()=>this._nativeAction('wol',row.entity_id));this._customButtons(actions,row.entity_id);}if(actions.children.length)root.appendChild(actions);
+  const actions=buschNetworkNode('div',undefined,'actions');if(c.show_details){const button=this._button(actions,t.details,()=>{},'quiet','mdi:information-outline');this._bindActions(button,c,row.entity_id);}if(c.show_controls){if(c.show_internet&&BuschUI.mayAct(this._hass,c,'admin')&&buschNetworkAvailable(row.internet)&&['on','off'].includes(row.internet.state))this._button(actions,row.internet.state==='on'?t.internet_off:t.internet_on,()=>this._nativeAction('internet',row.entity_id),row.internet.state==='on'?'danger':'secondary');if(c.show_wol&&buschNetworkAvailable(row.wol))this._button(actions,t.wol,()=>this._nativeAction('wol',row.entity_id));this._customButtons(actions,row.entity_id);}if(actions.children.length)root.appendChild(actions);
   if(this._hass?.user?.is_admin){if(c.show_rename)this._registryForm(root,row,'rename');if(c.show_labels)this._registryForm(root,row,'labels');}return root;
  }
  _renderClients(){if(!this._clientBody)return;const c=this._config,t=this._text(),rows=c.count?this._rows.slice(0,this._visible??c.count):this._rows;if(this._clientBody.style.getPropertyValue?.('--network-columns')!==String(c.columns))this._clientBody.style.setProperty?.('--network-columns',String(c.columns));const used=new Set(),nodes=[];for(const row of rows){used.add(row.entity_id);const signature=buschCoreKey({info:row.info.stateObject,registry:row.info.registry,name:row.name,ap:row.network_name,internet:row.internet?.state,wol:row.wol?.state,locale:BuschUI.language(this._hass),admin:this._hass?.user?.is_admin,busy:this._busy,labelChoices:c.label_ids.map(id=>this._core.labels.get(id)),config:c});let item=this._rowNodes.get(row.entity_id);if(!item||item.signature!==signature){item={signature,node:this._clientNode(row)};this._rowNodes.set(row.entity_id,item);}nodes.push(item.node);}for(const id of this._rowNodes.keys())if(!used.has(id))this._rowNodes.delete(id);if(!rows.length&&c.show_empty){this._emptyNode||=buschNetworkNode('p',t.empty,'message');if(this._emptyNode.textContent!==t.empty)this._emptyNode.textContent=t.empty;nodes.push(this._emptyNode);}if(rows.length<this._rows.length){const key=t.more+'|'+this._busy;if(this._moreNodeKey!==key){this._moreNodeKey=key;this._moreNode=buschNetworkNode('div',undefined,'actions');this._button(this._moreNode,t.more,()=>{this._visible=Math.min(this._rows.length,(this._visible??this._config.count)+this._config.count);this._renderClients();},'quiet');}nodes.push(this._moreNode);}if(this._clientBody.children.length!==nodes.length||nodes.some((n,i)=>this._clientBody.children[i]!==n))this._clientBody.replaceChildren(...nodes);if(this._clientBody.isConnected)this._pruneGestures();if(this._clientSection?.firstChild){const text=t.clients+' ('+this._rows.length+')';if(this._clientSection.firstChild.textContent!==text)this._clientSection.firstChild.textContent=text;}}
@@ -9374,8 +9410,8 @@ class BuschNetworkBaseCard extends HTMLElement {
   const error=this._configError||this._queryError||this._error;if(error){const message=buschNetworkNode('p',t[error]||t.invalid_config,'message error');message.setAttribute('role','alert');card.appendChild(message);}if(this._core?.lastErrors?.size)card.appendChild(buschNetworkNode('p',t.registry_error,'message error'));
   if(this._kind==='fritz'&&!this._configError){
    if(!this._core)card.appendChild(buschNetworkNode('p',t.loading,'message'));else if(!model?.device)card.appendChild(buschNetworkNode('p',t.choose,'message'));else{if(model.ambiguous.length)card.appendChild(buschNetworkNode('p',t.ambiguous,'message'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);
-    const actions=buschNetworkNode('div',undefined,'actions');if(c.show_controls){for(const role of ['reboot','reconnect','update']){const e=model.roles[role];if(c['show_'+role]&&buschNetworkAvailable(e)&&(role!=='update'||(e.state==='on'&&(Number(e.attributes.supported_features)&1)&&!e.attributes.in_progress)))this._button(actions,t[role],()=>this._nativeAction(role),role==='reconnect'?'danger':'secondary');}this._customButtons(actions,null);}if(c.show_details){const e=model.roles.connection||model.roles.uptime||model.roles.update;if(e)this._button(actions,t.details,()=>this._details(e.entity_id),'quiet');}if(actions.children.length)card.appendChild(actions);
-    if(c.show_wlan&&model.wlan.length){const body=buschNetworkNode('div',undefined,'actions');for(const e of model.wlan){const label=e.registry?.name||e.attributes.friendly_name||e.entity_id;if(c.show_controls&&buschNetworkAvailable(e)&&['on','off'].includes(e.state))this._button(body,label+' · '+(e.state==='on'?t.yes:t.no),()=>this._wlanAction(e.entity_id));else body.appendChild(buschNetworkNode('p',label+' · '+(t[e.state]||t.unavailable),'detail'));}this._section(card,'wlan',t.wlan,body);}
+    const actions=buschNetworkNode('div',undefined,'actions');if(c.show_controls&&BuschUI.mayAct(this._hass,c,'admin')){for(const role of ['reboot','reconnect','update']){const e=model.roles[role];if(c['show_'+role]&&buschNetworkAvailable(e)&&(role!=='update'||(e.state==='on'&&(Number(e.attributes.supported_features)&1)&&!e.attributes.in_progress)))this._button(actions,t[role],()=>this._nativeAction(role),role==='reconnect'?'danger':'secondary');}}if(c.show_controls)this._customButtons(actions,null);if(c.show_details){const e=model.roles.connection||model.roles.uptime||model.roles.update;if(e)this._button(actions,t.details,()=>this._details(e.entity_id),'quiet');}if(actions.children.length)card.appendChild(actions);
+    if(c.show_wlan&&model.wlan.length){const body=buschNetworkNode('div',undefined,'actions');for(const e of model.wlan){const label=e.registry?.name||e.attributes.friendly_name||e.entity_id;const known=buschNetworkAvailable(e)&&['on','off'].includes(e.state);if(c.show_controls&&known&&BuschUI.mayAct(this._hass,c,'admin'))this._button(body,label+' · '+(e.state==='on'?t.yes:t.no),()=>this._wlanAction(e.entity_id));else body.appendChild(buschNetworkNode('p',label+' · '+(known?(e.state==='on'?t.yes:t.no):(t[e.state]||t.unavailable)),'detail'));}this._section(card,'wlan',t.wlan,body);}
    }
   }
   this._clientBody=null;this._clientSection=null;if(!this._configError&&(this._kind==='network'||(c.show_clients&&model?.device))){card.appendChild(buschNetworkNode('p',t.presence,'message hint'));this._clientBody=buschNetworkNode('div',undefined,'clients');this._clientSection=this._section(card,'clients',t.clients,this._clientBody,c.start_expanded);card.appendChild(buschNetworkNode('p',t.legacy,'message hint'));this._renderClients();}
@@ -9417,7 +9453,7 @@ class BuschNetworkBaseEditor extends BuschEditorBase {
  _syncForms(){if(!this._config||!this._hass)return;const schema=buschNetworkSchema(this._core,this._config,this._kind),t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});for(const f of this._forms){f.form.hass=this._hass;f.form.data=f.getData();f.form.schema=f.fields.map(s=>this._localizedSchema(schema.find(n=>n.name===s.name)||s,t));}for(const form of this.shadowRoot?.querySelectorAll('ha-form')||[])form.hass=this._hass;this._showError();}
  _localizedSchema(schema,t){if(!schema.selector?.select)return schema;return {...schema,selector:{select:{...schema.selector.select,options:schema.selector.select.options.map(o=>typeof o==='string'?{value:o,label:t[o]||t.rules?.[o]||o}:o)}}};}
  _render(){if(!this._hass||!this._config)return;this.classList?.add('busch-ui-editor');if(!this.shadowRoot)this.attachShadow({mode:'open'});const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true}),schema=buschNetworkSchema(this._core,this._config,this._kind);this._forms=[];this.shadowRoot.replaceChildren(buschNetworkNode('style',BUSCH_SMART_EDITOR_CSS));this._errorNode=buschNetworkNode('p',undefined,'busch-ui-validation');this._errorNode.setAttribute('role','alert');this.shadowRoot.appendChild(this._errorNode);
-  const groups=[['general',['title'],true],['source',['device_id','config_entry_id','platform','source_type'],true],['display',['display_mode','image','icon','layout','show_header','show_status','show_details','show_clients','start_expanded','show_metrics','show_ip','show_mac','show_hostname','show_network_device','show_last_changed','show_last_time_reachable','time_fallback','count','columns','show_empty'],false],['interaction',['show_controls','show_wlan','show_reboot','show_reconnect','show_update','show_internet','show_wol','show_rename','show_labels','label_ids','confirm_reboot','confirm_reconnect','confirm_internet','tap_action','hold_action','double_tap_action'],false],['filters',['method','reverse','include_unavailable'],false],['debug_section',['debug'],false]];
+  const groups=[['general',['title'],true],['source',['device_id','config_entry_id','platform','source_type'],true],['display',['display_mode','image','icon','layout','show_header','show_status','show_details','show_clients','start_expanded','show_metrics','show_ip','show_mac','show_hostname','show_network_device','show_last_changed','show_last_time_reachable','time_fallback','count','columns','show_empty'],false],['interaction',['show_controls','show_wlan','show_reboot','show_reconnect','show_update','show_internet','show_wol','show_rename','show_labels','label_ids','confirm_reboot','confirm_reconnect','confirm_internet','confirm_wlan','admin_actions','tap_action','hold_action','double_tap_action'],false],['filters',['method','reverse','include_unavailable'],false],['debug_section',['debug'],false]];
   for(const [key,names,open]of groups){const fields=schema.filter(s=>names.includes(s.name));if(!fields.length)continue;const body=this._section(key,t[key],open);const getData=()=>Object.fromEntries(fields.map(f=>[f.name,['method','reverse'].includes(f.name)?this._config.sort[f.name]:this._config[f.name]]));this._form(body,fields,getData,value=>{const patch={...value};if(names.includes('method')){patch.sort={...this._config.sort,...(Object.hasOwn(patch,'method')?{method:patch.method}:{}),...(Object.hasOwn(patch,'reverse')?{reverse:patch.reverse}:{})};delete patch.method;delete patch.reverse;}const sourceChange=(Object.hasOwn(patch,'device_id')&&patch.device_id!==this._config.device_id)||(Object.hasOwn(patch,'config_entry_id')&&patch.config_entry_id!==this._config.config_entry_id);if(sourceChange)patch.roles={};this._change(patch,sourceChange);});
    if(key==='filters'){body.appendChild(buschNetworkNode('p',t.filter_help));for(const name of ['include','exclude']){const section=buschNetworkNode('div');body.appendChild(section);section.appendChild(buschNetworkNode('p',t[name]));const rules=this._config.filter[name],draft=[...rules];const update=(i,value,structural)=>{draft[i]=value;this._change({filter:{...this._config.filter,[name]:[...draft]}},structural);};rules.forEach((rule,i)=>{const host=buschNetworkNode('div');section.appendChild(host);buschNetworkRuleEditor(host,rule,(value,structural)=>update(i,value,structural),t);host.appendChild(BuschUI.action({label:t.remove,text:t.remove,onClick:()=>this._change({filter:{...this._config.filter,[name]:this._config.filter[name].filter((_,j)=>j!==i)}},true)}));});section.appendChild(BuschUI.action({label:t.add+' · '+t[name],text:t.add+' · '+t[name],onClick:()=>this._change({filter:{...this._config.filter,[name]:[...this._config.filter[name],{}]}},true)}));}}
   }

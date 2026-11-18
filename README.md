@@ -384,6 +384,7 @@ Gemeinsame Schlüssel (N = Netzwerkkarte, F = FRITZ!-Karte):
 | `show_internet`, `show_wol` | ja/nein | `true` | N F | Internetzugang steuern, Wake-on-LAN |
 | `show_rename`, `show_labels` | ja/nein | `false` | N F | Anzeigename / Labels ändern |
 | `confirm_internet` | ja/nein | `true` | N F | Internetzugang bestätigen |
+| `admin_actions` | ja/nein | `false` | N F | Router-Aktionen nur für Administratoren, siehe [Rechte](#rechte) |
 | `label_ids` | Liste | `[]` | N F | zur Auswahl angebotene Labels |
 | `filter` | Objekt | keine | N F | `include`/`exclude` (siehe unten) |
 | `sort` | Objekt | `method: name` | N F | `method`, `reverse` |
@@ -402,6 +403,22 @@ Wildcards und reguläre Ausdrücke; Zeitvergleiche z. B. `"> 2 h"`.
 
 Ein Verbindungspunkt (Access Point) wird nur gezeigt, wenn Home Assistant ihn
 tatsächlich liefert; ohne belegte Angabe bleibt er unbekannt.
+
+## Rechte
+
+Ohne weitere Angabe sieht und bedient jeder angemeldete Nutzer alle Aktionen der
+Karte. Mit `admin_actions: true` zeigt die Karte Nicht-Administratoren keine
+Knöpfe für Router-Neustart, WAN-Neuverbindung, Firmware-Update, Internetzugang
+und WLAN an/aus und führt diese Aktionen für sie auch nicht aus, selbst wenn ein
+Knopf noch aus der Zeit mit Administratorrechten auf dem Bildschirm steht.
+Wake-on-LAN und eigene Aktionen bleiben für alle. `confirm_wlan: true` fragt vor
+jedem Schalten eines WLANs nach.
+
+Die Karte ist **keine Sicherheitsgrenze**, sie blendet nur aus: Wer die Dienste
+von Home Assistant direkt aufruft, umgeht sie. Die zugrunde liegenden Dienste
+(`button.press`, `switch.turn_on`/`turn_off`, `update.install`) darf in Home
+Assistant jeder angemeldete Nutzer aufrufen; eine echte Rechteprüfung müsste die
+FRITZ!-Integration selbst leisten.
 
 ## `busch-network-card`
 
@@ -443,6 +460,7 @@ HA-Entitäten.
 | `show_metrics` | ja/nein | `true` | Messwerte zeigen |
 | `show_wlan`, `show_reboot`, `show_reconnect`, `show_update` | ja/nein | `true` | Aktionen anbieten |
 | `confirm_reboot`, `confirm_reconnect` | ja/nein | `true` | vor der Aktion nachfragen |
+| `confirm_wlan` | ja/nein | `false` | vor dem Ein- oder Ausschalten eines WLANs nachfragen |
 | `roles` | Objekt | `{}` | bei Mehrdeutigkeit Funktionen manuell zuordnen, z. B. `wlan: [switch.beispiel_wlan]` |
 
 `roles` kennt `connection`, `link`, `external_ip`, `external_ipv6`, `wan_uptime`,
