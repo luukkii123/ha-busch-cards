@@ -470,3 +470,94 @@ test("die Beschriftung im Editor spricht vom Termin, nicht vom Kalender", () => 
     /calendar/i
   );
 });
+
+/* ----------------------------------------------------------------------
+ * M23 (#1300, P8): warm the dialog loaders while idle, instant feedback on tap.
+ * Runs on the shared kit DOM with a fake clock.
+ * ---------------------------------------------------------------------- */
+
+const pfad = require("node:path");
+const kit = require("./_testkit.cjs");
+const BUNDLE = pfad.join(__dirname, "..", "dist", "busch-cards.js");
+
+async function m23Karte({ idle = true, termine = true, konfig = {} } = {}) {
+  const clock = kit.createClock(new Date(2027, 2, 10, 9, 0, 0).getTime());
+  const leerlauf = [];
+  const helfer = { aufrufe: 0, freigeben: null };
+  const globals = { performance };
+  if (idle) globals.requestIdleCallback = (fn) => { leerlauf.push(fn); return leerlauf.length; };
+  const env = kit.createEnvironment({ clock, globals });
+  // Probe path that hangs until the test releases it, like HA loading its calendar bundle.
+  env.window.loadCardHelpers = () => { helfer.aufrufe += 1; return new Promise((fertig) => { helfer.freigeben = () => fertig({ createCardElement: async () => ({}) }); }); };
+  kit.loadScript(BUNDLE, { globals: env });
+  const ha = kit.createHass({ clock, states: { "calendar.a": { state: "off", attributes: { friendly_name: "A", supported_features: 7 } } } });
+  const von = new Date(2027, 2, 12, 10, 0, 0), bis = new Date(2027, 2, 12, 11, 0, 0);
+  ha.respond("call_api", () => (termine ? [{ uid: "gut", summary: "Zahnarzt", start: { dateTime: von.toISOString() }, end: { dateTime: bis.toISOString() } }] : []));
+  const karte = env.document.createElement("busch-calendar-card");
+  karte.setConfig({ entities: ["calendar.a"], ...konfig });
+  env.document.body.appendChild(karte);
+  karte.hass = ha.hass;
+  karte.connectedCallback?.();
+  ha.onUpdate((hass) => { karte.hass = hass; });
+  const ereignisse = [];
+  karte.dispatchEvent = (ereignis) => { ereignisse.push(ereignis); return true; };
+  await clock.advance(50);
+  return { clock, env, ha, karte, leerlauf, helfer, ereignisse };
+}
+
+function m23Zeile(w) {
+  const zeile = w.env.document.createElement("div");
+  zeile.className = "cal-termin";
+  Object.assign(zeile.dataset, { uid: "gut", entity: "calendar.a", idx: "0", rid: "" });
+  w.karte._koerper.appendChild(zeile);
+  return zeile;
+}
+
+test("M23: nach dem ersten Rendern mit Terminen wird genau einmal im Leerlauf vorgeladen", async () => {
+  const w = await m23Karte();
+  assert.ok(Array.isArray(w.karte._tage) && w.karte._alleTermine.length === 1, "Termin geladen");
+  assert.strictEqual(w.leerlauf.length, 1, "ein Leerlauf-Auftrag");
+  assert.strictEqual(w.helfer.aufrufe, 0, "nichts vor dem Leerlauf");
+  w.leerlauf[0]();
+  await w.clock.advance(10);
+  assert.strictEqual(w.helfer.aufrufe, 1, "der Leerlauf startet den Sondenweg");
+  w.karte._render();
+  w.ha.patchState("calendar.a", { state: "on" });
+  await w.clock.advance(50);
+  assert.strictEqual(w.leerlauf.length, 1, "weitere Renderläufe planen nichts nach");
+  w.karte._oeffneTermin({ uid: "gut", entity: "calendar.a", idx: "0", rid: "" });
+  await w.clock.advance(10);
+  assert.strictEqual(w.helfer.aufrufe, 1, "der Klick nutzt den laufenden Versuch");
+});
+
+test("M23: ohne requestIdleCallback nach 2000 ms; ohne Termine oder ohne Klickfunktion gar nicht", async () => {
+  const w = await m23Karte({ idle: false });
+  await w.clock.advance(1900);
+  assert.strictEqual(w.helfer.aufrufe, 0);
+  await w.clock.advance(200);
+  assert.strictEqual(w.helfer.aufrufe, 1, "Rückfall setTimeout 2000");
+  const leer = await m23Karte({ termine: false });
+  assert.strictEqual(leer.leerlauf.length, 0, "ohne Termine kein Vorabladen");
+  const aus = await m23Karte({ konfig: { open_event_on_tap: false } });
+  assert.strictEqual(aus.leerlauf.length, 0, "open_event_on_tap: false lädt nichts vor");
+});
+
+test("M23: der Klick markiert die Zeile im selben Tick, bis der Dialog angefordert ist; ein zweiter Klick wartet", async () => {
+  const w = await m23Karte();
+  const zeile = m23Zeile(w);
+  zeile.click();
+  assert.strictEqual(zeile.getAttribute("aria-busy"), "true", "aria-busy im selben Tick");
+  assert.ok(zeile.classList.contains("cal-termin-wartet"), "sichtbare Klasse im selben Tick");
+  w.karte._render();
+  assert.match(w.karte._koerper.innerHTML, /class="cal-termin cal-termin-wartet" aria-busy="true" data-uid="gut"/, "ein Renderlauf behält den Wartezustand");
+  zeile.click();
+  await w.clock.advance(10);
+  assert.strictEqual(w.helfer.aufrufe, 1, "zweiter Klick startet nichts Neues");
+  w.helfer.freigeben();
+  await w.clock.advance(6000);
+  assert.strictEqual(w.ereignisse.length, 1, "genau ein Dialog trotz zwei Klicks");
+  assert.strictEqual(zeile.getAttribute("aria-busy"), null, "Wartezustand gelöst");
+  assert.ok(!zeile.classList.contains("cal-termin-wartet"));
+  w.karte._render();
+  assert.doesNotMatch(w.karte._koerper.innerHTML, /cal-termin-wartet|aria-busy/, "der nächste Renderlauf zeigt keinen Wartezustand");
+});

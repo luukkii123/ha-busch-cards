@@ -1,4 +1,7 @@
-"""Calendar hass/config refresh retention smoke test; synthetic API only."""
+"""Calendar hass/config refresh retention smoke test; synthetic API only.
+
+M23: HA's card helpers never answer here, so a tapped row stays in its waiting state
+(aria-busy, dimmed) for the calendar-waiting-<width>-<theme>.png variants."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
 sys.path.insert(0,"/work")
@@ -11,7 +14,7 @@ with sync_playwright() as p:
  errors=[]
  page.on("pageerror",lambda error:errors.append(str(error)))
  page.set_content("<style>body{margin:0}ha-card{display:block}</style>")
- page.add_script_tag(content="window.customCards=[];customElements.define('ha-card',class extends HTMLElement{});customElements.define('ha-icon',class extends HTMLElement{});")
+ page.add_script_tag(content="window.customCards=[];customElements.define('ha-card',class extends HTMLElement{});customElements.define('ha-icon',class extends HTMLElement{});window.loadCardHelpers=()=>new Promise(()=>{});")
  page.add_script_tag(content=source)
  page.evaluate("""()=>{window.calls=0;window.hass={locale:{language:'en'},states:{'calendar.synthetic':{last_changed:'one'}},callApi:async(method,path)=>{calls++;const start=new Date(new URLSearchParams(path.split('?')[1]).get('start'));const events=[];for(let day=5;day<17;day++){const begins=new Date(start.getFullYear(),start.getMonth(),day,9),ends=new Date(start.getFullYear(),start.getMonth(),day,10);events.push({uid:`retention-${start.getFullYear()}-${start.getMonth()}-${day}`,summary:`Calendar appointment with a deliberately long title for responsive layout review ${day}`,location:'A long meeting-room label for measuring calendar text at narrow card widths',start:{dateTime:begins.toISOString()},end:{dateTime:ends.toISOString()}})}return events}};window.card=document.createElement('busch-calendar-card');card.setConfig({entities:['calendar.synthetic'],month_offset:0,show_empty_days:true,title:'Calendar refresh and responsive layout fixture'});card.hass=hass;document.body.append(card)}""")
  page.wait_for_selector(".cal-pfeil[data-schritt='1']")
@@ -32,8 +35,21 @@ with sync_playwright() as p:
   _thema_setzen(page,theme)
   page.wait_for_timeout(400)
   page.locator('busch-calendar-card').screenshot(path=str(out/f'calendar-390-{theme}.png'))
- report={'retention':result,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe'])}
+ # M23 variant: tap a row; the waiting state is set in the same task and holds while HA's dialog bundle loads.
+ page.set_viewport_size({'width':960,'height':1900})
+ waiting=page.evaluate("()=>{const row=card.querySelector('.cal-liste .cal-termin[data-uid]');row.scrollIntoView({block:'center'});const t0=performance.now();row.click();return {busy:row.getAttribute('aria-busy'),dimmed:row.classList.contains('cal-termin-wartet'),sameTaskMs:performance.now()-t0}}")
+ page.wait_for_timeout(300)
+ waiting['heldAfter300ms']=page.evaluate("()=>card.querySelector('.cal-termin-wartet')?.getAttribute('aria-busy')==='true'")
+ assert waiting['busy']=='true' and waiting['dimmed'] and waiting['heldAfter300ms'],waiting
+ for width in (320,960):
+  for theme in ('light','dark'):
+   page.set_viewport_size({'width':width,'height':1900})
+   _thema_setzen(page,theme)
+   page.wait_for_timeout(400)
+   assert page.evaluate("()=>!!card.querySelector('.cal-termin-wartet[aria-busy=\"true\"]')")
+   page.locator('busch-calendar-card').screenshot(path=str(out/f'calendar-waiting-{width}-{theme}.png'))
+ report={'retention':result,'waiting':waiting,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe'])}
  (out/'report.json').write_text(json.dumps(report,indent=2))
- print(json.dumps({'retention':result,'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
+ print(json.dumps({'retention':result,'waiting':waiting,'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
  assert not bewerte(matrix) and not errors,report
  browser.close()

@@ -3577,8 +3577,13 @@ function calTerminHtml(termin, optionen) {
   // vollstaendigen Termin zu kommen — die Kennung allein reicht bei einer
   // Serie nicht, dort tragen alle Vorkommen dieselbe `uid`.
   const idx = Number.isInteger(termin._idx) ? String(termin._idx) : "";
+  // M23: the row whose dialog is being opened keeps its waiting state across a re-render.
+  const w = optionen.wartend;
+  const wartet = !!w && w.entity === (termin._entity || "") && w.idx === idx
+    && w.uid === (termin.uid || "") && w.rid === (termin.recurrence_id || "");
   return (
-    `<div class="cal-termin" data-uid="${calEscape(termin.uid || "")}" ` +
+    (wartet ? `<div class="cal-termin cal-termin-wartet" aria-busy="true" ` : `<div class="cal-termin" `) +
+    `data-uid="${calEscape(termin.uid || "")}" ` +
     `data-entity="${calEscape(termin._entity || "")}" ` +
     `data-idx="${calEscape(idx)}" ` +
     `data-rid="${calEscape(termin.recurrence_id || "")}" ` +
@@ -3769,6 +3774,8 @@ const CAL_STIL = `
      Ausnahme (\`user-select: text\`) waere eine zweite Stelle, die dasselbe
      regelt, ohne etwas zu bewirken — und die eines Tages auseinanderlaeuft. */
   .cal-leer .cal-termin { cursor:default; min-height:1.2em; }
+  /* M23: tapped row while HA's dialog loads (dimmed, not only a colour change). */
+  .cal-termin-wartet { opacity:.55; cursor:progress; }
   .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
     align-self:center; }
   /* Die Zeitspalte SCHRUMPFT NICHT (flex:0 0 auto) — der Titel daneben tut es
@@ -4573,9 +4580,23 @@ class BuschCalendarCard extends HTMLElement {
         }
         const zeile = ereignis.target.closest(".cal-termin");
         if (zeile && zeile.dataset.uid) {
+          // M23: one dialog at a time; a second tap while it loads does nothing.
+          if (this._terminWartet) return;
+          if (!this._config.open_event_on_tap || !zeile.dataset.entity) return;
+          const d = zeile.dataset;
+          this._terminWartet = { entity: d.entity || "", idx: d.idx || "", uid: d.uid || "", rid: d.rid || "" };
+          // Feedback in the same tick as the tap, until the dialog has been requested.
+          zeile.classList.add("cal-termin-wartet");
+          zeile.setAttribute("aria-busy", "true");
           // Ohne `await`: die Klickbehandlung ist synchron, und
           // `_oeffneTermin` lehnt nie ab.
-          this._oeffneTermin(zeile.dataset);
+          this._oeffneTermin({ ...d }).finally(() => {
+            this._terminWartet = null;
+            for (const el of [zeile, ...this._koerper.querySelectorAll(".cal-termin-wartet")]) {
+              el.classList.remove("cal-termin-wartet");
+              el.removeAttribute("aria-busy");
+            }
+          });
         }
       });
     }
@@ -4609,6 +4630,7 @@ class BuschCalendarCard extends HTMLElement {
         farben,
         texte: t,
         mehrereKalender: this._config.entities.length > 1,
+        wartend: this._terminWartet,
       });
       rumpf = liste
         ? `<div class="cal-liste">${liste}</div>`
@@ -4651,6 +4673,22 @@ class BuschCalendarCard extends HTMLElement {
     if (window.scrollX !== pageScroll.x || window.scrollY !== pageScroll.y) {
       window.scrollTo(pageScroll.x, pageScroll.y);
     }
+    this._planeDialogVorab();
+  }
+
+  /**
+   * M23: after the first render with events, warm HA's dialog loaders once while the browser is idle
+   * (fallback 2 s), so the first tap does not wait for the calendar bundle. `calHoleDialogImporte`
+   * itself runs only once per page.
+   */
+  _planeDialogVorab() {
+    if (this._dialogVorab || !this._config.open_event_on_tap) return;
+    const termin = (this._alleTermine || []).find((e) => e && e._entity);
+    if (!termin) return;
+    this._dialogVorab = true;
+    const los = () => { calHoleDialogImporte(this._hass, termin._entity); };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(los);
+    else if (typeof setTimeout === "function") setTimeout(los, 2000);
   }
 }
 
