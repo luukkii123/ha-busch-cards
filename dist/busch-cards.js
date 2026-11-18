@@ -3273,20 +3273,28 @@ class BuschScheduleCardEditor extends BuschEditorBase {
     if (!this._hass || !this._config) return;
 
     if (!this._form) {
-      const texte = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD, this._hass);
       this._form = BuschUI.ha.form();
-      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_SCHEDULE_CARD, texte);
-      this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
-      this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
         this._publishConfig(buschEditorUpdate(this._config,event.detail.value));
       });
       this.appendChild(this._form);
     }
+    // M48: schema and label functions once per language, data once per config; a foreign update only passes hass.
+    const sprache = buschSprache(this._hass);
+    if (this._formSprache !== sprache) {
+      this._formSprache = sprache;
+      const texte = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD, this._hass);
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_SCHEDULE_CARD, texte);
+      this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
+      this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
+    }
 
     this._form.hass = this._hass;
-    this._form.data = this._config;
+    if (this._formDaten !== this._config) {
+      this._formDaten = this._config;
+      this._form.data = this._config;
+    }
   }
 }
 
@@ -4792,12 +4800,7 @@ class BuschCalendarCardEditor extends BuschEditorBase {
     if (!this._hass || !this._config) return;
 
     if (!this._form) {
-      const texte = buschTexte(TEXTE_BUSCH_CALENDAR_CARD, this._hass);
-      this._texte = texte.texte;
       this._form = BuschUI.ha.form();
-      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_CALENDAR_CARD, texte);
-      this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
-      this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
       this._form.addEventListener("value-changed", (ereignis) => {
         ereignis.stopPropagation();
         const werte = { ...ereignis.detail.value };
@@ -4811,20 +4814,38 @@ class BuschCalendarCardEditor extends BuschEditorBase {
       this._farbFeld.style.padding = "8px 0 0";
       this.appendChild(this._farbFeld);
     }
+    // M48: schema and label functions once per language, data once per config; a foreign update only passes hass.
+    const sprache = buschSprache(this._hass);
+    if (this._formSprache !== sprache) {
+      this._formSprache = sprache;
+      const texte = buschTexte(TEXTE_BUSCH_CALENDAR_CARD, this._hass);
+      this._texte = texte.texte;
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_CALENDAR_CARD, texte);
+      this._form.computeLabel = (schema) => texte.labels[schema.name] || schema.name;
+      this._form.computeHelper = (schema) => texte.helpers[schema.name] || "";
+    }
 
     this._form.hass = this._hass;
-    // ha-form erwartet flache Zeichenketten im Entitaetsselektor.
-    this._form.data = {
-      ...this._config,
-      entities: (this._config.entities || []).map((e) =>
-        typeof e === "string" ? e : e.entity
-      ),
-    };
+    if (this._formDaten !== this._config) {
+      this._formDaten = this._config;
+      // ha-form erwartet flache Zeichenketten im Entitaetsselektor.
+      this._form.data = {
+        ...this._config,
+        entities: (this._config.entities || []).map((e) =>
+          typeof e === "string" ? e : e.entity
+        ),
+      };
+    }
     this._renderFarben();
   }
 
   _renderFarben() {
     const normal = calNormalisiereKonfig(this._config);
+    // M48: rebuild the colour fields only when config, language or a calendar name changed,
+    // so an open colour picker survives foreign updates.
+    const farbStempel = [this._formSprache, ...normal.entities.map((e) => e.entity + "\u0000" + e.color + "\u0000" + (this._hass.states[e.entity]?.attributes?.friendly_name || ""))].join("\u0001");
+    if (farbStempel === this._farbStempel) return;
+    this._farbStempel = farbStempel;
     if (normal.entities.length < 2) {
       this._farbFeld.innerHTML = "";
       return;
@@ -5496,12 +5517,7 @@ class BuschMapCardEditor extends BuschEditorBase {
     if (!this._hass || !this._config) return;
     if (!this._aufgebaut) {
       this._aufgebaut = true;
-      const texte = buschTexte(TEXTE_BUSCH_MAP_CARD, this._hass);
-      this._texte = texte.texte;
       this._form = BuschUI.ha.form();
-      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_MAP_CARD, texte);
-      this._form.computeLabel = (s) => texte.labels[s.name] || s.name;
-      this._form.computeHelper = (s) => texte.helpers[s.name] || "";
       this._form.addEventListener("value-changed", (event) => {
         event.stopPropagation();
         const merged = { ...this._config, ...event.detail.value };
@@ -5512,19 +5528,36 @@ class BuschMapCardEditor extends BuschEditorBase {
       });
       this.appendChild(this._form);
 
-      const hinweis = document.createElement("div");
-      hinweis.style.cssText = "margin:12px 0 4px;font-size:0.85em;opacity:.7;";
-      hinweis.textContent = texte.texte.innenTitel;
-      this.appendChild(hinweis);
+      this._hinweis = document.createElement("div");
+      this._hinweis.style.cssText = "margin:12px 0 4px;font-size:0.85em;opacity:.7;";
+      this.appendChild(this._hinweis);
       this._innenBehaelter = document.createElement("div");
       this.appendChild(this._innenBehaelter);
       this._baueInnenEditor();
     }
+    // M48: schema and label functions once per language, data and the inner editor's config once per
+    // config; a foreign update only passes hass.
+    const sprache = buschSprache(this._hass);
+    if (this._formSprache !== sprache) {
+      this._formSprache = sprache;
+      const texte = buschTexte(TEXTE_BUSCH_MAP_CARD, this._hass);
+      this._texte = texte.texte;
+      this._form.schema = buschSchemaMitTexten(SCHEMA_BUSCH_MAP_CARD, texte);
+      this._form.computeLabel = (s) => texte.labels[s.name] || s.name;
+      this._form.computeHelper = (s) => texte.helpers[s.name] || "";
+      this._hinweis.textContent = texte.texte.innenTitel;
+    }
     this._form.hass = this._hass;
-    this._form.data = { ...MAP_CARD_DEFAULTS, ...this._config };
+    if (this._formDaten !== this._config) {
+      this._formDaten = this._config;
+      this._form.data = { ...MAP_CARD_DEFAULTS, ...this._config };
+    }
     if (this._innen) {
       this._innen.hass = this._hass;
-      this._innen.setConfig(this._innerConfig());
+      if (this._innenDaten !== this._config) {
+        this._innenDaten = this._config;
+        this._innen.setConfig(this._innerConfig());
+      }
     }
   }
 
@@ -5554,6 +5587,7 @@ class BuschMapCardEditor extends BuschEditorBase {
       if (!karte) throw new Error("map-Karte liess sich nicht erzeugen");
       const editor = await karte.constructor.getConfigElement();
       editor.hass = this._hass;
+      this._innenDaten = this._config;
       editor.setConfig(this._innerConfig());
       editor.addEventListener("config-changed", (event) => {
         event.stopPropagation();
@@ -7270,12 +7304,18 @@ class BuschDeviceCardEditor extends BuschEditorBase {
       this.appendChild(this._form);
     }
     this._form.hass = this._hass;
-    // Gefiltert wird gegen die ZUSAMMENGEFUEHRTEN Daten, nicht gegen die rohe
-    // Konfiguration: Ohne gesetzten Wert steht dort gar keine Aktion, und die
-    // Vorgabe `expand` haette den HA-Editor faelschlich eingeblendet.
-    const daten = this._daten();
-    this._form.schema = buschSchemaMitTexten(devSchemaFuer(daten).filter(e=>!['filter','labels','labels_hide'].includes(e.name)), this._texte);
-    this._form.data = daten;
+    // M48: schema and data only when the config or the language changed; a foreign update only passes hass.
+    const sprache = buschSprache(this._hass);
+    if (this._formDaten !== this._config || this._formSprache !== sprache) {
+      this._formDaten = this._config;
+      this._formSprache = sprache;
+      // Gefiltert wird gegen die ZUSAMMENGEFUEHRTEN Daten, nicht gegen die rohe
+      // Konfiguration: Ohne gesetzten Wert steht dort gar keine Aktion, und die
+      // Vorgabe `expand` haette den HA-Editor faelschlich eingeblendet.
+      const daten = this._daten();
+      this._form.schema = buschSchemaMitTexten(devSchemaFuer(daten).filter(e=>!['filter','labels','labels_hide'].includes(e.name)), this._texte);
+      this._form.data = daten;
+    }
     this._renderFilter();
   }
 
@@ -9910,14 +9950,15 @@ class BuschNetworkBaseEditor extends BuschEditorBase {
  constructor(){super();this._echo=BuschUI.createEchoState();this._forms=[];this._sectionOpen=new Map();}
  get _kind(){return 'network';}
  setConfig(config){const result=BuschUI.validateConfig(config||{},{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return;}if(!BuschUI.acceptEcho(this._echo,result.value,this._config))return;const previous=this._config;this._acceptConfig(result.value,BuschUI.cloneConfig,{echo:false});this._validationError=null;const structural=!previous||buschCoreKey(previous.filter)!==buschCoreKey(this._config.filter)||buschCoreKey(previous.actions)!==buschCoreKey(this._config.actions)||previous.device_id!==this._config.device_id||previous.config_entry_id!==this._config.config_entry_id;if(structural)this._render();else this._syncForms();}
- set hass(hass){const languageChanged=BuschUI.language(this._hass,{legacy:true})!==BuschUI.language(hass,{legacy:true});this._hass=hass;if(this.isConnected)this._connect();if(!this.shadowRoot||languageChanged)this._render();else this._syncForms();}get hass(){return this._hass;}
+ set hass(hass){const languageChanged=BuschUI.language(this._hass,{legacy:true})!==BuschUI.language(hass,{legacy:true});this._hass=hass;if(this.isConnected)this._connect();if(!this.shadowRoot||languageChanged)this._render();else this._syncForms(false);}get hass(){return this._hass;}
  connectedCallback(){this._connect();this._render();}disconnectedCallback(){this._unwatch?.();this._release?.();this._unwatch=this._release=null;}
  _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._syncForms());}
  _change(patch,structural=false){const next={...this._config,...patch},result=BuschUI.validateConfig(next,{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return false;}this._validationError=null;BuschUI.queueEcho(this._echo,result.value);this._publishConfig(result.value,{echo:false});if(structural)this._render();else this._syncForms();return true;}
  _showError(){if(this._errorNode){const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});this._errorNode.textContent=this._validationError?(t[this._validationError]||t.invalid_config):'';this._errorNode.hidden=!this._validationError;}for(const input of this.shadowRoot?.querySelectorAll('input')||[])input.setAttribute('aria-invalid',String(!!this._validationError));}
  _section(key,title,open=false){const body=buschNetworkNode('div',undefined,'body'),section=BuschUI.section({title,content:body,open:this._sectionOpen.get(key)??open});section.dataset.section=key;section.addEventListener('toggle',()=>this._sectionOpen.set(key,section.open));this.shadowRoot.appendChild(section);return body;}
  _form(body,fields,getData,onChange){const form=BuschUI.ha.form();form.hass=this._hass;form.schema=fields;form.data=getData();form.computeLabel=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).label;form.computeHelper=s=>BuschUI.fieldText(BUSCH_NETWORK_TEXT,this._hass,s.name,{legacy:true}).helper;form.addEventListener('value-changed',event=>{event.stopPropagation();onChange(event.detail.value);});body.appendChild(form);this._forms.push({form,getData,fields});return form;}
- _syncForms(){if(!this._config||!this._hass)return;const schema=buschNetworkSchema(this._core,this._config,this._kind),t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});for(const f of this._forms){f.form.hass=this._hass;f.form.data=f.getData();f.form.schema=f.fields.map(s=>this._localizedSchema(schema.find(n=>n.name===s.name)||s,t));}for(const form of this.shadowRoot?.querySelectorAll('ha-form')||[])form.hass=this._hass;this._showError();}
+ // M48: a hass update (full=false) recomputes schema and data only when config, language or the registry changed; every form gets new data/schema objects only when their content differs.
+ _syncForms(full=true){if(!this._config||!this._hass)return;const language=BuschUI.language(this._hass,{legacy:true}),registry=this._core?.index?.registry,stale=full||this._syncConfig!==this._config||this._syncLanguage!==language||this._syncRegistry!==registry;if(stale){this._syncConfig=this._config;this._syncLanguage=language;this._syncRegistry=registry;const schema=buschNetworkSchema(this._core,this._config,this._kind),t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});for(const f of this._forms){const data=f.getData(),dataKey=buschCoreKey(data),fields=f.fields.map(s=>this._localizedSchema(schema.find(n=>n.name===s.name)||s,t)),schemaKey=buschCoreKey(fields);if(f.dataKey!==dataKey){f.dataKey=dataKey;f.form.data=data;}if(f.schemaKey!==schemaKey){f.schemaKey=schemaKey;f.form.schema=fields;}}}for(const form of this.shadowRoot?.querySelectorAll('ha-form')||[])form.hass=this._hass;this._showError();}
  _localizedSchema(schema,t){if(!schema.selector?.select)return schema;return {...schema,selector:{select:{...schema.selector.select,options:schema.selector.select.options.map(o=>typeof o==='string'?{value:o,label:t[o]||t.rules?.[o]||o}:o)}}};}
  _render(){if(!this._hass||!this._config)return;this.classList?.add('busch-ui-editor');if(!this.shadowRoot)this.attachShadow({mode:'open'});const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true}),schema=buschNetworkSchema(this._core,this._config,this._kind);this._forms=[];this.shadowRoot.replaceChildren(buschNetworkNode('style',BUSCH_SMART_EDITOR_CSS));this._errorNode=buschNetworkNode('p',undefined,'busch-ui-validation');this._errorNode.setAttribute('role','alert');this.shadowRoot.appendChild(this._errorNode);
   const groups=[['general',['title'],true],['source',['device_id','config_entry_id','platform','source_type'],true],['display',['display_mode','image','icon','layout','show_header','show_status','show_details','show_clients','start_expanded','show_metrics','show_ip','show_mac','show_hostname','show_network_device','show_last_changed','show_last_time_reachable','time_fallback','count','columns','show_empty'],false],['interaction',['show_controls','show_wlan','show_reboot','show_reconnect','show_update','show_internet','show_wol','show_rename','show_labels','label_ids','confirm_reboot','confirm_reconnect','confirm_internet','confirm_wlan','admin_actions','tap_action','hold_action','double_tap_action'],false],['filters',['method','reverse','include_unavailable'],false],['debug_section',['debug'],false]];
