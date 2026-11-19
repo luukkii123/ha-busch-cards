@@ -394,6 +394,9 @@ try:
         assert page.locator('#karte-f .dev-name').inner_text() == 'Wohnzimmer Deckenlampe'
         assert page.locator('#karte-f .stub-tile').count() == 1
         assert 'nicht' in page.locator('#karte-g .dev-hinweis').inner_text()
+        # Restfund H (#1321): one clear state, no "Kein Geraet gewaehlt" header beside the cause.
+        assert page.locator('#karte-g .dev-kopf').is_hidden()
+        assert 'Kein Gerät gewählt' not in page.locator('#karte-g').inner_text()
         assert page.locator('#karte-h .stub-tile').count() == 0
         assert page.locator('#karte-h .dev-hinweis:not([hidden])').count() >= 1
         assert page.locator('#karte-h .dev-name').inner_text() == 'Geraet ohne Entitaeten'

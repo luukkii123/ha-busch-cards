@@ -6944,6 +6944,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       gruppe_diagnostic: "Diagnose",
       keineEntitaet: "Kein Gerät gewählt. Im Karteneditor ein Gerät oder eine Entität auswählen.",
       geraetFehlt: "Das gewählte Gerät existiert nicht oder wurde gelöscht.",
+      geraetFehltHinweis: "Im Karteneditor ein anderes Gerät auswählen.",
       altesHa: "Braucht Home Assistant 2024.11 oder neuer.",
       nichtRegistriert: "{entity} ist nicht registriert.",
       keinGeraet: "{entity} gehört zu keinem Gerät.",
@@ -7107,6 +7108,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       gruppe_diagnostic: "Diagnostic",
       keineEntitaet: "No device selected. Choose a device or an entity in the card editor.",
       geraetFehlt: "The selected device does not exist or has been deleted.",
+      geraetFehltHinweis: "Choose another device in the card editor.",
       altesHa: "Needs Home Assistant 2024.11 or newer.",
       nichtRegistriert: "{entity} is not registered.",
       keinGeraet: "{entity} belongs to no device.",
@@ -7221,6 +7223,7 @@ const DEV_STIL = `
   .dev-kopf { display:flex; align-items:center; gap:var(--ha-space-3, 12px);
     padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px); cursor:pointer;
     user-select:none; -webkit-user-select:none; min-width:0; }
+  .dev-kopf[hidden] { display:none; }
   .dev-icon[hidden] { display:none; }
   .dev-icon { flex:0 0 48px; width:48px; height:48px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
@@ -7655,8 +7658,11 @@ class BuschDeviceCard extends HTMLElement {
       this._filterOff?.();this._filterOff=null;this._filterQuery=null;
       this._stempel = null;
       this._auf = null;
-      this._name.textContent = this._config.title || this._config.entity || t.keineEntitaet;
+      // Restfund H: one clear state. Without own title or entity the header would only repeat
+      // a placeholder ("Kein Gerät gewählt") beside the cause, so it steps back for the state block.
+      this._name.textContent = this._config.title || this._config.entity || "";
       this._name.title = this._name.textContent;
+      this._kopf.hidden = !this._name.textContent;
       this._unter.hidden = true;
       this._icon.textContent = "";
       this._icon.hidden = true;
@@ -7669,12 +7675,15 @@ class BuschDeviceCard extends HTMLElement {
       this._tileBehaelter.hidden = true;
       this._dienstFehler.hidden = true;
       this._karte.classList.remove("dev-offen");
-      buschZustand(this._hinweis, { kind: "error", title: buschFuellen(t[a.fehler], { entity: this._config.entity }) });
+      const hinweis = t[a.fehler + "Hinweis"];
+      buschZustand(this._hinweis, { kind: "error", title: buschFuellen(t[a.fehler], { entity: this._config.entity }),
+        ...(hinweis ? { hint: hinweis } : {}) });
       this._merkeGesehen([this._config.entity, this._entityId]);
       return;
     }
 
     this._auf = a;
+    this._kopf.hidden = false;
     const vorlage = devVorlageWaehlen(this._config.template, this._entityId);
     const alle = devEntitaetenDesGeraets(this._hass, a.geraet.id, this._entityId, this._core);
     const allowed=this._filterForDevice(a.geraet.id);
