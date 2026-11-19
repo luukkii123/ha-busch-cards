@@ -81,9 +81,13 @@ test("M24: the plus buttons stand out while the whole plan is empty", () => {
   assert.ok(filled.days.querySelectorAll(".add-block").every((button) => !button.classList.contains("hervor")));
 });
 
-test("M24: phone CSS gives the track 44 px and each grip a 24 px hit area", () => {
+test("M24/M26: the track and its blocks are 44 px high at every width, each grip has a 24 px hit area", () => {
   const css = SOURCE.slice(SOURCE.indexOf("class BuschScheduleCard"), SOURCE.indexOf("class BuschScheduleCardEditor"));
-  assert.match(css, /@container \(max-width: 460px\) \{\s*\.track \{ height: 44px; \}/);
+  // M26 touch run (karten-20261119-164604): 30 px tracks and blocks at 960 px were below 44 px.
+  const track = css.match(/\n {8}\.track \{([^}]*)\}/)[1];
+  assert.match(track, /\bheight: 44px;/);
+  assert.doesNotMatch(css, /\.track \{ height: \d+px; \}/, "no width-dependent track height left");
+  assert.match(css.match(/\n {8}\.block \{([^}]*)\}/)[1], /line-height: 44px;/);
   assert.match(css, /\.handle \{[^}]*width: 24px;/);
   // Short blocks move their grips outward so a 20-minute block stays grippable.
   assert.match(css, /@container block \(max-width: 47\.98px\) \{[^@]*\.handle\.start \{ left: -24px; \}[^@]*\.handle\.end \{ right: -24px; \}/);

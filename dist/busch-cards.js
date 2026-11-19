@@ -2266,7 +2266,8 @@ class BuschScheduleCard extends HTMLElement {
 
         .track {
           position: relative;
-          height: 30px;
+          /* M24/M26: 44 px at every width, the track and its blocks are touch targets (DESIGN_GUIDELINES R06). */
+          height: 44px;
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           background-color: var(--busch-schedule-track-color, var(--divider-color));
           background-image: linear-gradient(
@@ -2281,10 +2282,6 @@ class BuschScheduleCard extends HTMLElement {
           touch-action: pan-y;
           user-select: none;
           -webkit-user-select: none;
-        }
-        /* M24: 44 px on a phone, like every other touch target of the card. */
-        @container (max-width: 460px) {
-          .track { height: 44px; }
         }
         .track:focus-visible {
           outline: 2px solid var(--primary-color);
@@ -2317,7 +2314,7 @@ class BuschScheduleCard extends HTMLElement {
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           color: var(--primary-text-color);
           font-size: var(--ha-font-size-s, 12px);
-          line-height: 30px;
+          line-height: 44px;
           text-align: center;
           font-variant-numeric: tabular-nums;
           min-width: 0;
@@ -2330,7 +2327,6 @@ class BuschScheduleCard extends HTMLElement {
           container-type: inline-size;
           container-name: block;
         }
-        @container (max-width: 460px) { .block { line-height: 44px; } }
         /* Drei Stufen, gemessen an der echten Blockbreite: gar nichts, nur die
            Startzeit, oder die volle Spanne. Ein 3-Stunden-Block ist auf einer
            normal breiten Karte nur rund 50 px breit — "01:00-04:00" passt dort

@@ -1,5 +1,10 @@
 {
   "beschreibung": "Ausnahmen der Kontrast-/Touchmessung (M26, hacs/scripts/kontrast_touch.py) für die Renderskripte von busch-cards. Jede Ausnahme mit Grund; anfangs leer, gefüllt erst nach gemessenem Befund.",
   "kontrast": [],
-  "touch": []
+  "touch": [
+    {
+      "selektor": ".track > .block",
+      "grund": "Zeitplanblock: Breite = Dauer auf der 24-h-Spur (WCAG 2.5.5 'wesentlich'); die Messung misst nur den eigenen Kasten, getroffen wird der Block samt Griffen (_onPointerDown nimmt closest('.block'), Tippen ohne Ziehen öffnet ihn; unter 48 px stehen die Griffe außen, M24). Ersatzprüfung: hacs/docs/render/render-zeitplan.py Bereich ui_regeln.trefferflaeche misst Block ∪ Griffe ≥ 44 × 44 je Breite und die Erreichbarkeit jedes Griffs (Exit 1). Spur und Blöcke sind an jeder Breite 44 px hoch."
+    }
+  ]
 }
