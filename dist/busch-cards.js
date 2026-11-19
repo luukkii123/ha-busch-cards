@@ -1286,7 +1286,9 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       hinweisNurLesen: "In YAML festgelegt — hier nur zum Ansehen.",
       hinweisSchreibschutz: "Schreibschutz aktiv — hier nur zum Ansehen.",
       heute: "heute",
-      hinweisZiehen: "Ziehen legt einen Block an, Tippen öffnet ihn.",
+      hinweisZiehen: "Ziehen legt einen Block an, Tippen öffnet ihn. Oder auf das Plus tippen.",
+      blockName: "{day}: {start}–{end}",
+      blockBedienung: "Enter öffnet die Bearbeitung.",
       von: "Von",
       dialogBis: "Bis",
       mitternacht: "Bis <b>00:00</b> bedeutet Mitternacht am Tagesende.",
@@ -1349,7 +1351,9 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       hinweisNurLesen: "Defined in YAML — read only here.",
       hinweisSchreibschutz: "Read only — changes are locked on this card.",
       heute: "today",
-      hinweisZiehen: "Drag to add a block, tap to open it.",
+      hinweisZiehen: "Drag to add a block, tap to open it. Or tap the plus.",
+      blockName: "{day}: {start}–{end}",
+      blockBedienung: "Press Enter to edit.",
       von: "From",
       dialogBis: "To",
       mitternacht: "A <b>00:00</b> end means midnight at the end of the day.",
@@ -2100,6 +2104,10 @@ class BuschScheduleCard extends HTMLElement {
           outline: 2px solid var(--primary-color);
           outline-offset: 2px;
         }
+        .day .add-block.hervor {
+          border-color: var(--primary-color);
+          background: color-mix(in srgb, var(--primary-color) 14%, var(--card-background-color, #fff));
+        }
         .day .add-block:disabled { opacity: .45; cursor: not-allowed; }
         .readonly .add-block { display: none; }
 
@@ -2121,8 +2129,9 @@ class BuschScheduleCard extends HTMLElement {
           user-select: none;
           -webkit-user-select: none;
         }
+        /* M24: 44 px on a phone, like every other touch target of the card. */
         @container (max-width: 460px) {
-          .track { height: 36px; }
+          .track { height: 44px; }
         }
         .track:focus-visible {
           outline: 2px solid var(--primary-color);
@@ -2155,9 +2164,6 @@ class BuschScheduleCard extends HTMLElement {
           line-height: 30px;
           text-align: center;
           font-variant-numeric: tabular-nums;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
           min-width: 0;
           cursor: grab;
           box-sizing: border-box;
@@ -2166,30 +2172,54 @@ class BuschScheduleCard extends HTMLElement {
              darüber, ob der Text hineinpasst — die Karte kann jede Breite
              haben. */
           container-type: inline-size;
+          container-name: block;
         }
-        @container (max-width: 460px) { .block { line-height: 36px; } }
+        @container (max-width: 460px) { .block { line-height: 44px; } }
         /* Drei Stufen, gemessen an der echten Blockbreite: gar nichts, nur die
            Startzeit, oder die volle Spanne. Ein 3-Stunden-Block ist auf einer
            normal breiten Karte nur rund 50 px breit — "01:00-04:00" passt dort
            nicht, "01:00" schon. */
-        .block .cap-short, .block .cap-full { display: none; }
-        @container (min-width: 44px) { .block .cap-short { display: inline; } }
+        /* M24: the block no longer clips (its grips may sit outside), so
+           each caption clips itself (rule 1). */
+        .block .cap-short, .block .cap-full {
+          display: none;
+          max-width: 100%;
+          vertical-align: top;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
+        }
+        @container (min-width: 44px) { .block .cap-short { display: inline-block; } }
         @container (min-width: 88px) {
           .block .cap-short { display: none; }
-          .block .cap-full { display: inline; }
+          .block .cap-full { display: inline-block; }
         }
         .block.dragging { cursor: grabbing; opacity: 0.9; }
         .readonly .block { cursor: default; }
 
+        /* M24: every grip has a 24 px hit area. On a block narrower than two
+           grips both move outward, so a 20-minute block stays grippable and
+           tappable; at the day edges they stay inside the track, which clips. */
         .handle {
           position: absolute;
           top: 0;
           bottom: 0;
-          width: 10px;
+          width: 24px;
           cursor: ew-resize;
         }
         .handle.start { left: 0; }
         .handle.end { right: 0; }
+        @container block (max-width: 47.98px) {
+          .handle.start { left: -24px; }
+          .handle.end { right: -24px; }
+          .block.at-start .handle.start { left: 0; }
+          .block.at-start .handle.end { right: auto; left: 24px; }
+          .block.at-end .handle.end { right: 0; }
+          .block.at-end .handle.start { left: auto; right: 24px; }
+          /* Outside the block the grip mark sits on the track: block colour. */
+          .handle::after { background: var(--busch-schedule-color, var(--primary-color)); opacity: 0.8; }
+        }
         .handle::after {
           content: "";
           position: absolute;
@@ -2394,6 +2424,7 @@ class BuschScheduleCard extends HTMLElement {
         <div class="foot">
           <div class="hint"></div>
         </div>
+        <div id="busch-block-bedienung" class="block-bedienung" hidden></div>
       </ha-card>
 
       <dialog class="block-dialog" aria-modal="true" aria-labelledby="busch-block-title">
@@ -2449,6 +2480,7 @@ class BuschScheduleCard extends HTMLElement {
       scale: this.shadowRoot.querySelector(".ruler .scale"),
       days: this.shadowRoot.querySelector(".days"),
       hint: this.shadowRoot.querySelector(".foot .hint"),
+      bedienung: this.shadowRoot.querySelector(".block-bedienung"),
       blockDialog: this.shadowRoot.querySelector(".block-dialog"),
       dayDialog: this.shadowRoot.querySelector(".day-dialog"),
     };
@@ -2752,6 +2784,8 @@ class BuschScheduleCard extends HTMLElement {
     const labels = this._dayLabels();
     const existingDays = new Map([...container.querySelectorAll(":scope > .day")].map((row) => [row.dataset.day, row]));
     const ordered = this._orderedDays();
+    const planEmpty = ordered.every((day) => !(this._model[day] || []).length);
+    if (this._els.bedienung) this._els.bedienung.textContent = this._texte.blockBedienung;
     for (const [dayPosition, day] of ordered.entries()) {
       let row = existingDays.get(day);
       if (!row) {
@@ -2787,6 +2821,7 @@ class BuschScheduleCard extends HTMLElement {
       const blocks = this._model[day] || [];
       const step = this._config.step || 15;
       add.disabled = this._readonly || !this._freieLuecken(blocks).some((gap) => gap.max - gap.min >= step);
+      add.classList.toggle("hervor", planEmpty && !add.disabled);
       const byKey = new Map([...track.querySelectorAll(":scope > .block")].map((block) => [block.dataset.key, block]));
       blocks.forEach((block, index) => {
         block._key ||= `b${++this._blockKeyCounter}`;
@@ -2796,7 +2831,12 @@ class BuschScheduleCard extends HTMLElement {
           element.className = "block";
           element.tabIndex = 0;
           element.setAttribute("role", "button");
-          element.innerHTML = '<span class="handle start"></span><span class="cap-short"></span><span class="cap-full"></span><span class="handle end"></span>';
+          element.setAttribute("aria-describedby", "busch-block-bedienung");
+          for (const name of ["handle start", "cap-short", "cap-full", "handle end"]) {
+            const part = document.createElement("span");
+            part.className = name;
+            element.append(part);
+          }
           element.addEventListener("keydown", (event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
@@ -2815,6 +2855,9 @@ class BuschScheduleCard extends HTMLElement {
         element.style.left = `${(block.start / MINUTES_PER_DAY) * 100}%`;
         element.style.width = `${((block.end - block.start) / MINUTES_PER_DAY) * 100}%`;
         element.title = text;
+        element.setAttribute("aria-label", buschFuellen(this._texte.blockName, { day: labels[day].long, start: from, end: to }));
+        element.classList.toggle("at-start", block.start <= 0);
+        element.classList.toggle("at-end", block.end >= MINUTES_PER_DAY);
         element.querySelector(".cap-short").textContent = from;
         element.querySelector(".cap-full").textContent = text;
         if (track.children[index] !== element) track.insertBefore(element, track.children[index] || null);

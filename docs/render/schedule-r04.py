@@ -149,6 +149,21 @@ with sync_playwright() as p:
  # A flaky day menu remains allowed to dismiss outside and is unchanged.
  page.evaluate("card._openDayDialog('monday')");page.keyboard.press('Escape');page.wait_for_timeout(350);assert not page.evaluate('card._els.dayDialog.open')
  page.emulate_media(reduced_motion='reduce');open_dialog();page.evaluate("card._els.blockDialog.querySelector('.f-from').value='07:45'");page.keyboard.press('Escape');assert opened();assert page.evaluate("getComputedStyle(card._els.blockDialog).animationName==='none'");page.once('dialog',lambda d:d.accept());page.locator('#schedule-r04-probe').locator('.block-dialog .actions button[data-act="cancel"]').click();page.wait_for_timeout(350)
+ # M24: phone geometry, measured. At 320 px every track is >= 44 px high; each grip of a
+ # 20-minute block and of a short block at 00:00 has a >= 24 px hit area that the pointer
+ # really reaches (elementFromPoint); blocks are named "<weekday>: from–to".
+ m24=[]
+ if not native:
+  page.evaluate("card._model.thursday=[{start:600,end:620}];card._model.friday=[{start:0,end:60}];card._renderDays()")
+  for dark in [False,True]:
+   page.evaluate("dark=>{for(const [key,light,night] of [['--primary-text-color','#212121','#eee'],['--secondary-text-color','#555','#ccc'],['--card-background-color','#fff','#222'],['--secondary-background-color','#eef5fb','#303b47'],['--divider-color','#dbe4ed','#46505b']])host.style.setProperty(key,dark?night:light)}",dark)
+   page.set_viewport_size({'width':320,'height':1000});page.wait_for_timeout(150)
+   geo=page.evaluate("""()=>{const root=card.shadowRoot;const tracks=[...root.querySelectorAll('.track')].map(t=>t.getBoundingClientRect().height);const grips=[];for(const day of ['thursday','friday']){const track=root.querySelector(`.day[data-day="${day}"] .track`);const t=track.getBoundingClientRect();for(const h of track.querySelectorAll('.block .handle')){const r=h.getBoundingClientRect();const left=Math.max(r.left,t.left),right=Math.min(r.right,t.right);const hit=root.elementFromPoint((left+right)/2,r.top+r.height/2);grips.push({day,kind:h.classList.contains('start')?'start':'end',visibleWidth:right-left,height:r.height,reached:hit===h})}}return {tracks,minTrack:Math.min(...tracks),grips,labels:[...root.querySelectorAll('.day[data-day="thursday"] .block,.day[data-day="friday"] .block')].map(b=>b.getAttribute('aria-label'))}}""")
+   m24.append({'dark':dark,**geo})
+   assert geo['minTrack']>=44,geo
+   assert len(geo['grips'])==4 and all(g['visibleWidth']>=24 and g['reached'] for g in geo['grips']),geo
+   assert geo['labels']==['Donnerstag: 10:00–10:20','Freitag: 00:00–01:00'],geo
+   page.locator('#schedule-r04-probe busch-schedule-card').screenshot(path=str(out/f'zeitplan-handy-320-{"dark" if dark else "light"}.png'))
  guard_report={**guard_counts,'websocketWritesBlocked':page.evaluate("(window.__blocked||[]).reduce((counts,type)=>{counts[type]=(counts[type]||0)+1;return counts},{})")} if native else {}
  browser.close()
-summary={'guard':guard_report,'native':native,'cases':report,'pageErrors':errors,'serviceCalls':0};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0}));assert not errors
+summary={'guard':guard_report,'native':native,'cases':report,'m24':m24,'pageErrors':errors,'serviceCalls':0};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0}));assert not errors
