@@ -130,9 +130,11 @@ test("M26: text colours of busch-cards reach 4.5:1 in light and dark (blocks, to
   assert.deepEqual(lines, []);
 });
 
-test("M26: the schedule colour hook stays the whole block surface; HA blue stays surface, frame and accent", () => {
+// The today bar was pure HA blue (E6, accent); since the user decision of 19.11. (#1320, no exception for graphics) it is
+// primary 60 % with the text colour (3:1 on its tint, see the #1320 test below).
+test("M26: the schedule colour hook stays the whole block surface; HA blue stays surface, frame and accent (today bar mixed, #1320)", () => {
   assert.match(regel(SCHEDULE, ".block"), /background: var\(--busch-schedule-color, color-mix\(in srgb, var\(--primary-color\) 50%, var\(--card-background-color, #fff\)\)\);/);
-  assert.match(regel(SCHEDULE, ".day.today"), /box-shadow: inset 3px 0 0 var\(--primary-color\);/);
+  assert.match(regel(SCHEDULE, ".day.today"), /box-shadow: inset 3px 0 0 color-mix\(in srgb, var\(--primary-color\) 60%, var\(--primary-text-color\)\);/);
   assert.match(regel(SCHEDULE, ".day.today .label"), /font-weight: var\(--ha-font-weight-bold, 700\);/, "today is not marked by colour alone");
 });
 
@@ -157,5 +159,41 @@ test("M79: coloured symbols of busch-cards reach 3:1 on their surface (schedule 
     if (q < 3) lines.push(all.at(-1));
   }
   assert.equal(all.length, 8);
+  assert.deepEqual(lines, []);
+});
+
+// #1320 (Etappe I, Kontrast-Rest, user decision: no exception for graphics): operated controls and information-carrying
+// graphics reach 3:1 (WCAG 1.4.11) in light and dark: the device quick range (accent colour on the grey control) and the
+// busy ring of the power button, the schedule track frame against the card, the block frame against the track, the grips
+// inside and outside a block, the today bar on its tint, the block preview segments against their track and the card,
+// and the calendar dot's ring against the card.
+test("#1320: controls and graphics of busch-cards reach 3:1 (quick range, busy ring, schedule track/block/grips/today/preview, calendar dot)", () => {
+  const SCHED_THEMA = Object.fromEntries(Object.entries(THEMA).map(([n, t]) => [n, { ...t, "divider-color": n === "light" ? "#e0e0e0" : "#474747" }]));
+  const first = (css, re) => { const m = css.match(re); assert.ok(m, String(re)); return m[1].trim(); };
+  const lines = [], all = [];
+  for (const [name, t] of Object.entries(SCHED_THEMA)) {
+    const card = hex(t["card-background-color"]), f = (w, under = card) => farbe(w, t, SCHEDULE + DEV + CAL, under);
+    const grau = f("var(--secondary-background-color)"), spur = f(wert(regel(SCHEDULE, ".track"), "background-color"));
+    const block = f(wert(regel(SCHEDULE, ".block"), "background")), heute = f(wert(regel(SCHEDULE, ".day.today"), "background"), card);
+    const griffInnen = (() => { const r = SCHEDULE.match(/\}\s*\.handle::after \{([^}]*)\}/); assert.ok(r, "grip mark"); return r[1]; })();
+    const opacity = Number(wert(griffInnen, "opacity") ?? 1);
+    const vspur = f(wert(regel(SCHEDULE, ".v-spur"), "background"));
+    const faelle = [
+      ["quick range accent/control", f(wert(regel(DEV, ".dev-quick button,.dev-quick input,.dev-quick select"), "accent-color")), grau],
+      ["quick busy ring/button", f(first(DEV, /\.dev-quick button\.dev-quick-pending \{[^}]*box-shadow:inset 0 0 0 2px ([^;]+);/)), grau],
+      ["schedule track frame/card", f(first(SCHEDULE, /\.track \{[^}]*box-shadow: inset 0 0 0 1px ([^;]+);/)), card],
+      ["schedule block frame/track", f(first(SCHEDULE, /\.block \{[^}]*box-shadow: inset 0 0 0 2px ([^;]+);/)), spur],
+      ["schedule grip inside/block", f(wert(griffInnen, "background")).map((v, i) => v * opacity + block[i] * (1 - opacity)), block],
+      ["schedule grip outside/track", f(first(SCHEDULE, /@container block[^]*?\.handle::after \{ background: ([^;]+);/)), spur],
+      ["schedule today bar/tint", f(first(SCHEDULE, /\.day\.today \{[^}]*box-shadow: inset 3px 0 0 ([^;]+);/)), heute],
+      ...[".v-seg", ".v-seg.v-dieser", ".v-seg.v-konflikt"].flatMap((sel) => [[`preview ${sel}/track`, f(wert(regel(SCHEDULE, sel), "background")), vspur], [`preview ${sel}/card`, f(wert(regel(SCHEDULE, sel), "background")), card]]),
+      ["calendar dot ring/card", f(first(CAL, /\.cal-punkt \{[^}]*border:\s*1px solid ([^;]+);/)), card],
+    ];
+    for (const [label, fg, bg] of faelle) {
+      const q = quote(fg, bg); all.push(`${label} ${name}: ${q.toFixed(2)}:1`);
+      if (q < 3) lines.push(all.at(-1));
+    }
+  }
+  assert.equal(all.length, 28);
   assert.deepEqual(lines, []);
 });

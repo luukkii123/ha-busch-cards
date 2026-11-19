@@ -2267,7 +2267,8 @@ class BuschScheduleCard extends HTMLElement {
           padding-inline: var(--ha-space-2, 8px);
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           background: color-mix(in srgb, var(--primary-color) 12%, transparent);
-          box-shadow: inset 3px 0 0 var(--primary-color);
+          /* #1320: the today bar is primary 60 % with the text colour, 3:1 on its tint (pure blue about 2.3:1). */
+          box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary-color) 60%, var(--primary-text-color));
         }
         /* M26: blue mixed toward the text colour, >= 4.5:1 on the today tint (bold and the bar stay). */
         .day.today .label {
@@ -2308,6 +2309,9 @@ class BuschScheduleCard extends HTMLElement {
           height: 44px;
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           background-color: var(--busch-schedule-track-color, var(--divider-color));
+          /* #1320 (WCAG 1.4.11): the track is operated (tap adds a block); its frame in the secondary text
+             colour reaches 3:1 on the card (4.81/6.13:1; the divider surface alone 1.32/1.83:1). */
+          box-shadow: inset 0 0 0 1px var(--secondary-text-color);
           background-image: linear-gradient(
             to right,
             var(--card-background-color) 0 1px,
@@ -2349,6 +2353,9 @@ class BuschScheduleCard extends HTMLElement {
              surface and carries the text colour: >= 4.5:1 in light and dark (tests/kontrast.test.js). The
              theme hook --busch-schedule-color still replaces the whole surface. */
           background: var(--busch-schedule-color, color-mix(in srgb, var(--primary-color) 50%, var(--card-background-color, #fff)));
+          /* #1320 (WCAG 1.4.11): a 2 px frame, primary 60 % with the text colour, sets the block off the track
+             by 3:1 (the half-mixed surface alone was about 1.4:1 on the divider track). */
+          box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary-color) 60%, var(--primary-text-color));
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           color: var(--primary-text-color);
           font-size: var(--ha-font-size-s, 12px);
@@ -2414,8 +2421,8 @@ class BuschScheduleCard extends HTMLElement {
           .block.near-end .handle.end { right: calc(-1 * var(--grip-room-end)); width: var(--grip-room-end); }
           .block.at-start.near-end .handle.end { right: auto; left: 24px; width: clamp(0px, calc(100% + var(--grip-room-end) - 24px), 24px); }
           .block.at-end.near-start .handle.start { left: auto; right: 24px; width: clamp(0px, calc(100% + var(--grip-room-start) - 24px), 24px); }
-          /* Outside the block the grip mark sits on the track: block colour. */
-          .handle::after { background: var(--busch-schedule-color, var(--primary-color)); opacity: 0.8; }
+          /* Outside the block the grip mark sits on the track: the block frame colour, 3:1 on the track (#1320). */
+          .handle::after { background: color-mix(in srgb, var(--primary-color) 60%, var(--primary-text-color)); opacity: 1; }
         }
         .handle::after {
           content: "";
@@ -2426,8 +2433,8 @@ class BuschScheduleCard extends HTMLElement {
           width: 2px;
           height: 12px;
           border-radius: 1px;
+          /* #1320: full text colour; at 0.55 the operated grip mark lost its 3:1 on a light block. */
           background: var(--primary-text-color);
-          opacity: 0.55;
         }
         .readonly .handle { display: none; }
 
@@ -2584,10 +2591,12 @@ class BuschScheduleCard extends HTMLElement {
           bottom: 0;
           left: var(--v-a);
           width: var(--v-b);
-          background: color-mix(in srgb, var(--secondary-text-color) 45%, var(--card-background-color, #fff));
+          /* #1320 (WCAG 1.4.11): the preview segments reach 3:1 on the track and the card: other blocks in the
+             secondary text colour, this block primary 60 % and a conflict red 60 % with the text colour. */
+          background: var(--secondary-text-color);
         }
-        .v-seg.v-dieser { background: var(--busch-schedule-color, color-mix(in srgb, var(--primary-color) 50%, var(--card-background-color, #fff))); }
-        .v-seg.v-konflikt { background: var(--error-color, #db4437); }
+        .v-seg.v-dieser { background: var(--busch-schedule-color, color-mix(in srgb, var(--primary-color) 60%, var(--primary-text-color))); }
+        .v-seg.v-konflikt { background: color-mix(in srgb, var(--error-color, #db4437) 60%, var(--primary-text-color)); }
         /* M76: on a phone the dialog is full screen (rule 2) and the preview becomes a vertical day column
            that takes the free height between the fields and the fixed actions. */
         @media (max-width: 450px) {
@@ -4158,7 +4167,10 @@ const CAL_STIL = `
   .cal-leer { cursor:default; }
   /* M23: tapped row while HA's dialog loads (dimmed, not only a colour change). */
   .cal-termin-wartet { opacity:.55; cursor:progress; }
+  /* #1320 (WCAG 1.4.11): the dot carries the calendar's colour (any colour, also from the config); a ring in
+     the secondary text colour keeps it 3:1 on the card (palette orange/green were 2.6/2.9:1 on white). */
   .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
+    box-sizing:border-box; border:1px solid var(--secondary-text-color);
     align-self:center; }
   /* Die Zeitspalte SCHRUMPFT NICHT (flex:0 0 auto) — der Titel daneben tut es
      und wird gekuerzt. Ohne min-width:0 am Titel waeche der Flexkasten ueber
@@ -7318,13 +7330,15 @@ const DEV_STIL = `
   .dev-quick-item { display:grid;gap:var(--ha-space-1,4px);min-width:0; }
   .dev-quick-value { font-size:var(--ha-font-size-m,14px);overflow-wrap:anywhere; }
   .dev-quick-item span { font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0; }
-  .dev-quick button,.dev-quick input,.dev-quick select { box-sizing:border-box;min-height:var(--dev-control-size);min-width:var(--dev-control-size);max-width:100%;border:0;border-radius:var(--ha-card-border-radius,var(--ha-space-3,12px));background:var(--secondary-background-color);color:var(--primary-text-color);font:inherit;accent-color:var(--primary-color); }
+  .dev-quick button,.dev-quick input,.dev-quick select { box-sizing:border-box;min-height:var(--dev-control-size);min-width:var(--dev-control-size);max-width:100%;border:0;border-radius:var(--ha-card-border-radius,var(--ha-space-3,12px));background:var(--secondary-background-color);color:var(--primary-text-color);font:inherit;accent-color:color-mix(in srgb,var(--primary-color) 60%,var(--primary-text-color)); }
   .dev-quick button,.dev-quick select { padding-inline:var(--ha-space-2,8px); }
   .dev-quick input { width:var(--dev-range-width); }
   .dev-quick :disabled { opacity:var(--disabled-opacity,.5);cursor:default; }
   .dev-quick .dev-quick-pending { cursor:progress; }
-  /* M14: the busy power button shows a ring and a progress mark on the button itself, not only its text. */
-  .dev-quick button.dev-quick-pending { display:inline-flex;align-items:center;justify-content:center;gap:var(--ha-space-1,4px);box-shadow:inset 0 0 0 2px var(--primary-color,#03a9f4); }
+  /* M14: the busy power button shows a ring and a progress mark on the button itself, not only its text.
+     #1320 (WCAG 1.4.11): ring and range accent are the primary colour 60 % with the text colour, >= 3:1 on the grey
+     control in light and dark (light 4.21:1, pure #03a9f4 2.07:1). */
+  .dev-quick button.dev-quick-pending { display:inline-flex;align-items:center;justify-content:center;gap:var(--ha-space-1,4px);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--primary-color,#03a9f4) 60%,var(--primary-text-color,#212121)); }
   .dev-quick button.dev-quick-pending::before { content:"";flex:none;box-sizing:border-box;width:1em;height:1em;border-radius:50%;border:2px solid currentColor;border-inline-end-color:transparent;animation:dev-quick-spin 1s linear infinite; }
   @keyframes dev-quick-spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .dev-quick button.dev-quick-pending::before { animation:none;border-style:dotted; } }
