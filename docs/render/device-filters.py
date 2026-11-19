@@ -34,14 +34,21 @@ with sync_playwright() as pw:
  assert not any(case['overflow'] for case in card_cases),card_cases
  # Ein zusammengeklappter Gerätekopf soll auf dem Handy die Höhe einer
  # HA-Kartenzeile behalten. Der Pfeil bleibt unabhängig davon gut treffbar.
+ # E12 (18.11.): Kartentitel bis zwei Zeilen. Die frühere feste Grenze 76 px
+ # (12 + 48-px-Symbol + 12, plus Rundung) galt für einen EINZEILIGEN Titel;
+ # mit zwei Titelzeilen und der Unterzeile darunter (M60) ist der Kopf
+ # 12 + 2 × Titelzeile + Abstand + Unterzeile + 12 hoch (Lauf 20261119-131747:
+ # 24 + 2 × 20,16 + 2 + 16 = 82,3 px). Die Grenze wird daraus abgeleitet,
+ # nicht gelockert: mehr als zwei Titelzeilen, eine zweite Unterzeile oder
+ # zusätzlicher Leerraum fallen weiter auf; einzeilig gilt weiter 76 px.
  collapsed_cases=[]
  for width in [320,374,390,480]:
   p.set_viewport_size({'width':max(width,390),'height':1000})
   p.evaluate("width=>{card.style.width=width+'px';card._offen=false;card._zeigeListe()}",width)
-  geometry=p.evaluate("""()=>{const head=card.querySelector('.dev-kopf').getBoundingClientRect(),arrow=card.querySelector('.dev-pfeil').getBoundingClientRect();return {headHeight:head.height,arrowWidth:arrow.width,arrowHeight:arrow.height,cardWidth:card.getBoundingClientRect().width}}""")
+  geometry=p.evaluate("""()=>{const head=card.querySelector('.dev-kopf').getBoundingClientRect(),arrow=card.querySelector('.dev-pfeil').getBoundingClientRect();const kopf=getComputedStyle(card.querySelector('.dev-kopf')),name=card.querySelector('.dev-name'),nameLh=parseFloat(getComputedStyle(name).lineHeight),titel=getComputedStyle(card.querySelector('.dev-titel')),unter=card.querySelector('.dev-unter'),lines=Math.round(name.getBoundingClientRect().height/nameLh),unterH=unter.hidden?0:unter.getBoundingClientRect().height,icon=card.querySelector('.dev-icon'),iconH=icon&&!icon.hidden?icon.getBoundingClientRect().height:0;const pad=parseFloat(kopf.paddingTop)+parseFloat(kopf.paddingBottom),textH=Math.min(lines,2)*nameLh+(unterH?parseFloat(titel.rowGap)+Math.min(unterH,16):0);return {headHeight:head.height,arrowWidth:arrow.width,arrowHeight:arrow.height,cardWidth:card.getBoundingClientRect().width,titleLines:lines,subtitleHeight:unterH,limit:lines<=1?76:Math.ceil((pad+Math.max(textH,iconH,44))*10)/10+0.5}}""")
   p.locator('busch-device-card').screenshot(path=str(out/f'device-collapsed-{width}.png'))
   collapsed_cases.append({'width':width,**geometry})
- assert all(c['headHeight']<=76 and c['arrowWidth']>=44 and c['arrowHeight']>=44 for c in collapsed_cases),collapsed_cases
+ assert all(c['titleLines']<=2 and c['subtitleHeight']<=16 and c['headHeight']<=c['limit'] and c['arrowWidth']>=44 and c['arrowHeight']>=44 for c in collapsed_cases),collapsed_cases
  old_open=p.evaluate("card._offen")
  p.locator("busch-device-card .dev-pfeil").press("Enter")
  assert p.evaluate("card._offen") != old_open
