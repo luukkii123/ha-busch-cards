@@ -56,15 +56,22 @@ with sync_playwright() as pw:
  # M60: readable name at 320 px, measured. The finding's name "Wohnzimmer Deckenlampe" shows in
  # full in at most two lines (not cut), the subtitle sits below it, group heads are in sentence
  # case with a 24 px arrow in a >= 44 px head, and the keyboard folds a group (Enter, Space).
+ # "below" (run karten-20261119-173556): since 1cd71cb an EMPTY subtitle is display:none under
+ # 380 px (its rect is 0,0, so "top >= name bottom" was false although nothing is shown). An
+ # empty or config-hidden subtitle therefore counts as fulfilled; a FILLED one must be rendered
+ # and sit below the name. Both cases are measured: the probe device has no manufacturer/model
+ # (empty), then a subtitle text is set for one synchronous measurement (filled) and restored.
  p.evaluate("()=>{card.style.width='';card.setConfig({...cfg,filter:undefined,title:'Wohnzimmer Deckenlampe',start_expanded:true});card._offen=true;card._zeigeListe()}")
  p.wait_for_function("card.querySelectorAll('.dev-gruppe-kopf').length>=1")
  m60=[]
  for dark in [False,True]:
   p.evaluate("dark=>{for(const [k,v]of Object.entries({'--primary-text-color':dark?'#eee':'#222','--secondary-text-color':dark?'#bbb':'#555','--card-background-color':dark?'#222':'#fff','--divider-color':dark?'#555':'#ddd','--primary-color':'#03a9f4'}))document.documentElement.style.setProperty(k,v)}",dark)
   p.set_viewport_size({'width':320,'height':1000});p.wait_for_timeout(100)
-  geo=p.evaluate("""()=>{const name=card.querySelector('.dev-name'),st=getComputedStyle(name),r=name.getBoundingClientRect(),lh=parseFloat(st.lineHeight);const unter=card.querySelector('.dev-unter');const heads=[...card.querySelectorAll('.dev-gruppe-kopf')].map(k=>{const a=k.querySelector('.dev-gruppe-pfeil').getBoundingClientRect(),s=getComputedStyle(k);return {h:k.getBoundingClientRect().height,arrow:[a.width,a.height],transform:s.textTransform,spacing:s.letterSpacing,expanded:k.getAttribute('aria-expanded')}});return {text:name.textContent,title:name.title,lines:Math.round(r.height/lh),cut:name.scrollHeight>name.clientHeight+1,below:unter.hidden||unter.getBoundingClientRect().top>=r.bottom-1,heads}}""")
+  geo=p.evaluate("""()=>{const name=card.querySelector('.dev-name'),st=getComputedStyle(name),r=name.getBoundingClientRect(),lh=parseFloat(st.lineHeight);const unter=card.querySelector('.dev-unter'),ut=card.querySelector('.dev-unter-text');const sub=fill=>{const old=ut.textContent;if(fill)ut.textContent='IKEA · TRADFRI';const ur=unter.getBoundingClientRect(),shown=getComputedStyle(unter).display!=='none'&&ur.height>0,filled=!!ut.textContent.trim(),res={filled,shown,configHidden:unter.hidden,below:unter.hidden||(filled?shown&&ur.top>=r.bottom-1:!shown||ur.top>=r.bottom-1)};ut.textContent=old;return res};const subtitle=[sub(false),sub(true)];const heads=[...card.querySelectorAll('.dev-gruppe-kopf')].map(k=>{const a=k.querySelector('.dev-gruppe-pfeil').getBoundingClientRect(),s=getComputedStyle(k);return {h:k.getBoundingClientRect().height,arrow:[a.width,a.height],transform:s.textTransform,spacing:s.letterSpacing,expanded:k.getAttribute('aria-expanded')}});return {text:name.textContent,title:name.title,lines:Math.round(r.height/lh),cut:name.scrollHeight>name.clientHeight+1,below:subtitle.every(c=>c.below),subtitle,heads}}""")
   m60.append({'dark':dark,**geo})
   assert geo['text']=='Wohnzimmer Deckenlampe' and geo['title']==geo['text'] and geo['lines']<=2 and not geo['cut'] and geo['below'],geo
+  # Both subtitle cases really occurred: empty first, then filled and rendered (not config-hidden).
+  assert [c['filled'] for c in geo['subtitle']]==[False,True] and geo['subtitle'][1]['shown'] and not geo['subtitle'][1]['configHidden'],geo
   assert all(h['h']>=44 and h['arrow']==[24,24] and h['transform']=='none' and h['spacing'] in ('normal','0px') for h in geo['heads']),geo
   p.locator('busch-device-card').screenshot(path=str(out/f'device-titel-320-{"dark" if dark else "light"}.png'))
  head=p.locator('busch-device-card .dev-gruppe-kopf').first
