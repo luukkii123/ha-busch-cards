@@ -1461,6 +1461,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       hinweisZiehen: "Ziehen legt einen Block an, Tippen öffnet ihn. Oder auf das Plus tippen.",
       blockName: "{day}: {start}–{end}",
       blockBedienung: "Enter öffnet die Bearbeitung.",
+      tagVoll: "Tag ist voll belegt",
       von: "Von",
       dialogBis: "Bis",
       mitternacht: "Bis <b>00:00</b> bedeutet Mitternacht am Tagesende.",
@@ -1529,6 +1530,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       hinweisZiehen: "Drag to add a block, tap to open it. Or tap the plus.",
       blockName: "{day}: {start}–{end}",
       blockBedienung: "Press Enter to edit.",
+      tagVoll: "Day is fully booked",
       von: "From",
       dialogBis: "To",
       mitternacht: "A <b>00:00</b> end means midnight at the end of the day.",
@@ -2282,7 +2284,8 @@ class BuschScheduleCard extends HTMLElement {
           border-color: var(--primary-color);
           background: color-mix(in srgb, var(--primary-color) 14%, var(--card-background-color, #fff));
         }
-        .day .add-block:disabled { opacity: .45; cursor: not-allowed; }
+        /* M77 (W21): no fading opacity; secondary text reaches >= 3:1 in light and dark, the reason is in title/aria. */
+        .day .add-block:disabled { color: var(--secondary-text-color); cursor: not-allowed; }
         .readonly .add-block { display: none; }
 
         .track {
@@ -2585,6 +2588,7 @@ class BuschScheduleCard extends HTMLElement {
           <div class="hint"></div>
         </div>
         <div id="busch-block-bedienung" class="block-bedienung" hidden></div>
+        <div id="busch-tag-voll" class="tag-voll" hidden></div>
       </ha-card>
 
       <dialog class="block-dialog" aria-modal="true" aria-labelledby="busch-block-title">
@@ -2647,6 +2651,7 @@ class BuschScheduleCard extends HTMLElement {
       days: this.shadowRoot.querySelector(".days"),
       hint: this.shadowRoot.querySelector(".foot .hint"),
       bedienung: this.shadowRoot.querySelector(".block-bedienung"),
+      tagVoll: this.shadowRoot.querySelector(".tag-voll"),
       blockDialog: this.shadowRoot.querySelector(".block-dialog"),
       dayDialog: this.shadowRoot.querySelector(".day-dialog"),
     };
@@ -2902,6 +2907,7 @@ class BuschScheduleCard extends HTMLElement {
     const ordered = this._orderedDays();
     const planEmpty = ordered.every((day) => !(this._model[day] || []).length);
     if (this._els.bedienung) this._els.bedienung.textContent = this._texte.blockBedienung;
+    if (this._els.tagVoll) this._els.tagVoll.textContent = this._texte.tagVoll;
     for (const [dayPosition, day] of ordered.entries()) {
       let row = existingDays.get(day);
       if (!row) {
@@ -2932,11 +2938,15 @@ class BuschScheduleCard extends HTMLElement {
       const track = row.querySelector(".track");
       const add = row.querySelector(".add-block");
       add.setAttribute("aria-label", `${this._texte.blockHinzufuegen}: ${labels[day].long}`);
-      add.title = `${this._texte.blockHinzufuegen}: ${labels[day].long}`;
 
       const blocks = this._model[day] || [];
       const step = this._config.step || 15;
-      add.disabled = this._readonly || !this._freieLuecken(blocks).some((gap) => gap.max - gap.min >= step);
+      // M77 (W21): a full day says why its plus is locked (tooltip and description).
+      const voll = !this._freieLuecken(blocks).some((gap) => gap.max - gap.min >= step);
+      add.disabled = this._readonly || voll;
+      add.title = voll ? `${labels[day].long}: ${this._texte.tagVoll}` : `${this._texte.blockHinzufuegen}: ${labels[day].long}`;
+      if (voll) add.setAttribute("aria-describedby", "busch-tag-voll");
+      else add.removeAttribute("aria-describedby");
       add.classList.toggle("hervor", planEmpty && !add.disabled);
       const byKey = new Map([...track.querySelectorAll(":scope > .block")].map((block) => [block.dataset.key, block]));
       blocks.forEach((block, index) => {
