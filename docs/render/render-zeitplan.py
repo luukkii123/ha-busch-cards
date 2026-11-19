@@ -616,6 +616,10 @@ try:
         # nicht über den Rand des Dialogs hinausragen, und unter 450 px ist
         # der Dialog Vollbild.
         dialog_ui = {}
+        # M76 (F14): every dialog also at the phone widths 360 and 390 (R06), with contrast and
+        # touch targets measured inside the open dialog (M26); the widths are listed in report.json.
+        DIALOG_BREITEN = (320, 360, 390, 480, 960)
+        ausnahmen_datei = pathlib.Path(__file__).resolve().parent / "kontrast-ausnahmen.json"
         for wahl, oeffner in (
             (".block-dialog",
              "() => { const b = window.__card.shadowRoot.querySelector('.block');"
@@ -626,8 +630,10 @@ try:
             def auf(p, o=oeffner):
                 p.evaluate(o)
             dialog_ui[wahl] = regeln.lauf_breiten(
-                page, vor_messung=auf,
-                messung=lambda p, w=wahl: regeln.messe_text(p, w))
+                page, breiten=DIALOG_BREITEN, vor_messung=auf,
+                messung=lambda p, w=wahl: {
+                    **regeln.messe_text(p, w),
+                    **regeln.messe_kontrast_touch_hier(p, w, ausnahmen=ausnahmen_datei)})
             # ── Bilder der Dialoge: eigene Seite mit device_scale_factor 1 ──
             #
             # Bei `device_scale_factor=2` — dem Wert aller anderen Bilder hier —
@@ -672,6 +678,46 @@ try:
                           "   if (d.open) d.close(); }")
             page.wait_for_timeout(200)
 
+        # ── M76: block dialog on real phone heights without a large empty area ──
+        # Full screen below 450 px (rule 2) with the actions fixed at the bottom. Measured: the gap
+        # between the lowest visible content of `.body` and the top of the actions, as share of the
+        # dialog height (limit 15 %), and the height of the duration preview that fills it.
+        # Own page with scale 1, for the same reason as the dialog images above (dsf 2 ghosts).
+        leerflaeche = []
+        handy = browser.new_page(viewport={"width": 320, "height": 568},
+                                 device_scale_factor=1, locale="de-DE")
+        handy.goto(f"http://127.0.0.1:{PORT}/page.html", wait_until="load")
+        handy.wait_for_function("window.__card && window.__card.shadowRoot"
+                                ".querySelectorAll('.block').length > 0", timeout=20000)
+        handy.evaluate("() => { const w = document.getElementById('wrap');"
+                       " w.style.maxWidth = 'none'; w.style.width = 'auto'; }")
+        for breite, hoehe in ((320, 568), (360, 640), (390, 844)):
+            handy.set_viewport_size({"width": breite, "height": hoehe})
+            handy.wait_for_timeout(250)
+            handy.evaluate("() => { const b = window.__card.shadowRoot.querySelector('.block');"
+                          "  window.__card._openBlockDialog(b.dataset.day, Number(b.dataset.index)); }")
+            handy.wait_for_timeout(300)
+            mass = handy.evaluate("""() => {
+                const d = window.__card.shadowRoot.querySelector('.block-dialog');
+                const r = d.getBoundingClientRect(), a = d.querySelector('.actions').getBoundingClientRect();
+                const unten = Math.max(...[...d.querySelectorAll('.body > *')]
+                  .map((e) => e.getBoundingClientRect()).filter((k) => k.width && k.height).map((k) => k.bottom));
+                const v = d.querySelector('.vorschau').getBoundingClientRect();
+                return { dialog_h: Math.round(r.height), leer_px: Math.round(a.top - unten),
+                         vorschau_h: Math.round(v.height), dauer: d.querySelector('.dauer').textContent };
+            }""")
+            mass.update(breite=breite, hoehe=hoehe,
+                        anteil=round(mass["leer_px"] / max(1, mass["dialog_h"]), 3))
+            mass["ergebnis"] = ("bestanden" if mass["anteil"] <= 0.15 and mass["vorschau_h"] >= 120
+                                and mass["dauer"] else "verletzt")
+            handy.screenshot(path=str(OUT / ("dialog-block-dialog-handy-%dx%d.png" % (breite, hoehe))))
+            leerflaeche.append(mass)
+            handy.evaluate("() => { for (const d of"
+                           " window.__card.shadowRoot.querySelectorAll('dialog'))"
+                           "   if (d.open) d.close(); }")
+            handy.wait_for_timeout(200)
+        handy.close()
+
         ha_icon = regeln.ha_icon_fehlend(page)  # M79: stand-in active, names without a path
         browser.close()
 finally:
@@ -693,6 +739,9 @@ report = {
     "ui_popup_tagesdialog": popup_tag,
     "ui_regeln_dialoge": dialog_ui,
     "ui_regeln_dialoge_zaehlung": {k: regeln.zaehle(v) for k, v in dialog_ui.items()},
+    # M76: widths per dialog (summary/report must show 360 and 390 for each dialog).
+    "ui_dialog_breiten": {k: sorted({l["breite"] for l in v["laeufe"]}) for k, v in dialog_ui.items()},
+    "ui_blockdialog_leerflaeche": leerflaeche,
     "ui_formular_ausnahme": formular,
     "ui_theme_haken": theme_haken,
     "ui_heute_nurlesen": heute_nurlesen,
@@ -709,6 +758,10 @@ print("Popup Block:", json.dumps({k: v["ergebnis"] for k, v in popup.items()},
 print("Popup Tag:  ", json.dumps({k: v["ergebnis"] for k, v in popup_tag.items()},
                                  ensure_ascii=False))
 print("Formular-Ausnahme:", formular["ergebnis"])
+print("Dialogbreiten (M76):", json.dumps(report["ui_dialog_breiten"], ensure_ascii=False))
+print("Blockdialog Leerflaeche (M76):", json.dumps(
+    [{k: m[k] for k in ("breite", "hoehe", "anteil", "vorschau_h", "ergebnis")} for m in leerflaeche],
+    ensure_ascii=False))
 print("Heute/Nur-Lesen:", heute_nurlesen["ergebnis"])
 print("Theme-Haken:", theme_haken["ergebnis"],
       json.dumps({"ohne": theme_haken["ohne_theme"], "mit": theme_haken["mit_theme"]},
@@ -720,7 +773,10 @@ print("Theme-Haken:", theme_haken["ergebnis"],
 schlecht = (regeln.bewerte(ui) or regeln.bewerte(popup)
             or regeln.bewerte(popup_tag) or regeln.bewerte(formular)
             or regeln.bewerte(dialog_ui) or regeln.bewerte(theme_haken)
-            or regeln.bewerte(heute_nurlesen))
+            or regeln.bewerte(heute_nurlesen) or regeln.bewerte(leerflaeche))
+if any({360, 390} - set(b) for b in report["ui_dialog_breiten"].values()):
+    print("FEHLER: ein Dialog ohne 360/390 px (M76).")
+    schlecht = 1
 if not (selbsttest["ueberlauf_erkannt"] and selbsttest["ausserhalb_erkannt"]):
     print("FEHLER: Die Gegenprobe hat nicht angeschlagen — die Messung ist blind.")
     schlecht = 1

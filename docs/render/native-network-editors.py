@@ -57,7 +57,7 @@ with sync_playwright() as pw:
   row['physicalFilter']=page.evaluate("""()=>{const input=deepFind(editor,e=>e.tagName==='INPUT'&&e.value==='example-*');const before=events.length;editor.hass={...nativeHass};editor._change({show_status:false});editor.setConfig(JSON.parse(JSON.stringify(events.at(-1))));return {saved:events.at(-1).filter.include[0].hostname==='example-*',connected:input.isConnected,value:input.value==='example-*',fullPayload:events.at(-1).task5_nested?.readonly===true,events:events.length-before};}""")
   assert all(row['physicalFilter'][k]for k in ['saved','connected','value','fullPayload']),row['physicalFilter']
   page.evaluate("editor._sectionOpen.set('filters',false);editor.shadowRoot.querySelector('[data-section=filters]').open=false;host.style.maxHeight='';host.style.overflow=''")
-  for width in (320,480,960):
+  for width in (320,360,390,480,960):  # M76: phone widths 360/390
    for theme in ('light','dark'):
     page.emulate_media(color_scheme=theme);page.wait_for_timeout(150)
     page.evaluate("width=>host.style.width=width+'px'",width)

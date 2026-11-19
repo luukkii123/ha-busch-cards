@@ -1462,6 +1462,10 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       blockName: "{day}: {start}–{end}",
       blockBedienung: "Enter öffnet die Bearbeitung.",
       tagVoll: "Tag ist voll belegt",
+      dauer: "Dauer: {dauer}",
+      dauerOffen: "Dauer: –",
+      dauerStunden: "{h} Std.",
+      dauerMinuten: "{m} Min.",
       von: "Von",
       dialogBis: "Bis",
       mitternacht: "Bis <b>00:00</b> bedeutet Mitternacht am Tagesende.",
@@ -1531,6 +1535,10 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       blockName: "{day}: {start}–{end}",
       blockBedienung: "Press Enter to edit.",
       tagVoll: "Day is fully booked",
+      dauer: "Duration: {dauer}",
+      dauerOffen: "Duration: –",
+      dauerStunden: "{h} h",
+      dauerMinuten: "{m} min",
       von: "From",
       dialogBis: "To",
       mitternacht: "A <b>00:00</b> end means midnight at the end of the day.",
@@ -2532,6 +2540,57 @@ class BuschScheduleCard extends HTMLElement {
           overflow-wrap: anywhere;
         }
         .dlg .msg:empty { display: none; }
+        /* M76 (F14): duration preview, the edited block (schedule colour) among the day's other blocks. */
+        .dlg .dauer {
+          margin-top: var(--ha-space-3, 12px);
+          font-size: var(--ha-font-size-m, 14px);
+          color: var(--primary-text-color);
+          overflow-wrap: anywhere;
+        }
+        .vorschau {
+          display: grid;
+          gap: var(--ha-space-1, 4px);
+          margin-top: var(--ha-space-2, 8px);
+        }
+        .v-spur {
+          order: 1;
+          position: relative;
+          height: 24px;
+          overflow: hidden;
+          border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
+          background: var(--busch-schedule-track-color, var(--divider-color));
+        }
+        .v-skala {
+          order: 2;
+          display: flex;
+          justify-content: space-between;
+          gap: var(--ha-space-1, 4px);
+          font-size: var(--ha-font-size-s, 12px);
+          color: var(--secondary-text-color);
+          min-width: 0;
+        }
+        .v-skala span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+        .v-seg {
+          --v-a: 0%;
+          --v-b: 0%;
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          left: var(--v-a);
+          width: var(--v-b);
+          background: color-mix(in srgb, var(--secondary-text-color) 45%, var(--card-background-color, #fff));
+        }
+        .v-seg.v-dieser { background: var(--busch-schedule-color, color-mix(in srgb, var(--primary-color) 50%, var(--card-background-color, #fff))); }
+        .v-seg.v-konflikt { background: var(--error-color, #db4437); }
+        /* M76: on a phone the dialog is full screen (rule 2) and the preview becomes a vertical day column
+           that takes the free height between the fields and the fixed actions. */
+        @media (max-width: 450px) {
+          .block-dialog .body { display: flex; flex-direction: column; }
+          .block-dialog .vorschau { flex: 1 1 auto; min-height: 160px; grid-template-columns: auto 1fr; }
+          .block-dialog .v-skala { order: 1; flex-direction: column; }
+          .block-dialog .v-spur { order: 2; height: auto; }
+          .block-dialog .v-seg { top: var(--v-a); height: var(--v-b); bottom: auto; left: 0; width: 100%; }
+        }
         .actions { margin: var(--ha-space-2, 8px) 0 0; }
         /* .busch-btn sets display, which beats the UA rule for [hidden]: hide Delete for a new block. */
         .actions .busch-btn[hidden] { display: none; }
@@ -2604,6 +2663,11 @@ class BuschScheduleCard extends HTMLElement {
             </div>
             <div class="note"></div>
             <div class="msg" role="status" aria-live="polite"></div>
+            <div class="dauer"></div>
+            <div class="vorschau" aria-hidden="true">
+              <div class="v-skala"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+              <div class="v-spur"></div>
+            </div>
           </div>
           <menu class="actions busch-dialog-foot">
             <button class="busch-btn dlg-del" data-variant="destructive" data-act="delete"></button>
@@ -2713,6 +2777,9 @@ class BuschScheduleCard extends HTMLElement {
 
   _wireDialogs() {
     const blockDialog = this._els.blockDialog;
+    for (const feld of blockDialog.querySelectorAll(".f-from, .f-to")) {
+      feld.addEventListener("input", () => this._dauerVorschau());
+    }
     blockDialog.addEventListener("click", (event) => {
       // R04: Der Zeitblockeditor bleibt auch unverändert bei Außenklick offen.
       if (event.target === blockDialog) {
@@ -3287,7 +3354,44 @@ class BuschScheduleCard extends HTMLElement {
     // Änderungen schließt nicht auf Escape oder Scrim".
     this._dialogStand = this._blockStand();
     this._dialogTarget = { day, index, key: block._key, isNew, start: block.start, end: block.end, conflict: false };
+    this._dauerVorschau();
     this._dialogOeffnen(dialog);
+  }
+
+  /** M76 (F14): duration and place of the edited block in its day, live from the two time fields.
+   *  Other blocks of the day stay grey, an overlap turns the edited block red. */
+  _dauerVorschau() {
+    const dialog = this._els?.blockDialog, target = this._dialogTarget;
+    const dauer = dialog?.querySelector(".dauer"), spur = dialog?.querySelector(".v-spur");
+    if (!dauer || !spur || !target) return;
+    const von = dialog.querySelector(".f-from").value, bis = dialog.querySelector(".f-to").value;
+    const start = parseScheduleTime(von);
+    const roh = parseScheduleTime(bis);
+    const end = roh === 0 ? MINUTES_PER_DAY : roh;
+    const gueltig = Boolean(von && bis) && start < end;
+    const t = this._texte;
+    if (gueltig) {
+      const h = Math.floor((end - start) / 60), m = (end - start) % 60;
+      const teil = [h ? buschFuellen(t.dauerStunden, { h }) : "", m ? buschFuellen(t.dauerMinuten, { m }) : ""];
+      dauer.textContent = buschFuellen(t.dauer, { dauer: teil.filter(Boolean).join(" ") });
+    } else {
+      dauer.textContent = t.dauerOffen;
+    }
+    const prozent = (minuten) => `${Math.round((minuten / MINUTES_PER_DAY) * 100000) / 1000}%`;
+    const segment = (a, e, klasse) => {
+      const el = document.createElement("div");
+      el.className = `v-seg ${klasse}`;
+      el.style.setProperty("--v-a", prozent(a));
+      el.style.setProperty("--v-b", prozent(e - a));
+      return el;
+    };
+    const andere = (this._model?.[target.day] || []).filter((block) => block._key !== target.key);
+    const teile = andere.map((block) => segment(block.start, block.end, "v-andere"));
+    if (gueltig) {
+      const konflikt = andere.some((block) => start < block.end && end > block.start);
+      teile.push(segment(start, end, konflikt ? "v-dieser v-konflikt" : "v-dieser"));
+    }
+    spur.replaceChildren(...teile);
   }
 
   /** Was gerade in den beiden Zeitfeldern steht — für den Vergleich mit dem
