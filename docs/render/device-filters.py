@@ -46,6 +46,28 @@ with sync_playwright() as pw:
  p.locator("busch-device-card .dev-pfeil").press("Enter")
  assert p.evaluate("card._offen") != old_open
  assert p.evaluate("card._pfeil.getAttribute('aria-expanded')") == str(not old_open).lower()
+ # M60: readable name at 320 px, measured. The finding's name "Wohnzimmer Deckenlampe" shows in
+ # full in at most two lines (not cut), the subtitle sits below it, group heads are in sentence
+ # case with a 24 px arrow in a >= 44 px head, and the keyboard folds a group (Enter, Space).
+ p.evaluate("()=>{card.style.width='';card.setConfig({...cfg,filter:undefined,title:'Wohnzimmer Deckenlampe',start_expanded:true});card._offen=true;card._zeigeListe()}")
+ p.wait_for_function("card.querySelectorAll('.dev-gruppe-kopf').length>=1")
+ m60=[]
+ for dark in [False,True]:
+  p.evaluate("dark=>{for(const [k,v]of Object.entries({'--primary-text-color':dark?'#eee':'#222','--secondary-text-color':dark?'#bbb':'#555','--card-background-color':dark?'#222':'#fff','--divider-color':dark?'#555':'#ddd','--primary-color':'#03a9f4'}))document.documentElement.style.setProperty(k,v)}",dark)
+  p.set_viewport_size({'width':320,'height':1000});p.wait_for_timeout(100)
+  geo=p.evaluate("""()=>{const name=card.querySelector('.dev-name'),st=getComputedStyle(name),r=name.getBoundingClientRect(),lh=parseFloat(st.lineHeight);const unter=card.querySelector('.dev-unter');const heads=[...card.querySelectorAll('.dev-gruppe-kopf')].map(k=>{const a=k.querySelector('.dev-gruppe-pfeil').getBoundingClientRect(),s=getComputedStyle(k);return {h:k.getBoundingClientRect().height,arrow:[a.width,a.height],transform:s.textTransform,spacing:s.letterSpacing,expanded:k.getAttribute('aria-expanded')}});return {text:name.textContent,title:name.title,lines:Math.round(r.height/lh),cut:name.scrollHeight>name.clientHeight+1,below:unter.hidden||unter.getBoundingClientRect().top>=r.bottom-1,heads}}""")
+  m60.append({'dark':dark,**geo})
+  assert geo['text']=='Wohnzimmer Deckenlampe' and geo['title']==geo['text'] and geo['lines']<=2 and not geo['cut'] and geo['below'],geo
+  assert all(h['h']>=44 and h['arrow']==[24,24] and h['transform']=='none' and h['spacing'] in ('normal','0px') for h in geo['heads']),geo
+  p.locator('busch-device-card').screenshot(path=str(out/f'device-titel-320-{"dark" if dark else "light"}.png'))
+ head=p.locator('busch-device-card .dev-gruppe-kopf').first
+ before=head.get_attribute('aria-expanded')
+ head.focus();p.keyboard.press('Enter')
+ after_enter=head.get_attribute('aria-expanded')
+ p.keyboard.press(' ')
+ after_space=head.get_attribute('aria-expanded')
+ keyboard={'before':before,'enter':after_enter,'space':after_space,'focused':p.evaluate("document.activeElement?.classList.contains('dev-gruppe-kopf')")}
+ assert before!=after_enter and after_space==before and keyboard['focused'],keyboard
  p.evaluate("()=>{card.remove();window.editor=document.createElement('busch-device-card-editor');editor.setConfig({...cfg,tap_action:{action:'expand'}});editor.hass=h;document.body.append(editor);editor._filterDetails.open=true;editor.addEventListener('config-changed',e=>window.saved=e.detail.config)}")
  assert p.evaluate("!editor._form.schema.some(f=>['labels','labels_hide','filter'].includes(f.name))&&editor.firstElementChild===editor._filterHost")
  p.evaluate("()=>{const input=editor._filterRoot.querySelector('.rule-value input');input.value='off';input.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}")
@@ -59,4 +81,4 @@ with sync_playwright() as pw:
     p.set_viewport_size({'width':width,'height':1000});p.screenshot(path=str(out/f'filters-{lang}-{width}-{dark}.png'),full_page=True)
     overflow=p.evaluate("()=>[...editor._filterRoot.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&(r.right>innerWidth+1||r.left< -1)}).length")
     cases.append({'width':width,'language':lang,'dark':dark,'overflow':overflow})
- result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()
+ result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'m60':m60,'m60Keyboard':keyboard,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()

@@ -6722,9 +6722,11 @@ const DEV_STIL = `
     background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
     color:var(--primary-color); --mdc-icon-size:24px; }
   .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  /* M60/E12: a card title may wrap to two lines, then it is cut; the full name is the tooltip. */
   .dev-name { font-size:1.05em; font-weight:var(--ha-font-weight-semibold, 600);
-    color:var(--primary-text-color);
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    line-height:1.2; color:var(--primary-text-color);
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2;
+    overflow:hidden; overflow-wrap:anywhere; min-width:0; }
   .dev-unter { display:flex; align-items:center; gap:6px; min-width:0;
     font-size:.85em; color:var(--secondary-text-color); }
   .dev-unter[hidden] { display:none; }
@@ -6754,16 +6756,17 @@ const DEV_STIL = `
   .dev-liste { border-top:1px solid var(--divider-color);
     padding:var(--ha-space-1, 4px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .dev-liste[hidden] { display:none; }
+  /* M60: second-level heading in sentence case; the whole head is the 44 px toggle. */
   .dev-gruppe-kopf { display:flex; align-items:center; gap:6px; min-width:0;
     padding:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px);
     min-height:44px;
-    font-size:.78em; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--secondary-text-color); background:none; border:0; width:100%;
+    font-size:.9em; font-weight:var(--ha-font-weight-medium, 500);
+    color:var(--primary-text-color); background:none; border:0; width:100%;
     text-align:left; font-family:inherit; cursor:pointer; }
   .dev-gruppe-kopf .dev-gruppe-text { overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; min-width:0; }
-  .dev-gruppe-kopf .dev-gruppe-pfeil { width:18px; height:18px; flex:0 0 18px;
-    --mdc-icon-size:18px; transition:transform .2s ease; }
+  .dev-gruppe-kopf .dev-gruppe-pfeil { width:24px; height:24px; flex:0 0 24px;
+    --mdc-icon-size:24px; color:var(--secondary-text-color); transition:transform .2s ease; }
   .dev-gruppe.dev-zu .dev-gruppe-pfeil { transform:rotate(-90deg); }
   .dev-gruppe.dev-zu .dev-zeilen { display:none; }
   .dev-zeilen > * { display:block; padding:var(--ha-space-1, 4px) 0; }
@@ -6775,6 +6778,7 @@ const DEV_STIL = `
   @container (max-width:380px) {
     .dev-kopf { gap:var(--ha-space-2, 8px); padding:var(--ha-space-3, 12px); }
     .dev-icon { flex-basis:40px; width:40px; height:40px; }
+    .dev-brand { display:none; }
     .dev-tile { margin-inline:var(--ha-space-3, 12px); }
     .dev-liste { padding-inline:var(--ha-space-3, 12px); }
   }
@@ -7117,6 +7121,7 @@ class BuschDeviceCard extends HTMLElement {
       this._stempel = null;
       this._auf = null;
       this._name.textContent = this._config.title || this._config.entity || t.keineEntitaet;
+      this._name.title = this._name.textContent;
       this._unter.hidden = true;
       this._icon.textContent = "";
       this._icon.hidden = true;
@@ -7155,6 +7160,8 @@ class BuschDeviceCard extends HTMLElement {
     }
     if (this._name.textContent !== (this._config.title || a.name)) this._name.textContent = this._config.title || a.name;
     if (this._unterText.textContent !== a.untertitel) this._unterText.textContent = a.untertitel;
+    if (this._name.title !== this._name.textContent) this._name.title = this._name.textContent;
+    if (this._unterText.title !== a.untertitel) this._unterText.title = a.untertitel;
     this._reicheHassDurch();
     this._zeichneQuick();
     this._zeichneMedia(a);
@@ -7376,6 +7383,8 @@ class BuschDeviceCard extends HTMLElement {
           const rahmen = document.createElement("div");
           rahmen.className = "dev-zeile";
           rahmen.dataset.entity = id;
+          // M60: the row shows the name; the entity ID stays secondary, as tooltip.
+          rahmen.title = id;
           rahmen.appendChild(zeile);
           this._bindeZeile(rahmen, id);
           this._zeilen.push(zeile);
