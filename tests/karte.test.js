@@ -447,7 +447,8 @@ test("die Fusszeile steht linksbuendig mit festem Abstand", () => {
   const { CAL_STIL } = ladeKarte(["CAL_STIL"]);
   const regel = CAL_STIL.match(/\.cal-fuss \{[^}]*\}/);
   assert.ok(regel, "es muss eine Regel fuer .cal-fuss geben");
-  assert.match(regel[0], /gap:\s*24px/, "fester Abstand statt verteilter Leerraum");
+  // M63: the fixed 24 px gap now comes from the spacing token.
+  assert.match(regel[0], /gap:\s*var\(--ha-space-6,\s*24px\)/, "fester Abstand statt verteilter Leerraum");
   assert.doesNotMatch(
     regel[0],
     /space-between/,

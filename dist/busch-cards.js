@@ -2174,7 +2174,7 @@ class BuschScheduleCard extends HTMLElement {
           display: grid;
           grid-template-columns: var(--label-col, 40px) 1fr;
           align-items: end;
-          gap: 0 8px;
+          gap: 0 var(--ha-space-2, 8px);
           height: 16px;
           margin-bottom: 2px;
         }
@@ -2185,7 +2185,7 @@ class BuschScheduleCard extends HTMLElement {
         .ruler .scale { position: relative; height: 100%; overflow: hidden; min-width: 0; }
         .ruler span {
           position: absolute;
-          font-size: 10px;
+          font-size: var(--ha-font-size-xs, 10px);
           line-height: 1;
           color: var(--secondary-text-color);
           font-variant-numeric: tabular-nums;
@@ -2206,8 +2206,8 @@ class BuschScheduleCard extends HTMLElement {
           display: grid;
           grid-template-columns: var(--label-col, 40px) minmax(0, 1fr) 44px;
           align-items: center;
-          gap: 0 6px;
-          margin-bottom: 4px;
+          gap: 0 var(--ha-space-2, 8px);
+          margin-bottom: var(--ha-space-1, 4px);
         }
         .day .label {
           font-size: var(--ha-font-size-s, 12px);
@@ -2222,9 +2222,9 @@ class BuschScheduleCard extends HTMLElement {
            über Farbe. Der negative Rand hält die Zeilenhöhe gleich, die
            Tönung ragt nur seitlich in den Kartenabstand. */
         .day.today {
-          margin-inline: -6px;
-          padding-inline: 6px;
-          border-radius: 8px;
+          margin-inline: calc(-1 * var(--ha-space-2, 8px));
+          padding-inline: var(--ha-space-2, 8px);
+          border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           background: color-mix(in srgb, var(--primary-color) 12%, transparent);
           box-shadow: inset 3px 0 0 var(--primary-color);
         }
@@ -2261,7 +2261,7 @@ class BuschScheduleCard extends HTMLElement {
         .track {
           position: relative;
           height: 30px;
-          border-radius: 6px;
+          border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           background-color: var(--busch-schedule-track-color, var(--divider-color));
           background-image: linear-gradient(
             to right,
@@ -2305,9 +2305,9 @@ class BuschScheduleCard extends HTMLElement {
           top: 0;
           bottom: 0;
           background: var(--busch-schedule-color, var(--primary-color));
-          border-radius: 5px;
+          border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           color: var(--text-primary-color, #fff);
-          font-size: 11px;
+          font-size: var(--ha-font-size-s, 12px);
           line-height: 30px;
           text-align: center;
           font-variant-numeric: tabular-nums;
@@ -2385,7 +2385,7 @@ class BuschScheduleCard extends HTMLElement {
           display: flex;
           align-items: center;
           gap: var(--ha-space-2, 8px);
-          margin-top: 10px;
+          margin-top: var(--ha-space-3, 12px);
           font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
         }
@@ -2449,8 +2449,8 @@ class BuschScheduleCard extends HTMLElement {
         .dlg h2 {
           flex: 1 1 auto;
           margin: 0;
-          font-size: 18px;
-          font-weight: var(--ha-font-weight-normal, 400);
+          font-size: var(--ha-font-size-l, 16px);
+          font-weight: var(--ha-font-weight-medium, 500);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -2462,8 +2462,8 @@ class BuschScheduleCard extends HTMLElement {
           border: none;
           background: none;
           color: var(--secondary-text-color);
-          width: 40px;
-          height: 40px;
+          width: 44px;
+          height: 44px;
           line-height: 1;
           border-radius: 50%;
           cursor: pointer;
@@ -2475,7 +2475,7 @@ class BuschScheduleCard extends HTMLElement {
           flex: 1 1 0;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: var(--ha-space-1, 4px);
           font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
           min-width: 0;
@@ -2484,8 +2484,8 @@ class BuschScheduleCard extends HTMLElement {
         .fields input {
           font: inherit;
           font-size: var(--ha-font-size-l, 16px); /* unter 16px zoomt iOS beim Fokus hinein */
-          padding: var(--ha-space-2, 8px) 10px;
-          border-radius: 6px;
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           border: 1px solid var(--divider-color);
           background: var(--card-background-color, #fff);
           color: var(--primary-text-color);
@@ -2504,7 +2504,7 @@ class BuschScheduleCard extends HTMLElement {
         }
         .dlg .msg {
           margin-top: var(--ha-space-3, 12px);
-          font-size: 13px;
+          font-size: var(--ha-font-size-m, 14px);
           color: var(--error-color, #db4437);
           overflow-wrap: anywhere;
         }
@@ -2514,7 +2514,7 @@ class BuschScheduleCard extends HTMLElement {
           align-items: center;
           justify-content: flex-end;
           gap: var(--ha-space-2, 8px);
-          margin: 20px 0 0;
+          margin: var(--ha-space-5, 20px) 0 0;
           padding: 0;
         }
         /* M62: the dialog actions are the shared .busch-btn (secondary with a frame, primary filled);
@@ -2537,7 +2537,7 @@ class BuschScheduleCard extends HTMLElement {
           background: none;
           color: var(--primary-text-color);
           padding: var(--ha-space-3, 12px) var(--ha-space-2, 8px);
-          border-radius: 6px;
+          border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           cursor: pointer;
           min-width: 0;
           overflow-wrap: anywhere;
@@ -3942,7 +3942,7 @@ const CAL_STIL = `
     gap:var(--ha-space-2, 8px);
     padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .cal-nav { display:flex; flex:0 0 auto; gap:var(--ha-space-2, 8px); min-width:0; }
-  .cal-monat { flex:1 1 auto; font-size:1.1em; font-weight:var(--ha-font-weight-bold, 600);
+  .cal-monat { flex:1 1 auto; font-size:var(--ha-font-size-l, 16px); font-weight:var(--ha-font-weight-bold, 600);
     color:var(--primary-text-color); min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Zum \`user-select: none\` an dieser Stelle und an \`.cal-termin\`:
@@ -3961,7 +3961,7 @@ const CAL_STIL = `
      \`-ms-\` stehen bewusst NICHT da — Firefox versteht die schlichte Form seit
      69, und der alte Edge spielt hier keine Rolle. */
   /* M62: the arrows and Today are the shared .busch-btn (secondary, 44 px); size and glyph here. */
-  .cal-pfeil { flex:0 0 auto; width:44px; height:44px; padding:0; font-size:1.2em; line-height:1;
+  .cal-pfeil { flex:0 0 auto; width:44px; height:44px; padding:0; font-size:var(--ha-font-size-xl, 20px); line-height:1;
     cursor:pointer; -webkit-user-select:none; user-select:none; }
   .cal-pfeil:hover { background:var(--secondary-background-color, transparent); }
   .cal-heute-knopf { width:auto; padding:0 var(--ha-space-3, 12px); font-size:inherit;
@@ -3971,7 +3971,7 @@ const CAL_STIL = `
     margin-inline-start:calc(-1 * var(--ha-space-2, 8px)); border:none; background:none;
     border-radius:var(--ha-card-border-radius, 12px); font-family:inherit; text-align:start;
     cursor:pointer; box-sizing:border-box; }
-  .cal-monat-knopf::after { content:" ▾"; content:" ▾" / ""; color:var(--secondary-text-color); font-size:0.8em; }
+  .cal-monat-knopf::after { content:" ▾"; content:" ▾" / ""; color:var(--secondary-text-color); font-size:var(--ha-font-size-s, 12px); }
   .cal-monat-knopf:hover { background:var(--secondary-background-color, transparent); }
   .cal-monat-knopf:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
   /* Month picker: overlays the card itself (the card is its scrim), so it stays inside the card
@@ -3993,7 +3993,7 @@ const CAL_STIL = `
   }
   .cal-wahl-kopf { display:flex; align-items:center; gap:var(--ha-space-2, 8px);
     margin-bottom:var(--ha-space-3, 12px); }
-  .cal-wahl-kopf h2 { flex:1 1 auto; margin:0; font-size:18px; font-weight:var(--ha-font-weight-normal, 400);
+  .cal-wahl-kopf h2 { flex:1 1 auto; margin:0; font-size:var(--ha-font-size-l, 16px); font-weight:var(--ha-font-weight-medium, 500);
     min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cal-wahl-x { flex:0 0 auto; display:inline-grid; place-items:center; width:44px; height:44px;
     padding:0; border:none; border-radius:50%; background:none; cursor:pointer;
@@ -4029,13 +4029,13 @@ const CAL_STIL = `
     min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cal-liste { padding:0 var(--ha-space-2, 8px) var(--ha-space-2, 8px); }
   /* M25: fixed date column, events beside it on the same baseline. */
-  .cal-tag { display:grid; grid-template-columns:64px minmax(0, 1fr); column-gap:12px;
-    align-items:baseline; padding:0 8px; border-radius:8px;
+  .cal-tag { display:grid; grid-template-columns:64px minmax(0, 1fr); column-gap:var(--ha-space-3, 12px);
+    align-items:baseline; padding:0 var(--ha-space-2, 8px); border-radius:var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
     border-bottom:1px solid var(--divider-color); }
   /* Consecutive empty days of one kind share one line; each day is a small chip. */
-  .cal-lauf { display:flex; flex-wrap:wrap; gap:4px 6px; padding:4px 0;
+  .cal-lauf { display:flex; flex-wrap:wrap; gap:var(--ha-space-1, 4px) var(--ha-space-2, 8px); padding:var(--ha-space-1, 4px) 0;
     border-bottom:1px solid var(--divider-color); }
-  .cal-lauf .cal-tag { display:flex; padding:2px 8px; border-bottom:none; border-radius:6px; }
+  .cal-lauf .cal-tag { display:flex; padding:2px var(--ha-space-2, 8px); border-bottom:none; border-radius:var(--busch-radius-inner, var(--ha-border-radius-md, 8px)); }
   .cal-liste > :last-child { border-bottom:none; }
   /* Weekend: surface plus a rim, so it also reads in a dark theme. */
   .cal-wochenende { background:var(--secondary-background-color);
@@ -4044,14 +4044,14 @@ const CAL_STIL = `
   .cal-heute { background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color, #fff));
     box-shadow:inset 3px 0 0 var(--primary-color); }
   .cal-heute .cal-wt, .cal-heute .cal-nr { color:var(--primary-color); }
-  .cal-datum { display:flex; gap:6px; min-width:0;
+  .cal-datum { display:flex; gap:var(--ha-space-2, 8px); min-width:0;
     align-items:baseline;
     color:var(--secondary-text-color); font-variant-numeric:tabular-nums; }
   .cal-wt, .cal-nr { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     min-width:0; }
   .cal-nr { font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color); }
   .cal-inhalt { flex:1; min-width:0; }
-  .cal-termin { display:flex; gap:8px; align-items:center; min-height:44px; padding:2px 0;
+  .cal-termin { display:flex; gap:var(--ha-space-2, 8px); align-items:center; min-height:44px; padding:2px 0;
     cursor:pointer; -webkit-user-select:none; user-select:none; }
   /* Die leeren Tage tragen \`cursor: default\` und sind nicht klickbar — die
      Regel darueber gilt trotzdem auch fuer sie, und zwar bewusst: ihr Inhalt
@@ -4070,7 +4070,7 @@ const CAL_STIL = `
   .cal-zeit { color:var(--secondary-text-color); font-variant-numeric:tabular-nums;
     flex:0 0 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .cal-ganztags { padding:0 8px; border-radius:999px; line-height:1.6;
+  .cal-ganztags { padding:0 var(--ha-space-2, 8px); border-radius:var(--ha-border-radius-pill, 9999px); line-height:1.6;
     background:var(--secondary-background-color); box-shadow:inset 0 0 0 1px var(--divider-color); }
   .cal-titel { color:var(--primary-text-color); flex:1 1 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -4081,8 +4081,8 @@ const CAL_STIL = `
      Monat einen ganztaegigen Termin gab. Die Zeile sprang also, je nachdem ob
      Urlaub drin war. Mit \`gap\` steht sie ruhig und liest sich als eine
      Angabe, ohne dass ein Trennzeichen noetig waere. */
-  .cal-fuss { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:24px;
-    padding:10px var(--ha-space-4, 16px);
+  .cal-fuss { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:var(--ha-space-6, 24px);
+    padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px);
     border-top:1px solid var(--divider-color); color:var(--secondary-text-color); }
   .cal-fuss span { min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; }
@@ -6134,7 +6134,7 @@ class BuschMapCardEditor extends BuschEditorBase {
       this.appendChild(this._form);
 
       this._hinweis = document.createElement("div");
-      this._hinweis.style.cssText = "margin:12px 0 4px;font-size:0.85em;opacity:.7;";
+      this._hinweis.style.cssText = "margin:var(--ha-space-3,12px) 0 var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px);opacity:.7;";
       this.appendChild(this._hinweis);
       this._innenBehaelter = document.createElement("div");
       this.appendChild(this._innenBehaelter);
@@ -6208,7 +6208,7 @@ class BuschMapCardEditor extends BuschEditorBase {
       this._innenBehaelter.appendChild(editor);
     } catch (error) {
       const kasten = document.createElement("div");
-      kasten.style.cssText = "font-size:0.85em;opacity:.7;overflow-wrap:anywhere;";
+      kasten.style.cssText = "font-size:var(--ha-font-size-s,12px);opacity:.7;overflow-wrap:anywhere;";
       kasten.textContent = (this._texte || TEXTE_BUSCH_MAP_CARD.de.texte).editorFehlt;
       this._innenBehaelter.textContent = "";
       this._innenBehaelter.appendChild(kasten);
@@ -7187,8 +7187,8 @@ const DEV_STIL = `
     line-height:1.2; color:var(--primary-text-color);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2;
     overflow:hidden; overflow-wrap:anywhere; min-width:0; }
-  .dev-unter { display:flex; align-items:center; gap:6px; min-width:0;
-    font-size:.85em; color:var(--secondary-text-color); }
+  .dev-unter { display:flex; align-items:center; gap:var(--ha-space-2, 8px); min-width:0;
+    font-size:var(--ha-font-size-s, 12px); color:var(--secondary-text-color); }
   .dev-unter[hidden] { display:none; }
   .dev-unter-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   .dev-brand { width:16px; height:16px; flex:0 0 16px; }
@@ -7199,7 +7199,7 @@ const DEV_STIL = `
   .dev-pfeil ha-icon { transition:transform .2s ease; }
   .dev-pfeil[hidden] { display:none !important; }
   .dev-offen .dev-pfeil ha-icon { transform:rotate(180deg); }
-  .dev-chips { display:flex; flex-wrap:wrap; gap:4px;
+  .dev-chips { display:flex; flex-wrap:wrap; gap:var(--ha-space-1, 4px);
     padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .dev-chips:empty { display:none; }
   .dev-tile { margin:0 var(--ha-space-4, 16px) var(--ha-space-4, 16px);
@@ -7216,10 +7216,10 @@ const DEV_STIL = `
     padding:var(--ha-space-1, 4px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
   .dev-liste[hidden] { display:none; }
   /* M60: second-level heading in sentence case; the whole head is the 44 px toggle. */
-  .dev-gruppe-kopf { display:flex; align-items:center; gap:6px; min-width:0;
+  .dev-gruppe-kopf { display:flex; align-items:center; gap:var(--ha-space-2, 8px); min-width:0;
     padding:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px);
     min-height:44px;
-    font-size:.9em; font-weight:var(--ha-font-weight-medium, 500);
+    font-size:var(--ha-font-size-m, 14px); font-weight:var(--ha-font-weight-medium, 500);
     color:var(--primary-text-color); background:none; border:0; width:100%;
     text-align:left; font-family:inherit; cursor:pointer; }
   .dev-gruppe-kopf .dev-gruppe-text { overflow:hidden; text-overflow:ellipsis;
