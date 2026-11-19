@@ -5,6 +5,18 @@
     {
       "selektor": ".track > .block",
       "grund": "Zeitplanblock: Breite = Dauer auf der 24-h-Spur (WCAG 2.5.5 'wesentlich'); die Messung misst nur den eigenen Kasten, getroffen wird der Block samt Griffen (_onPointerDown nimmt closest('.block'), Tippen ohne Ziehen öffnet ihn; unter 48 px stehen die Griffe außen, M24). Ersatzprüfung: hacs/docs/render/render-zeitplan.py Bereich ui_regeln.trefferflaeche misst Block ∪ Griffe ≥ 44 × 44 je Breite und die Erreichbarkeit jedes Griffs (Exit 1). Spur und Blöcke sind an jeder Breite 44 px hoch."
+    },
+    {
+      "selektor": ".leaflet-marker-pane .leaflet-marker-icon",
+      "grund": "Attrappe ≠ echtes Element: der 36-px-Entitätsmarker zeichnet fake-map-card in mapcard.py nach HAs ha-map (_drawEntities). busch-map-card reicht die Entitäten nur an HAs eingebaute Kartenkarte durch und stylt keine Marker; im Betrieb rendert sie HA."
+    },
+    {
+      "selektor": ".leaflet-control-zoom a",
+      "grund": "HA/Leaflet-Vendor-Element: die Zoomknöpfe (30 px, Leaflet-CSS .leaflet-touch .leaflet-bar a) legt HAs ha-map der eingebauten Kartenkarte an; busch-map-card erzeugt und stylt keine Zoomsteuerung (kein Treffer außerhalb des Vendor-Blocks)."
+    },
+    {
+      "selektor": "stub-row",
+      "grund": "Attrappe ≠ echtes Element: stub-row/stub-toggle ist in render-geraet.py die Attrappe der HA-Entitätszeile aus loadCardHelpers().createRowElement; die Gerätekarte bettet HAs Zeile nur ein und stylt deren Schalter nicht."
     }
   ]
 }
