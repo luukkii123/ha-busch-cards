@@ -659,7 +659,9 @@ with sync_playwright() as pw:
         "() => { const k = document.getElementById('karte-fehler');"
         "        const d = k.shadowRoot.querySelector('.fehler');"
         "        return { da: Boolean(d), inHaCard: Boolean(d && d.closest('ha-card')),"
-        "                 text: d ? d.textContent : null }; }")
+        "                 text: d ? d.textContent : null,"
+        "                 rolle: d ? d.getAttribute('role') : null,"
+        "                 zustand: d ? d.dataset.kind : null }; }")
 
     ui = {}
     for kennung in ("#karte-map", "#karte-fehler"):
@@ -819,6 +821,9 @@ checks["jedes Editorfeld hat einen Helper"] = bool(editor["helfer"]) and all(
     isinstance(h, str) and h.endswith(".") for h in editor["helfer"].values()
 )
 checks["Fehlerkasten steht in einer ha-card"] = fehlerkasten["inHaCard"] is True
+# M27: the error is the shared state block in the card's live region.
+checks["Fehlerkasten ist der Zustandsblock (role=alert)"] = (
+    fehlerkasten["rolle"] == "alert" and fehlerkasten["zustand"] == "error")
 checks["Regel 1: kein Verstoss bei 320/480/960 in hell und dunkel"] = (
     regeln.bewerte(ui) == 0
 )

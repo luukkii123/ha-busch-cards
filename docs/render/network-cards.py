@@ -43,6 +43,12 @@ with sync_playwright() as pw:
      # M30: values sit in a definition list inside each row's <details> (collapsed, so read textContent, not innerText).
      if scenario=='normal':pairs=page.evaluate("[...document.querySelector('[data-test-card]').shadowRoot.querySelectorAll('dl.client-details>div')].map(d=>d.children[0].textContent+': '+d.children[1].textContent)");assert 'Verbindungspunkt: Unbekannt' in pairs,pairs
      if scenario=='error':assert 'CIDR benötigt' in text
+     # M27: the error replaces the loading line; every error/empty/loading uses the shared state block as a live region.
+     if scenario=='error':assert 'werden geladen' not in text,text
+     if scenario in ('error','empty','loading'):
+      state=page.evaluate("(()=>{const r=document.querySelector('[data-test-card]').shadowRoot;return [...r.querySelectorAll('.busch-state')].map(e=>({kind:e.dataset.kind,role:e.getAttribute('role'),live:e.getAttribute('aria-live')}))})()")
+      want=scenario
+      assert any(s['kind']==want and s['role']==('alert' if want=='error' else 'status') and s['live'] for s in state),(scenario,kind,state)
      # Bildprüfung 19.11. (network-normal-320: "40 von 40 Clients" above two rows and "2 weitere anzeigen"): the count names
      # the rows shown. normal pages with count 2; many sets count 0 (no limit), so all 40 rows and no "more" button.
      if kind=='network' and scenario in ('normal','many'):

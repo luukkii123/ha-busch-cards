@@ -1317,6 +1317,29 @@ function buschFuellen(text, werte) {
   return aus;
 }
 
+/* M27: every card keeps one live region from the start. BuschUI.stateBlock fills it in place
+ * (loading/empty/offline → role=status, error → role=alert); clearing leaves an empty,
+ * box-less region in the tree, so the next state is announced. */
+function buschZustandsRegion(node = document.createElement("div"), klasse = "busch-zustand") {
+  node.className = klasse;
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  return node;
+}
+
+function buschZustand(node, spec) {
+  if (!node) return null;
+  if (spec) return BuschUI.stateBlock({ node, ...spec });
+  if (!String(node.className || "").split(/\s+/).includes("busch-state") && !node.children?.length) return node;
+  node.className = String(node.className || "").split(/\s+/).filter((name) => name && name !== "busch-state").join(" ");
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  node.removeAttribute?.("data-kind");
+  node.removeAttribute?.("aria-busy");
+  node.replaceChildren();
+  return node;
+}
+
 
 /* ────────────────────────────────────────────────────────────────────────────
  * busch-schedule-card — Zeitplan-Helfer (`schedule.*`) direkt im Dashboard
@@ -1395,6 +1418,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       first_day_monday: "Montag",
       first_day_sunday: "Sonntag",
       laden: "Lade …",
+      erneutLaden: "Erneut laden",
       speichernLaeuft: "Speichere …",
       nichtGefunden: "Zeitplan zu {entity} nicht gefunden. In YAML festgelegte Zeitpläne lassen sich nicht über die Oberfläche ändern.",
       nichtGespeichert: "Zeitplan nicht gespeichert: {grund}",
@@ -1460,6 +1484,7 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       first_day_monday: "Monday",
       first_day_sunday: "Sunday",
       laden: "Loading …",
+      erneutLaden: "Reload",
       speichernLaeuft: "Saving …",
       nichtGefunden: "No schedule found for {entity}. Schedules defined in YAML cannot be changed from the interface.",
       nichtGespeichert: "Schedule not saved: {grund}",
@@ -2365,7 +2390,6 @@ class BuschScheduleCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
         .foot .hint { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-        .foot .err { color: var(--error-color, #db4437); }
 
         /* ── Dialoge ──────────────────────────────────────────────────────
            Anatomie nach docs/ui-regeln.md, Regel 2: Titel, Schließen-X oben
@@ -2539,8 +2563,9 @@ class BuschScheduleCard extends HTMLElement {
             <div class="name"></div>
             <div class="sub"></div>
           </div>
-          <div class="status"></div>
+          <div class="status" role="status" aria-live="polite"></div>
         </div>
+        <div class="zustand busch-zustand" role="status" aria-live="polite"></div>
         <div class="ruler"><div class="spacer"></div><div class="scale"></div></div>
         <div class="days"></div>
         <div class="foot">
@@ -2592,6 +2617,11 @@ class BuschScheduleCard extends HTMLElement {
       </dialog>
     `;
 
+    // Shared state block, base components and header steps (opt-in classes).
+    const ui = document.createElement("style");
+    ui.textContent = BuschUI.cardStyles;
+    this.shadowRoot.prepend(ui);
+
     this._els = {
       card: this.shadowRoot.querySelector("ha-card"),
       head: this.shadowRoot.querySelector(".head"),
@@ -2599,6 +2629,7 @@ class BuschScheduleCard extends HTMLElement {
       name: this.shadowRoot.querySelector(".head .name"),
       sub: this.shadowRoot.querySelector(".head .sub"),
       status: this.shadowRoot.querySelector(".head .status"),
+      zustand: this.shadowRoot.querySelector(".zustand"),
       scale: this.shadowRoot.querySelector(".ruler .scale"),
       days: this.shadowRoot.querySelector(".days"),
       hint: this.shadowRoot.querySelector(".foot .hint"),
@@ -2853,19 +2884,20 @@ class BuschScheduleCard extends HTMLElement {
 
   _renderStatus(text) {
     if (!this._els) return;
-    this._els.status.textContent = text;
+    const t = this._texte;
+    // M27: without a plan the first load and every error use the shared state block (an
+    // error offers a reload, R12); with a plan the small header status keeps "Saving …".
+    const ersterStand = !this._model && text === t.laden;
+    this._els.status.textContent = ersterStand ? "" : text;
+    buschZustand(this._els.zustand, this._error
+      ? { kind: "error", title: this._error, action: { label: t.erneutLaden, text: t.erneutLaden, onClick: () => this._load(true) } }
+      : ersterStand ? { kind: "loading", title: t.laden } : null);
     const hint = this._els.hint;
-    if (this._error) {
-      hint.textContent = this._error;
-      hint.classList.add("err");
-    } else {
-      hint.classList.remove("err");
-      hint.textContent = this._yamlOnly
-        ? this._texte.hinweisNurLesen
-        : this._readonly
-          ? this._texte.hinweisSchreibschutz
-          : this._texte.hinweisZiehen;
-    }
+    hint.textContent = this._yamlOnly
+      ? t.hinweisNurLesen
+      : this._readonly
+        ? t.hinweisSchreibschutz
+        : t.hinweisZiehen;
   }
 
   _renderHeader() {
@@ -4072,8 +4104,7 @@ const CAL_STIL = `
     white-space:nowrap; }
   .cal-hinweis { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px);
     color:var(--error-color, #db4437); overflow-wrap:anywhere; }
-  .cal-leermeldung { padding:var(--ha-space-4, 16px);
-    color:var(--secondary-text-color); overflow-wrap:anywhere; }
+  .cal-leermeldung { overflow-wrap:anywhere; min-width:0; }
 `;
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -5079,7 +5110,7 @@ class BuschCalendarCard extends HTMLElement {
     if (!this._karte) {
       this._karte = document.createElement("ha-card");
       const stil = document.createElement("style");
-      stil.textContent = CAL_STIL;
+      stil.textContent = BuschUI.cardStyles + CAL_STIL;
       this._karte.appendChild(stil);
       this._koerper = document.createElement("div");
       this._koerper.className = "cal-body";
@@ -5138,11 +5169,15 @@ class BuschCalendarCard extends HTMLElement {
         : "") +
       `</div>`;
 
+    // M27: loading, empty and error share one state block in one live region that outlives
+    // the innerHTML rebuild (the placeholder is swapped for it below).
     let rumpf;
+    let zustand = null;
+    const allesFehlt = (this._fehler || []).length > 0 && (this._fehler || []).length >= this._config.entities.length;
     if (this._config.entities.length === 0) {
-      rumpf = `<div class="cal-leermeldung">${calEscape(t.keinKalender)}</div>`;
+      zustand = { kind: "empty", icon: "mdi:calendar-blank-outline", title: t.keinKalender };
     } else if (this._tage === null) {
-      rumpf = `<div class="cal-leermeldung">${calEscape(t.laden)}</div>`;
+      zustand = { kind: "loading", title: t.laden };
     } else {
       const liste = calListeHtml(this._tage, {
         zeigeLeereTage: this._config.show_empty_days,
@@ -5152,10 +5187,13 @@ class BuschCalendarCard extends HTMLElement {
         mehrereKalender: this._config.entities.length > 1,
         wartend: this._terminWartet,
       });
-      rumpf = liste
-        ? `<div class="cal-liste">${liste}</div>`
-        : `<div class="cal-leermeldung">${calEscape(t.keineTermine)}</div>`;
+      if (liste) rumpf = `<div class="cal-liste">${liste}</div>`;
+      else if (allesFehlt) zustand = { kind: "error", title: buschFuellen(t.nichtErreichbar, { liste: this._fehler.join(", ") }) };
+      else zustand = { kind: "empty", icon: "mdi:calendar-check-outline", title: t.keineTermine };
     }
+    this._zustand ||= buschZustandsRegion(document.createElement("div"), "cal-leermeldung");
+    buschZustand(this._zustand, zustand);
+    rumpf = `<div class="cal-zustand-platz"></div>` + (zustand ? "" : rumpf);
 
     let fuss = "";
     if (this._config.show_total && this._tage) {
@@ -5179,12 +5217,14 @@ class BuschCalendarCard extends HTMLElement {
       fuss = `<div class="cal-fuss">${teile.map((t) => `<span>${calEscape(t)}</span>`).join("")}</div>`;
     }
 
-    const hinweisText = calHinweisText(this._fehler || [], this._nichtGezeigt || 0, t);
+    const hinweisText = calHinweisText(zustand?.kind === "error" ? [] : this._fehler || [], this._nichtGezeigt || 0, t);
     const hinweis = hinweisText
       ? `<div class="cal-hinweis">${calEscape(hinweisText)}</div>`
       : "";
 
     this._koerper.innerHTML = kopf + rumpf + fuss + hinweis;
+    const platz = this._koerper.querySelector(".cal-zustand-platz");
+    if (platz) platz.parentNode.replaceChild(this._zustand, platz);
     const list = this._koerper.querySelector(".cal-liste");
     if (list) list.scrollTop = listScrollTop;
     if (focusStep !== null && focusStep !== undefined) {
@@ -5689,6 +5729,7 @@ const TEXTE_BUSCH_MAP_CARD = {
       tile_api_key_entity: "Der input_text-Helfer, in dem der Kachelschlüssel steht. Ein Eintrag genügt für alle Karten. Vorgabe: input_text.carto_api_key.",
     },
     texte: {
+      laden: "Lade Karte …",
       map_style_ha: "Home-Assistant-Standard",
       map_style_custom: "Eigene URL",
       innenTitel: "Alles Weitere wie bei der eingebauten Karte:",
@@ -5718,6 +5759,7 @@ const TEXTE_BUSCH_MAP_CARD = {
       tile_api_key_entity: "The input_text helper holding the tile key. One entry is enough for every card. Default: input_text.carto_api_key.",
     },
     texte: {
+      laden: "Loading map …",
       map_style_ha: "Home Assistant default",
       map_style_custom: "Own URL",
       innenTitel: "Everything else as on the built-in card:",
@@ -5857,39 +5899,41 @@ class BuschMapCard extends HTMLElement {
   }
 
   async _build() {
-    this.shadowRoot.innerHTML = `
-      <style>
+    const stil = document.createElement("style");
+    stil.textContent = BuschUI.cardStyles + `
         :host { display: block; position: relative; z-index: 0; }
-        .fehler { padding: var(--ha-space-4, 16px); color: var(--error-color, #db4437);
-                  font-size: 0.9em; overflow-wrap: anywhere; min-width: 0; }
-      </style>
-      <div class="wrap"></div>
-    `;
-    const wrap = this.shadowRoot.querySelector(".wrap");
+        .zustand { overflow-wrap: anywhere; min-width: 0; }
+      `;
+    const wrap = document.createElement("div");
+    wrap.className = "wrap";
+    this.shadowRoot.replaceChildren(stil, wrap);
+    // M27: until HA's map card exists, an own ha-card holds the live region (loading, then
+    // error in place). HA's map card brings its own ha-card, so the shell goes on success.
+    const huelle = document.createElement("ha-card");
+    const kasten = buschZustand(buschZustandsRegion(document.createElement("div"), "zustand"), {
+      kind: "loading", icon: "mdi:map-outline", title: this._texte.laden,
+    });
+    huelle.appendChild(kasten);
+    wrap.appendChild(huelle);
     try {
       const helpers = await BuschUI.ha.cardHelpers();
       const inner = await helpers.createCardElement(this._innerConfig());
       this._inner = inner;
       if (this._hass) inner.hass = this._hass;
-      wrap.appendChild(inner);
+      wrap.replaceChildren(inner);
       this._sucheKarte();
     } catch (error) {
       const meldung = buschFuellen(this._texte.karteFehlt, {
         grund: error?.message || error,
       });
-      wrap.textContent = "";
       // Im Regelfall bringt HAs eingebaute map-Karte ihre eigene `ha-card`
       // mit — eine zweite darum wäre ein Rahmen im Rahmen. Im FEHLERFALL
-      // gibt es sie nicht, und dann muss die Karte selbst eine stellen
-      // (Regel 4: jede Karte rendert in `<ha-card>`).
-      const karte = document.createElement("ha-card");
-      const kasten = document.createElement("div");
-      kasten.className = "fehler";
-      // `textContent`, nicht `innerHTML`: die Fehlermeldung kommt aus einer
-      // fremden Bibliothek und ist damit nichts, was man in HTML einsetzt.
-      kasten.textContent = meldung;
-      karte.appendChild(kasten);
-      wrap.appendChild(karte);
+      // gibt es sie nicht, und dann bleibt die eigene Hülle stehen
+      // (Regel 4: jede Karte rendert in `<ha-card>`). Der Zustandsblock setzt
+      // die Meldung als Text, nie als HTML: sie kommt aus einer fremden Bibliothek.
+      wrap.replaceChildren(huelle);
+      buschZustand(kasten, { kind: "error", icon: "mdi:map-marker-alert-outline", title: meldung });
+      kasten.classList.add("fehler");
     }
   }
 
@@ -7199,10 +7243,7 @@ const DEV_STIL = `
   .dev-gruppe.dev-zu .dev-gruppe-pfeil { transform:rotate(-90deg); }
   .dev-gruppe.dev-zu .dev-zeilen { display:none; }
   .dev-zeilen > * { display:block; padding:var(--ha-space-1, 4px) 0; }
-  .dev-hinweis { padding:var(--ha-space-2, 8px) var(--ha-space-4, 16px) var(--ha-space-4, 16px);
-    color:var(--secondary-text-color); font-size:.9em; overflow-wrap:anywhere; }
-  .dev-hinweis[hidden] { display:none; }
-  .dev-hinweis.dev-fehler { color:var(--error-color); }
+  .dev-hinweis { overflow-wrap:anywhere; min-width:0; }
   .dev-kopf:focus-visible,.dev-gruppe-kopf:focus-visible,.dev-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:-2px; }
   @container (max-width:380px) {
     .dev-kopf { gap:var(--ha-space-2, 8px); padding:var(--ha-space-3, 12px); }
@@ -7342,7 +7383,7 @@ class BuschDeviceCard extends HTMLElement {
     if (this._karte) return;
     this._karte = document.createElement("ha-card");
     const stil = document.createElement("style");
-    stil.textContent = DEV_STIL;
+    stil.textContent = BuschUI.cardStyles + DEV_STIL;
     this._karte.appendChild(stil);
 
     this._kopf = document.createElement("div");
@@ -7381,9 +7422,8 @@ class BuschDeviceCard extends HTMLElement {
     this._tileBehaelter.className = "dev-tile";
     this._liste = document.createElement("div");
     this._liste.className = "dev-liste";
-    this._hinweis = document.createElement("div");
-    this._hinweis.className = "dev-hinweis";
-    this._hinweis.hidden = true;
+    // M27: the live region exists before its first state.
+    this._hinweis = buschZustandsRegion(document.createElement("div"), "dev-hinweis");
     this._dienstFehler = document.createElement("div");
     this._dienstFehler.className = "dev-dienstfehler";
     this._dienstFehler.hidden = true;
@@ -7563,9 +7603,7 @@ class BuschDeviceCard extends HTMLElement {
       this._tileBehaelter.hidden = true;
       this._dienstFehler.hidden = true;
       this._karte.classList.remove("dev-offen");
-      this._hinweis.textContent = buschFuellen(t[a.fehler], { entity: this._config.entity });
-      this._hinweis.className = "dev-hinweis dev-fehler";
-      this._hinweis.hidden = false;
+      buschZustand(this._hinweis, { kind: "error", title: buschFuellen(t[a.fehler], { entity: this._config.entity }) });
       this._merkeGesehen([this._config.entity, this._entityId]);
       return;
     }
@@ -7595,7 +7633,7 @@ class BuschDeviceCard extends HTMLElement {
     this._zeichneQuick();
     this._zeichneMedia(a);
     this._zeigeListe();
-    if(this._filterQuery?.error){this._hinweis.textContent=t.filterFehler;this._hinweis.className='dev-hinweis dev-fehler';this._hinweis.hidden=false;this._filterErrorVisible=true;}else if(this._filterErrorVisible){this._hinweis.hidden=true;this._filterErrorVisible=false;}
+    if(this._filterQuery?.error){buschZustand(this._hinweis,{kind:'error',icon:'mdi:filter-remove-outline',title:t.filterFehler});this._filterErrorVisible=true;}else if(this._filterErrorVisible){buschZustand(this._hinweis,null);this._filterErrorVisible=false;}
     this._merkeGesehen([this._config.entity, this._entityId, ...(this._core ? this._core.getDeviceEntities(a.geraet.id).map(e => e?.entity_id) : alle.map(e => e.entity_id))]);
   }
 
@@ -7612,7 +7650,7 @@ class BuschDeviceCard extends HTMLElement {
     this._icon.textContent = "";
     this._mediaKey=null;
     this._icon.hidden = false;
-    this._hinweis.hidden = true;
+    buschZustand(this._hinweis, null);
   }
 
   _zeichneMedia(a) {
@@ -7742,19 +7780,14 @@ class BuschDeviceCard extends HTMLElement {
     this._liste.textContent = "";
     this._tile = null;
     this._zeilen = [];
-    const laden = document.createElement("div");
-    laden.className = "dev-hinweis";
-    laden.textContent = t.laden;
-    this._tileBehaelter.appendChild(laden);
+    this._tileBehaelter.appendChild(buschZustand(document.createElement("div"), { kind: "loading", title: t.laden }));
 
     const helfer = await devHelferLaden();
     if (this._stempel !== stempel) return;
     this._tileBehaelter.textContent = "";
     if (!helfer) {
       this._helferFehlt = true;
-      this._hinweis.textContent = t.helferFehlt;
-      this._hinweis.className = "dev-hinweis dev-fehler";
-      this._hinweis.hidden = false;
+      buschZustand(this._hinweis, { kind: "error", title: t.helferFehlt });
       this._zeigeListe();
       return;
     }
@@ -7827,10 +7860,8 @@ class BuschDeviceCard extends HTMLElement {
     // echten Daten gesehen: Label `ignore` auf allen Entitaeten eines
     // Zigbee-Schalters. Ohne diese Zeile blieb die Liste stumm leer.
     if (!gruppen.length && (!this._entityId || !this._filterShowPrimary || this._config.filter || this._config.labels.length || this._config.labels_hide.length)) {
-      const leer = document.createElement("div");
-      leer.className = "dev-hinweis";
-      leer.textContent = this._config.filter || this._config.labels.length || this._config.labels_hide.length ? t.keineTreffer : t.keineGeraeteEntitaeten;
-      this._liste.appendChild(leer);
+      const titel = this._config.filter || this._config.labels.length || this._config.labels_hide.length ? t.keineTreffer : t.keineGeraeteEntitaeten;
+      this._liste.appendChild(buschZustand(document.createElement("div"), { kind: "empty", icon: "mdi:filter-variant", title: titel }));
     }
     this._reicheHassDurch();
     this._zeigeListe();
@@ -8115,7 +8146,7 @@ class BuschSmartEntities extends HTMLElement {
     if(!this._release){this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._update(this._query?.result||[]));}else this._core.attach(this._hass);
     if(!this._unsubscribe){this._query=this._core.smartQuery(this._config);this._unsubscribe=this._core.subscribe(this._query,rows=>this._update(rows));}
   }
-  _message(text){this._generation=(this._generation||0)+1;if(this.hidden){this.hidden=false;this.dispatchEvent(new Event('card-visibility-changed',{bubbles:true}));}if(!this.shadowRoot)this.attachShadow({mode:'open'});const card=buschSmartElement('ha-card'),p=buschSmartElement('p',text);p.style.padding='var(--ha-space-4,16px)';p.style.overflowWrap='anywhere';card.append(p);this.shadowRoot.replaceChildren(card);this._child=null;this._signature=null;}
+  _message(text){this._generation=(this._generation||0)+1;if(this.hidden){this.hidden=false;this.dispatchEvent(new Event('card-visibility-changed',{bubbles:true}));}if(!this.shadowRoot)this.attachShadow({mode:'open'});/* M27: the shared error state block (role=alert) instead of a bare paragraph. */const style=buschSmartElement('style',BuschUI.cardStyles),card=buschSmartElement('ha-card'),block=buschZustand(buschZustandsRegion(buschSmartElement('div'),'message'),{kind:'error',title:text});card.append(block);this.shadowRoot.replaceChildren(style,card);this._child=null;this._signature=null;}
   async _update(rows){
     if(!this._query)return;const generation=++this._generation;const t=buschTexte(TEXTE_BUSCH_SMART_ENTITIES,this._hass);
     if(this._query.error){this._message(t.error+' '+(this._query.spec.filter?.template?t.template:''));return;}
@@ -10586,7 +10617,7 @@ class BuschNetworkBaseCard extends HTMLElement {
   for(const name of ['search','filter','sort'])if(parts[name].value!==this._view[name])parts[name].value=this._view[name];}
  _viewChanged(remember){if(remember)buschNetworkViewSave(this._viewKey,this._view);this._visible=this._config.count;this._renderClients();}
  _viewRows(){const memo=this._viewMemo,view=this._view;if(memo&&memo.rows===this._rows&&memo.search===view.search&&memo.filter===view.filter&&memo.sort===view.sort)return memo.result;const result=buschNetworkViewRows(this._rows,view);this._viewMemo={rows:this._rows,search:view.search,filter:view.filter,sort:view.sort,result};return result;}
- _renderClients(){if(!this._clientBody)return;const c=this._config,t=this._text(),all=this._viewRows(),rows=c.count?all.slice(0,this._visible??c.count):all;if(this._clientBody.style.getPropertyValue?.('--network-columns')!==String(c.columns))this._clientBody.style.setProperty?.('--network-columns',String(c.columns));const used=new Set(),nodes=[];for(const row of rows){used.add(row.entity_id);const signature=buschCoreKey({info:row.info.stateObject,registry:row.info.registry,name:row.name,ap:row.network_name,internet:row.internet?.state,wol:row.wol?.state,locale:BuschUI.language(this._hass),admin:this._hass?.user?.is_admin,busy:this._busy,labelChoices:c.label_ids.map(id=>this._core.labels.get(id)),config:c});let item=this._rowNodes.get(row.entity_id);if(!item||item.signature!==signature){item={signature,node:this._clientNode(row)};this._rowNodes.set(row.entity_id,item);}nodes.push(item.node);}for(const id of this._rowNodes.keys())if(!used.has(id))this._rowNodes.delete(id);for(const id of this._rowOpen)if(!this._rows.some(row=>row.entity_id===id))this._rowOpen.delete(id);if(!rows.length&&c.show_empty){this._emptyNode||=buschNetworkNode('p',t.empty,'message');if(this._emptyNode.textContent!==t.empty)this._emptyNode.textContent=t.empty;nodes.push(this._emptyNode);}
+ _renderClients(){if(!this._clientBody)return;const c=this._config,t=this._text(),all=this._viewRows(),rows=c.count?all.slice(0,this._visible??c.count):all;if(this._clientBody.style.getPropertyValue?.('--network-columns')!==String(c.columns))this._clientBody.style.setProperty?.('--network-columns',String(c.columns));const used=new Set(),nodes=[];for(const row of rows){used.add(row.entity_id);const signature=buschCoreKey({info:row.info.stateObject,registry:row.info.registry,name:row.name,ap:row.network_name,internet:row.internet?.state,wol:row.wol?.state,locale:BuschUI.language(this._hass),admin:this._hass?.user?.is_admin,busy:this._busy,labelChoices:c.label_ids.map(id=>this._core.labels.get(id)),config:c});let item=this._rowNodes.get(row.entity_id);if(!item||item.signature!==signature){item={signature,node:this._clientNode(row)};this._rowNodes.set(row.entity_id,item);}nodes.push(item.node);}for(const id of this._rowNodes.keys())if(!used.has(id))this._rowNodes.delete(id);for(const id of this._rowOpen)if(!this._rows.some(row=>row.entity_id===id))this._rowOpen.delete(id);if(!rows.length&&c.show_empty){this._emptyNode||=buschZustandsRegion(buschNetworkNode('div'),'empty-state');if(this._emptyNode.dataset.title!==t.empty){this._emptyNode.dataset.title=t.empty;buschZustand(this._emptyNode,{kind:'empty',title:t.empty});}nodes.push(this._emptyNode);}
   /* M30: a real button that names how many rows the next step reveals (after search and filter). */
   if(rows.length<all.length){const label=t.more.replace('{n}',String(Math.min(c.count,all.length-rows.length))),key=label+'|'+this._busy;if(this._moreNodeKey!==key){this._moreNodeKey=key;this._moreNode=buschNetworkNode('div',undefined,'actions more-actions');this._button(this._moreNode,label,()=>{this._visible=Math.min(all.length,(this._visible??this._config.count)+this._config.count);this._renderClients();},'secondary');}nodes.push(this._moreNode);}
   if(this._clientBody.children.length!==nodes.length||nodes.some((n,i)=>this._clientBody.children[i]!==n))this._clientBody.replaceChildren(...nodes);if(this._clientBody.isConnected)this._pruneGestures();
@@ -10597,10 +10628,12 @@ class BuschNetworkBaseCard extends HTMLElement {
   const active=this.shadowRoot.activeElement,caret=active&&this._toolbar?.contains?.(active)?[active.selectionStart??null,active.selectionEnd??null]:null;
   const style=buschNetworkNode('style',BUSCH_NETWORK_STYLE),card=buschNetworkNode('ha-card'),name=c.title||model?.name||t[this._kind];
   if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}if(c.show_status&&model?.roles.link){const state=model.roles.link.state,label=state==='on'?t.link_on:state==='off'?t.link_off:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'online':state==='off'?'offline':state,t.link+': '+label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title});card.appendChild(header);}
-  if(this._kind==='network'&&!this._core)card.appendChild(buschNetworkNode('p',t.loading,'message'));
-  const error=this._configError||this._queryError||this._error;if(error){const message=buschNetworkNode('p',t[error]||t.invalid_config,'message error');message.setAttribute('role','alert');card.appendChild(message);}if(this._core?.lastErrors?.size)card.appendChild(buschNetworkNode('p',t.registry_error,'message error'));
+  /* M27: one live region per card; an error replaces the loading line instead of standing next to it. */
+  const error=this._configError||this._queryError||this._error;this._stateNode||=buschZustandsRegion(buschNetworkNode('div'),'card-state');
+  buschZustand(this._stateNode,error?{kind:'error',title:t[error]||t.invalid_config}:!this._core?{kind:'loading',title:t.loading}:this._kind==='fritz'&&!this._configError&&!model?.device?{kind:'empty',icon:'mdi:router-wireless',title:t.choose}:null);card.appendChild(this._stateNode);
+  if(this._core?.lastErrors?.size)card.appendChild(buschZustand(buschNetworkNode('div',undefined,'registry-state'),{kind:'error',icon:'mdi:database-alert-outline',title:t.registry_error}));
   if(this._kind==='fritz'&&!this._configError){
-   if(!this._core)card.appendChild(buschNetworkNode('p',t.loading,'message'));else if(!model?.device)card.appendChild(buschNetworkNode('p',t.choose,'message'));else{if(model.ambiguous.length)card.appendChild(buschNetworkNode('p',t.ambiguous,'message'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);
+   if(this._core&&model?.device){if(model.ambiguous.length)card.appendChild(buschNetworkNode('p',t.ambiguous,'message'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);
     const actions=buschNetworkNode('div',undefined,'actions');if(c.show_controls&&BuschUI.mayAct(this._hass,c,'admin')){for(const role of ['reboot','reconnect','update']){const e=model.roles[role];if(c['show_'+role]&&buschNetworkAvailable(e)&&(role!=='update'||(e.state==='on'&&(Number(e.attributes.supported_features)&1)&&!e.attributes.in_progress)))this._button(actions,t[role],()=>this._nativeAction(role),role==='reconnect'?'danger':'secondary');}}if(c.show_controls)this._customButtons(actions,null);if(c.show_details){const e=model.roles.connection||model.roles.uptime||model.roles.update;if(e)this._button(actions,t.details,()=>this._details(e.entity_id),'quiet');}if(actions.children.length)card.appendChild(actions);
     if(c.show_wlan&&model.wlan.length){const body=buschNetworkNode('div',undefined,'actions');for(const e of model.wlan){const label=e.registry?.name||e.attributes.friendly_name||e.entity_id;const known=buschNetworkAvailable(e)&&['on','off'].includes(e.state);if(c.show_controls&&known&&BuschUI.mayAct(this._hass,c,'admin'))this._button(body,label+' · '+(e.state==='on'?t.yes:t.no),()=>this._wlanAction(e.entity_id));else body.appendChild(buschNetworkNode('p',label+' · '+(known?(e.state==='on'?t.yes:t.no):(t[e.state]||t.unavailable)),'detail'));}this._section(card,'wlan',t.wlan,body);}
    }

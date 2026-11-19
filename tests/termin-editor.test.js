@@ -277,6 +277,11 @@ function attrappe(umgebung) {
     appendChild(kind) {
       this.kinder.push(kind);
     },
+    // M27: the shared state block fills its live region in place.
+    replaceChildren(...kinder) {
+      this.kinder = kinder;
+    },
+    removeAttribute() {},
   });
   const zusatz = {
     HTMLElement: class {
