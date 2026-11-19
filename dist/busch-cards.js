@@ -2225,8 +2225,9 @@ class BuschScheduleCard extends HTMLElement {
           background: color-mix(in srgb, var(--primary-color) 12%, transparent);
           box-shadow: inset 3px 0 0 var(--primary-color);
         }
+        /* M26: blue mixed toward the text colour, >= 4.5:1 on the today tint (bold and the bar stay). */
         .day.today .label {
-          color: var(--primary-color);
+          color: color-mix(in srgb, var(--primary-color) 50%, var(--primary-text-color));
           font-weight: var(--ha-font-weight-bold, 700);
         }
 
@@ -2301,9 +2302,12 @@ class BuschScheduleCard extends HTMLElement {
           position: absolute;
           top: 0;
           bottom: 0;
-          background: var(--busch-schedule-color, var(--primary-color));
+          /* M26 (E6): white on HA blue is 2.6:1. The default block is the blue mixed half with the card
+             surface and carries the text colour: >= 4.5:1 in light and dark (tests/kontrast.test.js). The
+             theme hook --busch-schedule-color still replaces the whole surface. */
+          background: var(--busch-schedule-color, color-mix(in srgb, var(--primary-color) 50%, var(--card-background-color, #fff)));
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
-          color: var(--text-primary-color, #fff);
+          color: var(--primary-text-color);
           font-size: var(--ha-font-size-s, 12px);
           line-height: 30px;
           text-align: center;
@@ -2373,7 +2377,7 @@ class BuschScheduleCard extends HTMLElement {
           width: 2px;
           height: 12px;
           border-radius: 1px;
-          background: var(--text-primary-color, #fff);
+          background: var(--primary-text-color);
           opacity: 0.55;
         }
         .readonly .handle { display: none; }
@@ -2489,7 +2493,7 @@ class BuschScheduleCard extends HTMLElement {
         .dlg .msg {
           margin-top: var(--ha-space-3, 12px);
           font-size: var(--ha-font-size-m, 14px);
-          color: var(--error-color, #db4437);
+          color: color-mix(in srgb, var(--error-color, #db4437) 70%, var(--primary-text-color));
           overflow-wrap: anywhere;
         }
         .dlg .msg:empty { display: none; }
@@ -2504,6 +2508,13 @@ class BuschScheduleCard extends HTMLElement {
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        /* M26 (E6): the shared primary (white on HA blue 2.6:1) and destructive (red on white 4.3:1)
+           reach 4.5:1 toward the text colour, as in the Unraid cards; blue and red stay surface and frame. */
+        .actions .busch-btn[data-variant="primary"] {
+          background: color-mix(in srgb, var(--primary-color) 50%, var(--card-background-color, #fff));
+          color: var(--primary-text-color);
+        }
+        .actions .busch-btn[data-variant="destructive"] { color: color-mix(in srgb, var(--error-color, #db4437) 70%, var(--primary-text-color)); }
         .actions .busch-btn[data-variant="secondary"]:hover,
         .actions .busch-btn[data-variant="destructive"]:hover { background: var(--secondary-background-color, transparent); }
 
@@ -2522,7 +2533,7 @@ class BuschScheduleCard extends HTMLElement {
           overflow-wrap: anywhere;
         }
         .choices button:hover { background: var(--divider-color); }
-        .choices button.danger { color: var(--error-color, #db4437); }
+        .choices button.danger { color: color-mix(in srgb, var(--error-color, #db4437) 70%, var(--primary-text-color)); }
         @media (prefers-reduced-motion: reduce) { dialog.wackelt { animation: none; } }
       </style>
 
@@ -3856,7 +3867,9 @@ function calHinweisText(fehler, nichtGezeigt, texte) {
 
 /* Busch HA UI 0.1.0: touch targets, themed header and responsive rows. */
 const CAL_STIL = `
-  busch-calendar-card { display:block; height:100%; min-height:0; min-width:0; }
+  /* M26: secondary text that stays >= 4.5:1 also on the weekend surface and the today tint. */
+  busch-calendar-card { display:block; height:100%; min-height:0; min-width:0;
+    --cal-zweit-text:color-mix(in srgb, var(--secondary-text-color) 70%, var(--primary-text-color)); }
   busch-calendar-card > ha-card { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; box-sizing:border-box; }
   busch-calendar-card[data-preview], busch-calendar-card[data-preview] > ha-card { max-height:60vh; }
   busch-calendar-card .cal-body { display:flex; flex-direction:column; flex:1; min-height:0; }
@@ -3937,7 +3950,7 @@ const CAL_STIL = `
   .cal-wahl-monat:hover { background:var(--secondary-background-color, transparent); }
   .cal-wahl-monat:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
   /* The current month (today) bold in the accent colour; the shown month as a filled, framed chip. */
-  .cal-wahl-jetzt { color:var(--primary-color); font-weight:var(--ha-font-weight-bold, 600); }
+  .cal-wahl-jetzt { color:color-mix(in srgb, var(--primary-color) 50%, var(--primary-text-color)); font-weight:var(--ha-font-weight-bold, 600); }
   .cal-wahl-monat[aria-current="true"] { border:2px solid var(--primary-color);
     background:color-mix(in srgb, var(--primary-color) 16%, var(--card-background-color, #fff));
     font-weight:var(--ha-font-weight-bold, 600); }
@@ -3966,10 +3979,10 @@ const CAL_STIL = `
   /* Today as in the schedule card: tint, accent bar, bold date. */
   .cal-heute { background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color, #fff));
     box-shadow:inset 3px 0 0 var(--primary-color); }
-  .cal-heute .cal-wt, .cal-heute .cal-nr { color:var(--primary-color); }
+  .cal-heute .cal-wt, .cal-heute .cal-nr { color:color-mix(in srgb, var(--primary-color) 50%, var(--primary-text-color)); }
   .cal-datum { display:flex; gap:var(--ha-space-2, 8px); min-width:0;
     align-items:baseline;
-    color:var(--secondary-text-color); font-variant-numeric:tabular-nums; }
+    color:var(--cal-zweit-text); font-variant-numeric:tabular-nums; }
   .cal-wt, .cal-nr { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     min-width:0; }
   .cal-nr { font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color); }
@@ -3990,7 +4003,7 @@ const CAL_STIL = `
   /* Die Zeitspalte SCHRUMPFT NICHT (flex:0 0 auto) — der Titel daneben tut es
      und wird gekuerzt. Ohne min-width:0 am Titel waeche der Flexkasten ueber
      seinen Elternteil hinaus, statt zu kuerzen (Regel 1). */
-  .cal-zeit { color:var(--secondary-text-color); font-variant-numeric:tabular-nums;
+  .cal-zeit { color:var(--cal-zweit-text); font-variant-numeric:tabular-nums;
     flex:0 0 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cal-ganztags { padding:0 var(--ha-space-2, 8px); border-radius:var(--ha-border-radius-pill, 9999px); line-height:1.6;
@@ -7953,7 +7966,7 @@ Object.assign(TEXTE_BUSCH_SMART_ENTITIES.de, {
  rules:{domain:'Domain',state:'Zustand',entity_id:'Entity-ID',name:'Name',group:'Gruppe',area:'Bereich',floor:'Etage',level:'Stockwerk',device:'Gerät',label:'Label',device_manufacturer:'Hersteller',device_model:'Modell',integration:'Integration',hidden_by:'Verborgen durch',attributes:'Attribute',last_changed:'Letzte Zustandsänderung',last_updated:'Letzte Aktualisierung',last_triggered:'Letzte Auslösung',entity_category:'Entity-Kategorie',not:'NICHT',or:'ODER',and:'UND',options:'Zeilenoptionen',type:'Zeilentyp',sort:'Lokale Sortierung'}
 });
 Object.assign(TEXTE_BUSCH_SMART_ENTITIES.en, {addRule:'Add rule',moreTab:'Options',boolTrue:'Yes',boolFalse:'No',texte:{method_device_name:'Device name',method_none:'Unchanged',method_domain:'Domain',method_entity_id:'Entity ID',method_name:'Name',method_device:'Device',method_area:'Area',method_state:'State',method_attribute:'Attribute',method_last_changed:'Last changed',method_last_updated:'Last updated',method_last_triggered:'Last triggered',card_type_entities:'Entities',card_type_grid:'Grid',card_type_glance:'Glance',card_type_map:'Map','card_type_vertical-stack':'Vertical stack',item_type_tile:'Tile'},rules:{domain:'Domain',state:'State',entity_id:'Entity ID',name:'Name',group:'Group',area:'Area',floor:'Floor',level:'Level',device:'Device',label:'Label',device_manufacturer:'Manufacturer',device_model:'Model',integration:'Integration',hidden_by:'Hidden by',attributes:'Attributes',last_changed:'Last changed',last_updated:'Last updated',last_triggered:'Last triggered',entity_category:'Entity category',not:'NOT',or:'OR',and:'AND',options:'Row options',type:'Row type',sort:'Local sorting'}});
-const BUSCH_SMART_EDITOR_CSS = BuschUI.editorStyles + `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:var(--primary-color)}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}
+const BUSCH_SMART_EDITOR_CSS = BuschUI.editorStyles + `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:color-mix(in srgb,var(--primary-color) 50%,var(--primary-text-color))}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}
 [hidden]{display:none!important}.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--ha-space-1,4px);margin-block:var(--ha-space-2,8px)}.tabs button{border-radius:var(--ha-card-border-radius,12px);min-height:48px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.row>.field-caption{flex-basis:100%;font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere}.tabs [aria-selected=true]{border-color:var(--primary-color);background:var(--secondary-background-color);font-weight:600}.editor-section{border-bottom:1px solid var(--divider-color)}.rule-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;padding-block:var(--ha-space-2,8px)}.rule-row label{display:grid;gap:var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px)}.rule-row select,.rule-row input{width:100%;min-height:44px;font-size:var(--ha-font-size-m,14px)}.rule-value{grid-column:1/-1}.rule-row .rule-operator{grid-column:1/-1}.node{margin-inline-start:0}.node .node{padding-inline-start:var(--ha-space-2,8px);border-inline-start:1px solid var(--divider-color)}button:focus-visible,summary:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}`;
 function buschSmartElement(tag,text){const element=tag==='ha-form'?BuschUI.ha.form():tag==='input'?BuschUI.ha.input({native:true}):document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
 function buschSmartButton(text,action){return BuschUI.action({label:text,text,onClick:action});}
@@ -10415,11 +10428,11 @@ function buschNetworkSchema(core,config,kind='network'){
 
 const BUSCH_NETWORK_STYLE=BuschUI.cardStyles+BuschUI.editorStyles+`
 :host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);font-family:var(--ha-font-family-body,inherit);--network-columns:1;--network-media-size:var(--ha-space-12,48px)}*{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--ha-space-4,16px);color:var(--primary-text-color);background:var(--card-background-color)}
-.header{display:grid;grid-template-columns:var(--network-media-size) minmax(0,1fr);gap:var(--ha-space-3,12px);align-items:center;margin-bottom:var(--ha-space-4,16px)}.header-status{grid-column:2}.main{display:grid;gap:var(--ha-space-1,4px)}/* M61: the card title takes BuschUI.header level 1; rows keep their own step. */.header h2{margin:0;min-width:0}.client-name{font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.client-name{font-size:var(--ha-font-size-m,14px)}p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail,.hint{color:var(--secondary-text-color)}.hint{font-size:var(--ha-font-size-s,12px)}.message{padding-block:var(--ha-space-2,8px)}.error{color:var(--error-color)}
+.header{display:grid;grid-template-columns:var(--network-media-size) minmax(0,1fr);gap:var(--ha-space-3,12px);align-items:center;margin-bottom:var(--ha-space-4,16px)}.header-status{grid-column:2}.main{display:grid;gap:var(--ha-space-1,4px)}/* M61: the card title takes BuschUI.header level 1; rows keep their own step. */.header h2{margin:0;min-width:0}.client-name{font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.client-name{font-size:var(--ha-font-size-m,14px)}p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail,.hint{color:var(--secondary-text-color)}.hint{font-size:var(--ha-font-size-s,12px)}.message{padding-block:var(--ha-space-2,8px)}.error{color:color-mix(in srgb,var(--error-color) 70%,var(--primary-text-color))}
 .card-icon,.row-icon{display:grid;place-items:center;overflow:hidden;background:var(--secondary-background-color);border-radius:var(--ha-card-border-radius,12px);color:var(--primary-color)}.card-icon{width:var(--network-media-size);height:var(--network-media-size)}.row-icon{width:var(--ha-space-10,40px);height:var(--ha-space-10,40px)}.busch-media img{width:100%;height:100%;object-fit:contain}.busch-media ha-icon{--mdc-icon-size:var(--ha-space-6,24px)}
-.status-badge{justify-self:start;display:inline-flex;align-items:center;gap:var(--ha-space-1,4px);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-1,4px) var(--ha-space-2,8px);font-size:var(--ha-font-size-s,12px);max-width:100%;overflow-wrap:anywhere;background:var(--secondary-background-color)}.status-dot{width:var(--ha-space-2,8px);height:var(--ha-space-2,8px);border-radius:50%;background:currentColor;flex:none}.status-success{color:var(--success-color)}.status-warning{color:var(--warning-color)}.status-error{color:var(--error-color)}.status-unknown,.status-unavailable,.status-neutral{color:var(--secondary-text-color)}
+.status-badge{justify-self:start;display:inline-flex;align-items:center;gap:var(--ha-space-1,4px);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-1,4px) var(--ha-space-2,8px);font-size:var(--ha-font-size-s,12px);max-width:100%;overflow-wrap:anywhere;background:var(--secondary-background-color)}.status-dot{width:var(--ha-space-2,8px);height:var(--ha-space-2,8px);border-radius:50%;background:currentColor;flex:none}.status-success{color:color-mix(in srgb,var(--success-color) 50%,var(--primary-text-color))}.status-warning{color:color-mix(in srgb,var(--warning-color) 40%,var(--primary-text-color))}.status-error{color:color-mix(in srgb,var(--error-color) 70%,var(--primary-text-color))}.status-unknown,.status-unavailable,.status-neutral{color:color-mix(in srgb,var(--secondary-text-color) 60%,var(--primary-text-color))}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--ha-space-30,120px)),1fr));gap:var(--ha-space-3,12px);margin-block:var(--ha-space-4,16px)}.metric{display:grid;gap:var(--ha-space-1,4px);overflow-wrap:anywhere}.metric-label{font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color)}.metric-value{font-size:var(--ha-font-size-m,14px);font-weight:var(--ha-font-weight-medium,500)}
-.actions{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);margin-block:var(--ha-space-2,8px)}.actions button{min-width:var(--ha-space-11,44px);border:0;padding-inline:var(--ha-space-3,12px);border-radius:var(--ha-card-border-radius,12px);background:var(--secondary-background-color);color:var(--primary-text-color);overflow-wrap:anywhere}.actions button[data-variant=danger]{color:var(--error-color)}.actions button[data-variant=quiet]{background:transparent;color:var(--primary-color)}.actions button[data-variant=primary]{background:var(--primary-color);color:var(--text-primary-color)}
+.actions{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);margin-block:var(--ha-space-2,8px)}.actions button{min-width:var(--ha-space-11,44px);border:0;padding-inline:var(--ha-space-3,12px);border-radius:var(--ha-card-border-radius,12px);background:var(--secondary-background-color);color:var(--primary-text-color);overflow-wrap:anywhere}/* M26 (E6): text toward the text colour, >= 4.5:1 on the button and card surfaces in light and dark. */.actions button[data-variant=danger]{color:color-mix(in srgb,var(--error-color) 70%,var(--primary-text-color))}.actions button[data-variant=quiet]{background:transparent;color:color-mix(in srgb,var(--primary-color) 50%,var(--primary-text-color))}.actions button[data-variant=primary]{background:color-mix(in srgb,var(--primary-color) 50%,var(--card-background-color));color:var(--primary-text-color)}
 .busch-ui-section{margin-block:var(--ha-space-4,16px)}summary{padding-block:var(--ha-space-2,8px);min-height:var(--ha-space-11,44px);overflow-wrap:anywhere}.clients{display:grid;grid-template-columns:repeat(var(--network-columns,1),minmax(0,1fr));gap:var(--ha-space-4,16px)}.clients{gap:var(--ha-space-1,4px)}.client{display:grid;align-content:start;gap:var(--ha-space-1,4px);padding-block:var(--ha-space-1,4px);border-bottom:1px solid var(--divider-color,transparent)}.client:last-of-type{border-bottom:0}.client-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--ha-space-2,8px);align-items:start}.client-line>.busch-ui-action{align-self:start;min-width:var(--ha-space-11,44px)}.client-entry{min-width:0}.client-entry>summary.client-head{list-style:none;display:grid;grid-template-columns:var(--ha-space-4,16px) var(--ha-space-10,40px) minmax(0,1fr);gap:var(--ha-space-2,8px);align-items:center;min-height:var(--ha-space-11,44px);padding-block:var(--ha-space-1,4px);cursor:pointer;border-radius:var(--ha-card-border-radius,12px)}.client-entry>summary.client-head::-webkit-details-marker{display:none}.client-entry>summary.client-head::before{content:'';justify-self:center;width:var(--ha-space-2,8px);height:var(--ha-space-2,8px);border-right:2px solid var(--secondary-text-color);border-bottom:2px solid var(--secondary-text-color);transform:rotate(-45deg)}.client-entry[open]>summary.client-head::before{transform:rotate(45deg)}.client-entry>summary.client-head:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}.client-meta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ha-space-1,4px) var(--ha-space-2,8px)}.client-ip{font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.client-details{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:var(--ha-space-1,4px) var(--ha-space-3,12px);margin:var(--ha-space-1,4px) 0 var(--ha-space-2,8px);padding-inline-start:calc(var(--ha-space-4,16px) + var(--ha-space-2,8px))}.client-details>div{display:contents}.client-details dt{color:var(--secondary-text-color);overflow-wrap:anywhere;font-size:var(--ha-font-size-s,12px)}.client-details dd{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.compact .client-details dd{font-size:var(--ha-font-size-s,12px)}.client>.actions{margin-block:0 var(--ha-space-1,4px);padding-inline-start:calc(var(--ha-space-4,16px) + var(--ha-space-2,8px))}.client-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:var(--ha-space-2,8px);margin-block-end:var(--ha-space-2,8px)}.client-tools label{display:grid;gap:var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere}.client-tools .tool-search{grid-column:1/-1}.client-tools input,.client-tools select{font:inherit;font-size:var(--ha-font-size-m,14px);min-height:var(--ha-space-11,44px);width:100%;padding-inline:var(--ha-space-3,12px);border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);background:var(--card-background-color);color:var(--primary-text-color)}.client-tools input:focus-visible,.client-tools select:focus-visible{outline:2px solid var(--primary-color);outline-offset:1px}.client-count{grid-column:1/-1;margin:0;font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere}.clients>.more-actions{justify-content:flex-start}.registry-form{display:grid;gap:var(--ha-space-2,8px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--secondary-text-color);font-size:var(--ha-font-size-s,12px)}[hidden]{display:none!important}@container(max-width:600px){.clients{grid-template-columns:minmax(0,1fr)}}@container (max-width:400px){.client-details{grid-template-columns:minmax(0,1fr);row-gap:0}.client-details dd{margin-block-end:var(--ha-space-1,4px)}}
 `;
 function buschNetworkNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}

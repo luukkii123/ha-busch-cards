@@ -676,6 +676,9 @@ with sync_playwright() as pw:
                 path=str(OUT / ("map-%s-%d-%s.png"
                                 % (kennung[1:], lauf["breite"], lauf["thema"]))))
 
+    # M26 (Variante A): contrast (WCAG 1.4.3) and touch targets (>= 44 px) of both cards, 320/480/960, light and dark.
+    kontrast_touch = regeln.messe_kontrast_touch(page, {"map": "#karte-map", "fehler": "#karte-fehler"}, ausnahmen=pathlib.Path(__file__).resolve().parent / "kontrast-ausnahmen.json")
+
     # Gegenprobe am WERKZEUG, in beide Richtungen: die fehlerhafte Sonde muss
     # gemeldet werden, die gewollte Kuerzung darf es nicht.
     page.set_viewport_size({"width": 640, "height": 900})
@@ -827,6 +830,7 @@ checks["Fehlerkasten ist der Zustandsblock (role=alert)"] = (
 checks["Regel 1: kein Verstoss bei 320/480/960 in hell und dunkel"] = (
     regeln.bewerte(ui) == 0
 )
+checks["Kontrast und Touchziele ohne Verstoss (M26)"] = regeln.bewerte(kontrast_touch) == 0
 checks["Gegenprobe schlaegt an (Werkzeug nicht blind)"] = (
     selbsttest["ueberlauf_erkannt"] and selbsttest["ausserhalb_erkannt"]
 )
@@ -851,6 +855,7 @@ report = {
     "ui_regeln": ui,
     "ui_regeln_zaehlung": {k: regeln.zaehle(v) for k, v in ui.items()},
     "ui_selbsttest": {k: v for k, v in selbsttest.items() if k != "befund"},
+    **kontrast_touch,
     "console_errors": echte_fehler,
     "kachel_abrufe_fehlgeschlagen": len(console) - len(echte_fehler),
     "page_errors": errors,

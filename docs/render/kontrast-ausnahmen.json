@@ -1,0 +1,5 @@
+{
+  "beschreibung": "Ausnahmen der Kontrast-/Touchmessung (M26, hacs/scripts/kontrast_touch.py) für die Renderskripte von busch-cards. Jede Ausnahme mit Grund; anfangs leer, gefüllt erst nach gemessenem Befund.",
+  "kontrast": [],
+  "touch": []
+}
