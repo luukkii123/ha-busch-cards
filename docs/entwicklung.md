@@ -482,9 +482,10 @@ Was die Messung im Einzelnen ergab:
   fremde CSS-Marke, Abstände und Schriftgrößen über `--ha-space-*` und
   `--ha-font-*`.
 
-Die Berichte liegen unter `docs/render/mapcard-ergebnis/report.json` sowie
-(im Repo `hacs`) `docs/render/ergebnis-zeitplan/report.json` und
-`docs/render/ergebnis-kalender/report.json`.
+Die Berichte liegen unter `docs/render/mapcard-ergebnis/report.json`; die übrigen schreibt der
+Karten-Runner (`hacs/scripts/karten-alle.sh`) je Lauf nach `hacs/artifacts/e2e/<lauf>/`.
+Seit Buschcheck M44 (19.11.2026) liegen die Renderskripte von Zeitplan, Kalender, Kalenderfuß und
+Gerätekarte hier in `docs/render/` statt in der Projektverwaltung.
 
 ### Die Läufe selbst wiederholen
 
@@ -501,9 +502,9 @@ meldet dann „1 fail" statt 171 grüner Prüfungen, und `tests/laden.js` ist
 ohnehin ein Helfer, keine Testdatei.
 
 Playwright läuft auf diesem Server **nur** im Container. Der Aufruf braucht
-**beide** Mounts: `/work` ist das Verzeichnis `docs/render` der übergeordneten Projektverwaltung — dort liegen die
-Renderskripte der Zeitplan- und der Kalenderkarte **und** das gemeinsame
-Messmodul `regeln.py` —, `/cards` ist dieses Repo:
+**beide** Mounts: `/work` ist das Verzeichnis `docs/render` der übergeordneten Projektverwaltung — dort liegt
+das gemeinsame Messmodul `regeln.py`, das alle Kartenrepos nutzen —, `/cards` ist dieses Repo mit den
+Renderskripten:
 
 ```bash
 docker run --rm \
@@ -511,12 +512,11 @@ docker run --rm \
   -v "/pfad/zu/busch-cards:/cards" \
   --entrypoint bash mcr.microsoft.com/playwright/python:v1.62.0-noble \
   -c 'pip install --quiet --break-system-packages playwright==1.62.0 >/dev/null; \
-      python3 /work/render-zeitplan.py /cards/dist/busch-cards.js \
-              /work/ergebnis-zeitplan'
+      python3 /cards/docs/render/render-zeitplan.py /cards/dist/busch-cards.js \
+              /tmp/zeitplan'
 ```
 
-Für die Kalenderkarte dasselbe mit `render-kalender.py` und
-`/work/ergebnis-kalender`. Die Landkarte hat ihr Skript im Repo, mountet aber
+Für die Kalenderkarte dasselbe mit `docs/render/render-kalender.py`. Die Landkarte mountet
 ebenfalls beides — die Zeile steht im Kopf von `docs/render/mapcard.py`.
 Ohne `/work` findet kein Skript `regeln.py` und der Lauf endet in einem
 `ModuleNotFoundError`, bevor irgendetwas gemessen wird.
