@@ -7143,6 +7143,8 @@ const DEV_STIL = `
     .dev-kopf { gap:var(--ha-space-2, 8px); padding:var(--ha-space-3, 12px); }
     .dev-icon { flex-basis:40px; width:40px; height:40px; }
     .dev-brand { display:none; }
+    /* Without the logo an empty subtitle would still add the title gap (run 20261119-164604). */
+    .dev-unter:has(> .dev-unter-text:empty) { display:none; }
     .dev-tile { margin-inline:var(--ha-space-3, 12px); }
     .dev-liste { padding-inline:var(--ha-space-3, 12px); }
   }

@@ -90,3 +90,13 @@ test("M60: CSS: name up to two lines, headings in sentence case, 24 px arrows in
   // Narrow cards drop the integration logo to leave room for the name.
   assert.match(CSS, /@container \(max-width:380px\) \{[^@]*\.dev-brand \{ display:none; \}/);
 });
+
+// Run karten-20261119-164604 (19-device-filters): below 380 px the brand logo is hidden, so a subtitle
+// without text was an empty flex item and added the 2 px title gap (head 83.6 > 82.1 px).
+test("M60: an empty subtitle takes no room where the brand logo is hidden", () => {
+  const fs = require("node:fs"), path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "dist", "busch-cards.js"), "utf8");
+  const dev = src.slice(src.indexOf("const DEV_STIL = `"), src.indexOf("`;", src.indexOf("const DEV_STIL = `")));
+  const narrow = dev.slice(dev.indexOf("@container (max-width:380px) {"));
+  assert.match(narrow.slice(0, narrow.indexOf("\n  }")), /\.dev-unter:has\(> \.dev-unter-text:empty\) \{ display:none; \}/);
+});
