@@ -1334,6 +1334,13 @@ function buschFuellen(text, werte) {
   return aus;
 }
 
+/** M75 (F12): a configuration error from a card dictionary (`texte.<key>`), never a literal.
+ *  The language comes from `hass` when the card has one, else from navigator.language
+ *  (`setConfig` runs before `hass`). */
+function buschKonfigFehler(tabelle, schluessel, werte, hass = null) {
+  return new Error(buschFuellen(buschTexte(tabelle, hass).texte[schluessel], werte));
+}
+
 /* M27: every card keeps one live region from the start. BuschUI.stateBlock fills it in place
  * (loading/empty/offline → role=status, error → role=alert); clearing leaves an empty,
  * box-less region in the tree, so the next state is announced. */
@@ -1438,6 +1445,8 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       erneutLaden: "Erneut laden",
       speichernLaeuft: "Speichere …",
       nichtGefunden: "Zeitplan zu {entity} nicht gefunden. In YAML festgelegte Zeitpläne lassen sich nicht über die Oberfläche ändern.",
+      fehlt_entity: "busch-schedule-card: 'entity' fehlt",
+      falsche_entity: "busch-schedule-card: 'entity' muss ein schedule.* sein",
       nichtGespeichert: "Zeitplan nicht gespeichert: {grund}",
       fremdGeaendert: "Zeitplan nicht gespeichert: Er wurde inzwischen anderswo geändert. Der aktuelle Stand wird angezeigt.",
       entitaetFehlt: "Entität nicht gefunden",
@@ -1504,6 +1513,8 @@ const TEXTE_BUSCH_SCHEDULE_CARD = {
       erneutLaden: "Reload",
       speichernLaeuft: "Saving …",
       nichtGefunden: "No schedule found for {entity}. Schedules defined in YAML cannot be changed from the interface.",
+      fehlt_entity: "busch-schedule-card: 'entity' is missing",
+      falsche_entity: "busch-schedule-card: 'entity' must be a schedule.* entity",
       nichtGespeichert: "Schedule not saved: {grund}",
       fremdGeaendert: "Schedule not saved: it was changed elsewhere in the meantime. Showing the current state.",
       entitaetFehlt: "Entity not found",
@@ -1742,10 +1753,10 @@ class BuschScheduleCard extends HTMLElement {
 
   setConfig(config) {
     if (!config || !config.entity) {
-      throw new Error("busch-schedule-card: 'entity' fehlt");
+      throw buschKonfigFehler(TEXTE_BUSCH_SCHEDULE_CARD, "fehlt_entity", null, this._hass);
     }
     if (!String(config.entity).startsWith("schedule.")) {
-      throw new Error("busch-schedule-card: 'entity' muss ein schedule.* sein");
+      throw buschKonfigFehler(TEXTE_BUSCH_SCHEDULE_CARD, "falsche_entity", null, this._hass);
     }
     const step = Number(config.step);
     const nextConfig = {
@@ -5650,6 +5661,7 @@ const TEXTE_BUSCH_MAP_CARD = {
     },
     texte: {
       laden: "Lade Karte …",
+      fehlt_konfig: "busch-map-card: Konfiguration fehlt",
       map_style_ha: "Home-Assistant-Standard",
       map_style_custom: "Eigene URL",
       innenTitel: "Alles Weitere wie bei der eingebauten Karte:",
@@ -5680,6 +5692,7 @@ const TEXTE_BUSCH_MAP_CARD = {
     },
     texte: {
       laden: "Loading map …",
+      fehlt_konfig: "busch-map-card: configuration is missing",
       map_style_ha: "Home Assistant default",
       map_style_custom: "Own URL",
       innenTitel: "Everything else as on the built-in card:",
@@ -5734,7 +5747,7 @@ class BuschMapCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config) throw new Error("busch-map-card: Konfiguration fehlt");
+    if (!config) throw buschKonfigFehler(TEXTE_BUSCH_MAP_CARD, "fehlt_konfig", null, this._hass);
     this._config = { ...MAP_CARD_DEFAULTS, ...config };
     this._inner = null;
     this._haMap = null;
@@ -6185,7 +6198,8 @@ class BuschMapCardEditor extends BuschEditorBase {
           break;
         } catch (e) { /* naechster Versuch */ }
       }
-      if (!karte) throw new Error("map-Karte liess sich nicht erzeugen");
+      // Internal only: the catch below shows `texte.editorFehlt` instead.
+      if (!karte) throw new Error("built-in map card could not be created");
       const editor = await karte.constructor.getConfigElement();
       editor.hass = this._hass;
       this._innenDaten = this._config;
@@ -6476,18 +6490,18 @@ const DEV_VORLAGEN = {
 
 function devFilterKonfig(filter) {
   if(filter===undefined)return undefined;
-  if(!filter||typeof filter!=='object'||Array.isArray(filter)||Object.keys(filter).some(k=>!['include','exclude'].includes(k)))throw new Error('filter: include/exclude required / Include-/Exclude-Regeln erforderlich');
+  if(!filter||typeof filter!=='object'||Array.isArray(filter)||Object.keys(filter).some(k=>!['include','exclude'].includes(k)))throw buschKonfigFehler(TEXTE_BUSCH_DEVICE_CARD,'filter_struktur');
   const validate=rule=>{
-    if(!rule||typeof rule!=='object'||Array.isArray(rule))throw new Error('filter: invalid rule / ungültige Regel');
+    if(!rule||typeof rule!=='object'||Array.isArray(rule))throw buschKonfigFehler(TEXTE_BUSCH_DEVICE_CARD,'filter_regel');
     for(const [raw,value]of Object.entries(rule)){
       const key=raw.trim().split(' ')[0];
-      if(!BUSCH_DEVICE_FILTER_RULES.includes(key))throw new Error('filter: unknown predicate / unbekannte Filterregel: '+key);
-      if(key==='and'||key==='or'){if(!Array.isArray(value))throw new Error('filter: and/or requires a list / UND/ODER benötigt eine Liste');value.forEach(validate);}
+      if(!BUSCH_DEVICE_FILTER_RULES.includes(key))throw buschKonfigFehler(TEXTE_BUSCH_DEVICE_CARD,'filter_unbekannt',{key});
+      if(key==='and'||key==='or'){if(!Array.isArray(value))throw buschKonfigFehler(TEXTE_BUSCH_DEVICE_CARD,'filter_undoder');value.forEach(validate);}
       if(key==='not')validate(value);
-      if(key==='attributes'&&(!value||typeof value!=='object'||Array.isArray(value)))throw new Error('filter.attributes: object required / Objekt erforderlich');
+      if(key==='attributes'&&(!value||typeof value!=='object'||Array.isArray(value)))throw buschKonfigFehler(TEXTE_BUSCH_DEVICE_CARD,'filter_attribute');
     }
   };
-  for(const rules of Object.values(filter)){if(!Array.isArray(rules))throw new Error('filter: rules must be a list / Regeln müssen eine Liste sein');rules.forEach(validate);}
+  for(const rules of Object.values(filter)){if(!Array.isArray(rules))throw buschKonfigFehler(TEXTE_BUSCH_DEVICE_CARD,'filter_liste');rules.forEach(validate);}
   return JSON.parse(JSON.stringify(filter));
 }
 function devNormalisiereKonfig(config) {
@@ -6859,6 +6873,12 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "Dasselbe für das Halten auf einer Zeile, per Tastatur Umschalt+Enter oder die Kontextmenütaste. Vorgabe: nichts.",
     },
     texte: {
+      filter_struktur: "filter: include/exclude erforderlich",
+      filter_regel: "filter: ungültige Regel",
+      filter_unbekannt: "filter: unbekannte Filterregel: {key}",
+      filter_undoder: "filter: and/or benötigt eine Liste",
+      filter_attribute: "filter.attributes: Objekt erforderlich",
+      filter_liste: "filter: Regeln müssen eine Liste sein",
       display_mode_auto: "Automatisch",
       display_mode_image: "Bild",
       display_mode_icon: "Icon",
@@ -7016,6 +7036,12 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       row_hold_action: "The same for holding a row, on a keyboard Shift+Enter or the context menu key. Default: nothing.",
     },
     texte: {
+      filter_struktur: "filter: include/exclude required",
+      filter_regel: "filter: invalid rule",
+      filter_unbekannt: "filter: unknown predicate: {key}",
+      filter_undoder: "filter: and/or requires a list",
+      filter_attribute: "filter.attributes: object required",
+      filter_liste: "filter: rules must be a list",
       display_mode_auto: "Auto",
       display_mode_image: "Image",
       display_mode_icon: "Icon",
@@ -8073,13 +8099,13 @@ function buschSmartConfig(config) {
 /* Bind only own object properties; never traverse prototypes or share template values. */
 function buschSmartItem(config,value){
   const item=config.item,path=config.item_param;
-  if(!item||Array.isArray(item)||typeof item!=='object'||typeof item.type!=='string'||!item.type.trim())throw new Error('item: expected a card object with type / Kartenobjekt mit type erforderlich');
+  if(!item||Array.isArray(item)||typeof item!=='object'||typeof item.type!=='string'||!item.type.trim())throw buschKonfigFehler(TEXTE_BUSCH_SMART_ENTITIES,'item_karte');
   const parts=typeof path==='string'?path.split('.'):[];
-  if(!parts.length||parts.some(k=>!k.trim()||k!==k.trim()||/^\d+$/.test(k)||['__proto__','prototype','constructor'].includes(k)))throw new Error('item_param: invalid object path / ungültiger Objektpfad');
+  if(!parts.length||parts.some(k=>!k.trim()||k!==k.trim()||/^\d+$/.test(k)||['__proto__','prototype','constructor'].includes(k)))throw buschKonfigFehler(TEXTE_BUSCH_SMART_ENTITIES,'item_pfad');
   const result=JSON.parse(JSON.stringify(item));let target=result;
   for(const key of parts.slice(0,-1)){
     if(!Object.hasOwn(target,key))Object.defineProperty(target,key,{value:{},enumerable:true,writable:true,configurable:true});
-    if(!target[key]||typeof target[key]!=='object'||Array.isArray(target[key]))throw new Error('item_param: path crosses a scalar or array / Pfad führt durch Einzelwert oder Liste');
+    if(!target[key]||typeof target[key]!=='object'||Array.isArray(target[key]))throw buschKonfigFehler(TEXTE_BUSCH_SMART_ENTITIES,'item_pfad_skalar');
     target=target[key];
   }
   Object.defineProperty(target,parts.at(-1),{value:JSON.parse(JSON.stringify(value??null)),enumerable:true,writable:true,configurable:true});
@@ -8095,11 +8121,11 @@ const TEXTE_BUSCH_SMART_ENTITIES = {
  en:{itemSection:'Card per result',itemHelp:'After deduplication and pagination, each result value is inserted into its own copy of the template. Default: raw values.',filters:'Filters',more:'More options',navigation:'Configuration sections',is:'is',operator:'Operator',name:'Busch Smart Entities',description:'Filters entities by rules and fills any target card with them.',loading:'Loading entities and registries.',error:'The query could not be evaluated.',registry:'Registry data could not be loaded completely. Check permissions and connection.',javascript:'JavaScript query · limited optimization',template:'Template query · limited optimization',declarative:'Declarative query',target:'Target card',static:'Static entities',include:'Include filters',exclude:'Exclude filters',templateSection:'Template',sortSection:'Sorting',display:'Display',advanced:'Advanced',output:'Result output',add:'Add',remove:'Remove',rule:'Rule',and:'AND',or:'OR',not:'NOT',field:'Field',value:'Value',kind:'Type',property:'Property',string:'Text',number:'Number',boolean:'Boolean',object:'Object',array:'List',null:'Null',import:'Import auto-entities configuration',importHelp:'Paste configuration as JSON. All fields are preserved; only the card type changes.',invalid:'Invalid configuration.',json:'Advanced card configuration',preview:'Result preview',valueHelp:'Without value output, entity rows are preserved. Device IDs and attributes require a target card that accepts these values. Unique values are calculated before global pagination.',filterHelp:'Rules within a filter use AND. Additional include filters add matches. Default: no filters.',labels:{card:'Target card options',item:'Card template',item_enabled:'Card per result',item_type:'Result card type',item_param:'Binding path',entities:'Static entities',filter:'Filters',value:'Result output',sort:'Sorting',else:'Alternative card',card_type:'Card type',card_param:'Target parameter',template:'Jinja template',show_empty:'Show empty card',unique:'Unique entity rows',debug:'Show debug',value_type:'Output',attribute:'Attribute path',missing:'Missing values',unique_values:'Unique values only',method:'Sort by',reverse:'Descending',ignore_case:'Ignore case',numeric:'Numeric',ip:'IP addresses',sort_attribute:'Sort attribute',first:'First match',count:'Count'},helpers:{card:'Edit further target card options as a typed object. Default: Entities.',item:'Static options for each result card. Default: no template.',item_enabled:'Creates a card from each output value. Default: off.',item_type:'Card type per result, including any custom card. Default: Tile.',item_param:'Object path for the value, e.g. device_id or config.target; no array indices. Default when enabled: entity.',entities:'Fixed entities before dynamic matches. Default: none.',filter:'Recursive include/exclude rules. Default: none.',value:'Extract values from matches. Default: entity rows.',sort:'Global sorting and pagination. Default: unchanged.',else:'Card for empty results. Default: none.',card_type:'Choose the target card. Default: Entities.',card_param:'Target parameter receiving the results. Default: entities.',template:'Home Assistant evaluates the template. Default: no template.',show_empty:'Display empty results. Default: on.',unique:'Compare complete rows or entity IDs only. Default: off.',debug:'Show query counters and execution time. Default: off.',value_type:'Output entity rows or extracted values. Default: entity rows.',attribute:'Free nested attribute path, for example network.details.interface. Default: empty.',missing:'Skip missing values or output null. Default: skip.',unique_values:'Deduplicate the actual output values. Default: off.',method:'Name sorts by the first matching entity; device name uses the registry. Default: unchanged.',reverse:'Reverse sort order. Default: off.',ignore_case:'Compare text without case. Default: off.',numeric:'Compare numbers instead of text. Default: off.',ip:'Compare IP addresses numerically. Default: off.',sort_attribute:'Attribute used for sorting. Default: empty.',first:'Zero-based start offset. Default: 0.',count:'Maximum results. Empty allows all results.'}}
 };
 Object.assign(TEXTE_BUSCH_SMART_ENTITIES.de, {
- texte:{unique_false:'Aus',unique_true:'Ganze Zeilen',unique_entity:'Entity-ID',value_type_rows:'Entity-Zeilen',value_type_entity_id:'Entity-ID',value_type_device_id:'Geräte-ID',value_type_attribute:'Attribut',missing_skip:'Überspringen',missing_null:'Leerwert (null)',method_none:'Unverändert',method_domain:'Domain',method_entity_id:'Entity-ID',method_name:'Name',method_device_name:'Gerätename',method_device:'Gerät',method_area:'Bereich',method_state:'Zustand',method_attribute:'Attribut',method_last_changed:'Letzte Zustandsänderung',method_last_updated:'Letzte Aktualisierung',method_last_triggered:'Letzte Auslösung',card_type_entities:'Entitäten',card_type_grid:'Raster',card_type_glance:'Übersicht',card_type_map:'Karte', 'card_type_vertical-stack':'Vertikaler Stapel',item_type_tile:'Kachel'},
+ texte:{item_karte:'item: Kartenobjekt mit type erforderlich',item_pfad:'item_param: ungültiger Objektpfad',item_pfad_skalar:'item_param: Pfad führt durch Einzelwert oder Liste',unique_false:'Aus',unique_true:'Ganze Zeilen',unique_entity:'Entity-ID',value_type_rows:'Entity-Zeilen',value_type_entity_id:'Entity-ID',value_type_device_id:'Geräte-ID',value_type_attribute:'Attribut',missing_skip:'Überspringen',missing_null:'Leerwert (null)',method_none:'Unverändert',method_domain:'Domain',method_entity_id:'Entity-ID',method_name:'Name',method_device_name:'Gerätename',method_device:'Gerät',method_area:'Bereich',method_state:'Zustand',method_attribute:'Attribut',method_last_changed:'Letzte Zustandsänderung',method_last_updated:'Letzte Aktualisierung',method_last_triggered:'Letzte Auslösung',card_type_entities:'Entitäten',card_type_grid:'Raster',card_type_glance:'Übersicht',card_type_map:'Karte', 'card_type_vertical-stack':'Vertikaler Stapel',item_type_tile:'Kachel'},
  addRule:'Regel hinzufügen',moreTab:'Optionen',boolTrue:'Ja',boolFalse:'Nein',
  rules:{domain:'Domain',state:'Zustand',entity_id:'Entity-ID',name:'Name',group:'Gruppe',area:'Bereich',floor:'Etage',level:'Stockwerk',device:'Gerät',label:'Label',device_manufacturer:'Hersteller',device_model:'Modell',integration:'Integration',hidden_by:'Verborgen durch',attributes:'Attribute',last_changed:'Letzte Zustandsänderung',last_updated:'Letzte Aktualisierung',last_triggered:'Letzte Auslösung',entity_category:'Entity-Kategorie',not:'NICHT',or:'ODER',and:'UND',options:'Zeilenoptionen',type:'Zeilentyp',sort:'Lokale Sortierung'}
 });
-Object.assign(TEXTE_BUSCH_SMART_ENTITIES.en, {addRule:'Add rule',moreTab:'Options',boolTrue:'Yes',boolFalse:'No',texte:{method_device_name:'Device name',method_none:'Unchanged',method_domain:'Domain',method_entity_id:'Entity ID',method_name:'Name',method_device:'Device',method_area:'Area',method_state:'State',method_attribute:'Attribute',method_last_changed:'Last changed',method_last_updated:'Last updated',method_last_triggered:'Last triggered',card_type_entities:'Entities',card_type_grid:'Grid',card_type_glance:'Glance',card_type_map:'Map','card_type_vertical-stack':'Vertical stack',item_type_tile:'Tile'},rules:{domain:'Domain',state:'State',entity_id:'Entity ID',name:'Name',group:'Group',area:'Area',floor:'Floor',level:'Level',device:'Device',label:'Label',device_manufacturer:'Manufacturer',device_model:'Model',integration:'Integration',hidden_by:'Hidden by',attributes:'Attributes',last_changed:'Last changed',last_updated:'Last updated',last_triggered:'Last triggered',entity_category:'Entity category',not:'NOT',or:'OR',and:'AND',options:'Row options',type:'Row type',sort:'Local sorting'}});
+Object.assign(TEXTE_BUSCH_SMART_ENTITIES.en, {addRule:'Add rule',moreTab:'Options',boolTrue:'Yes',boolFalse:'No',texte:{item_karte:'item: expected a card object with type',item_pfad:'item_param: invalid object path',item_pfad_skalar:'item_param: path crosses a scalar or array',method_device_name:'Device name',method_none:'Unchanged',method_domain:'Domain',method_entity_id:'Entity ID',method_name:'Name',method_device:'Device',method_area:'Area',method_state:'State',method_attribute:'Attribute',method_last_changed:'Last changed',method_last_updated:'Last updated',method_last_triggered:'Last triggered',card_type_entities:'Entities',card_type_grid:'Grid',card_type_glance:'Glance',card_type_map:'Map','card_type_vertical-stack':'Vertical stack',item_type_tile:'Tile'},rules:{domain:'Domain',state:'State',entity_id:'Entity ID',name:'Name',group:'Group',area:'Area',floor:'Floor',level:'Level',device:'Device',label:'Label',device_manufacturer:'Manufacturer',device_model:'Model',integration:'Integration',hidden_by:'Hidden by',attributes:'Attributes',last_changed:'Last changed',last_updated:'Last updated',last_triggered:'Last triggered',entity_category:'Entity category',not:'NOT',or:'OR',and:'AND',options:'Row options',type:'Row type',sort:'Local sorting'}});
 const BUSCH_SMART_EDITOR_CSS = BuschUI.editorStyles + `:host{display:block;color:var(--primary-text-color)}*{box-sizing:border-box}details{margin-block:var(--ha-space-4,16px)}summary{cursor:pointer;font-weight:var(--ha-font-weight-medium,500);padding-block:var(--ha-space-2,8px)}.body{display:grid;gap:var(--ha-space-2,8px);min-width:0}p,pre{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--secondary-text-color);margin:0}button,input,select,textarea{font:inherit;color:var(--primary-text-color);background:var(--card-background-color);max-width:100%;min-width:0;border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-2,8px)}button{cursor:pointer;color:color-mix(in srgb,var(--primary-color) 50%,var(--primary-text-color))}.row{display:flex;flex-wrap:wrap;gap:var(--ha-space-2,8px);align-items:center}.row>*{flex:1;min-width:0}.node{margin-inline-start:var(--ha-space-2,8px);padding-block:var(--ha-space-2,8px)}.hint{font-size:var(--ha-font-size-s,12px)}textarea{width:100%;min-height:var(--ha-space-20,80px)}ha-form{display:block;min-width:0}
 [hidden]{display:none!important}.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--ha-space-1,4px);margin-block:var(--ha-space-2,8px)}.tabs button{border-radius:var(--ha-card-border-radius,12px);min-height:48px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.row>.field-caption{flex-basis:100%;font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere}.tabs [aria-selected=true]{border-color:var(--primary-color);background:var(--secondary-background-color);font-weight:600}.editor-section{border-bottom:1px solid var(--divider-color)}.rule-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;padding-block:var(--ha-space-2,8px)}.rule-row label{display:grid;gap:var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px)}.rule-row select,.rule-row input{width:100%;min-height:44px;font-size:var(--ha-font-size-m,14px)}.rule-value{grid-column:1/-1}.rule-row .rule-operator{grid-column:1/-1}.node{margin-inline-start:0}.node .node{padding-inline-start:var(--ha-space-2,8px);border-inline-start:1px solid var(--divider-color)}button:focus-visible,summary:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}`;
 function buschSmartElement(tag,text){const element=tag==='ha-form'?BuschUI.ha.form():tag==='input'?BuschUI.ha.input({native:true}):document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
