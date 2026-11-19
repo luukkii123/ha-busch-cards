@@ -139,3 +139,23 @@ test("M26: the schedule colour hook stays the whole block surface; HA blue stays
 test("M26: the device card has no local override of the shared state icon colour", () => {
   assert.doesNotMatch(DEV, /busch-state-icon/);
 });
+
+// M79 (#1320, user decision 19.11.): coloured symbols are non-text graphics (WCAG 1.4.11) and reach 3:1 on their surface,
+// also next to a text. The schedule head icon of an active schedule uses HA's --state-active-color (amber by default,
+// the render themes leave it unset, so the primary colour falls in); the network card/row icon sits on the grey tile.
+test("M79: coloured symbols of busch-cards reach 3:1 on their surface (schedule head icon on, network card/row icon)", () => {
+  const SYMBOLE = [
+    ["schedule head icon on", SCHEDULE, ".head.on ha-icon", CARD],
+    ["network card/row icon", NET, ".card-icon,.row-icon", "var(--secondary-background-color)"],
+  ];
+  const themen = { ...THEMA, "light HA amber": { ...THEMA.light, "state-active-color": "#ffc107" }, "dark HA amber": { ...THEMA.dark, "state-active-color": "#ffc107" } };
+  const lines = [], all = [];
+  for (const [label, css, sel, grund] of SYMBOLE) for (const [name, t] of Object.entries(themen)) {
+    const block = regel(css, sel), bg = farbe(grund, t, css, hex(t["card-background-color"]));
+    const q = quote(farbe(wert(block, "color"), t, css, bg), bg);
+    all.push(`${label} ${name}: ${q.toFixed(2)}:1`);
+    if (q < 3) lines.push(all.at(-1));
+  }
+  assert.equal(all.length, 8);
+  assert.deepEqual(lines, []);
+});
