@@ -2248,7 +2248,8 @@ class BuschScheduleCard extends HTMLElement {
           padding: 0;
           border: 1px solid var(--divider-color);
           border-radius: var(--ha-card-border-radius, 12px);
-          color: var(--primary-color);
+          /* M26 (E6): the plus in HA blue is 2.6:1 on the card; mixed toward the text colour like "Mi". */
+          color: color-mix(in srgb, var(--primary-color) 50%, var(--primary-text-color));
           background: var(--card-background-color, #fff);
           cursor: pointer;
         }
@@ -7087,7 +7088,8 @@ const DEV_STIL = `
   .dev-icon { flex:0 0 48px; width:48px; height:48px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
     background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
-    color:var(--primary-color); --mdc-icon-size:24px; }
+    /* M26 (E6): HA blue on the media surface is 2.1:1; mixed toward the text colour. */
+    color:color-mix(in srgb, var(--primary-color) 50%, var(--primary-text-color)); --mdc-icon-size:24px; }
   .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
   /* M60/E12: a card title may wrap to two lines, then it is cut; the full name is the tooltip. */
   /* M61: size and weight from BuschUI.header level 1; white-space resets its one-line rule for E12. */
@@ -7137,6 +7139,9 @@ const DEV_STIL = `
   .dev-gruppe.dev-zu .dev-zeilen { display:none; }
   .dev-zeilen > * { display:block; padding:var(--ha-space-1, 4px) 0; }
   .dev-hinweis { overflow-wrap:anywhere; min-width:0; }
+  /* M26 (E6): the shared error icon (HA red) is 4.0:1 on the dark card; mixed toward the text colour like the
+     schedule error texts. The shared source keeps HA red; this card measured it. */
+  .dev-hinweis .busch-state[data-kind=error] .busch-state-icon { color:color-mix(in srgb, var(--error-color, #db4437) 70%, var(--primary-text-color)); }
   .dev-kopf:focus-visible,.dev-gruppe-kopf:focus-visible,.dev-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:-2px; }
   @container (max-width:380px) {
     .dev-kopf { gap:var(--ha-space-2, 8px); padding:var(--ha-space-3, 12px); }

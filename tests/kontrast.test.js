@@ -16,6 +16,7 @@ const SCHEDULE = slice("class BuschScheduleCard extends", "</style>");
 const CAL = slice("const CAL_STIL = `", "`;");
 const NET = slice("const BUSCH_NETWORK_STYLE=", "`;");
 const SMART = slice("const BUSCH_SMART_EDITOR_CSS", "`;");
+const DEV = slice("const DEV_STIL = `", "`;");
 
 const THEMA = {
   light: { "primary-color": "#03a9f4", "primary-text-color": "#212121", "secondary-text-color": "#727272", "card-background-color": "#ffffff",
@@ -108,9 +109,13 @@ const FAELLE = [
   ["network quiet button", NET, ".actions button[data-variant=quiet]", CARD],
   ["network primary button", NET, ".actions button[data-variant=primary]", "background"],
   ["smart editor button", SMART, "button", CARD],
+  // Run karten-20261119-164604: icons measured in the render harness (its ha-icon draws a glyph).
+  ["schedule plus icon", SCHEDULE, ".day .add-block", "background"],
+  ["device icon", DEV, ".dev-icon", "var(--secondary-background-color)"],
+  ["device error state icon", DEV, ".dev-hinweis .busch-state[data-kind=error] .busch-state-icon", CARD],
 ];
 
-test("M26: text colours of busch-cards reach 4.5:1 in light and dark (blocks, today marks, buttons, badges, errors)", () => {
+test("M26: text colours of busch-cards reach 4.5:1 in light and dark (blocks, today marks, buttons, badges, errors, icons)", () => {
   const lines = [];
   for (const [label, css, sel, grund] of FAELLE) for (const [name, t] of Object.entries(THEMA)) {
     const block = regel(css, sel), card = hex(t["card-background-color"]);
