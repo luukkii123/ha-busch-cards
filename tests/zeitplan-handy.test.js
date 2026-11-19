@@ -97,6 +97,13 @@ test("M24/M26: the track and its blocks are 44 px high at every width, each grip
   assert.match(css, /\.block \.cap-short, \.block \.cap-full \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;[^}]*min-width: 0;/);
 });
 
+// Run karten-20261119-220723 (13-zeitplan): the day dialog's copy and clear
+// choices measured 40 px high at every width (touch minimum 44, rule M26).
+test("M26: the day dialog's copy and clear choices are at least 44 px high", () => {
+  const css = SOURCE.slice(SOURCE.indexOf("class BuschScheduleCard"), SOURCE.indexOf("class BuschScheduleCardEditor"));
+  assert.match(css.match(/\n {8}\.choices button \{([^}]*)\}/)[1], /\bmin-height: 44px;/);
+});
+
 test("M24: _onPointerDown stays byte-identical to the 0.26.0 logic", () => {
   const start = SOURCE.indexOf("  _onPointerDown(event) {");
   const end = SOURCE.indexOf("  _onPointerMove(event) {");

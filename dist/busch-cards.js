@@ -2643,6 +2643,7 @@ class BuschScheduleCard extends HTMLElement {
           border-radius: var(--busch-radius-inner, var(--ha-border-radius-md, 8px));
           cursor: pointer;
           min-width: 0;
+          min-height: 44px; /* M26 touch minimum; 12 px padding + one line measured 40 px */
           overflow-wrap: anywhere;
         }
         .choices button:hover { background: var(--divider-color); }
