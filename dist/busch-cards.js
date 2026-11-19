@@ -351,9 +351,17 @@ const BuschUI = (() => {
  * Neue Karte hinzufügen: Klasse schreiben, `BuschUI.register(tag, Klasse,
  * Kartenwählereintrag)` (M42, doppelt-ladefest) — alles in dieser Datei.
  *
- * Enthält vier Karten: `busch-schedule-card`, `busch-map-card`,
- * `busch-calendar-card` und seit 0.10.0 `busch-device-card`. Die
- * Timeline-Karte ist mitsamt ihrem Leaflet in ein eigenes Repo umgezogen
+ * Cards in this bundle, one `window.customCards` entry each (M73: tests/kopfkommentar.test.js
+ * compares this list with the picker entries, so add a line for every new card):
+ *   - `busch-schedule-card`: weekly plan of a schedule helper
+ *   - `busch-map-card`: HA's built-in map card with selectable tiles
+ *   - `busch-calendar-card`: month calendar with HA's event dialogs
+ *   - `busch-device-card`: one device with its entities and quick controls
+ *   - `busch-smart-entities`: auto-entities style wrapper around another card
+ *   - `busch-network-card`: network devices from device trackers
+ *   - `busch-fritz-device-card`: one FRITZ! device with its controls
+ *
+ * Die Timeline-Karte ist mitsamt ihrem Leaflet in ein eigenes Repo umgezogen
  * (https://github.com/luukkii123/ha-localtrack-cards), weil sie zur
  * Integration `localtrack` gehört und nichts mit dem Zeitplan-Helfer zu tun
  * hat.
