@@ -2371,6 +2371,12 @@ class BuschScheduleCard extends HTMLElement {
           .block.at-start .handle.end { right: auto; left: 24px; }
           .block.at-end .handle.end { right: 0; }
           .block.at-end .handle.start { left: auto; right: 24px; }
+          /* A neighbour's outward grip shares the gap: each side claims at most
+             half of it (--grip-room-*, set per block), so neither covers the other. */
+          .block.near-start .handle.start { left: calc(-1 * var(--grip-room-start)); width: var(--grip-room-start); }
+          .block.near-end .handle.end { right: calc(-1 * var(--grip-room-end)); width: var(--grip-room-end); }
+          .block.at-start.near-end .handle.end { right: auto; left: 24px; width: clamp(0px, calc(100% + var(--grip-room-end) - 24px), 24px); }
+          .block.at-end.near-start .handle.start { left: auto; right: 24px; width: clamp(0px, calc(100% + var(--grip-room-start) - 24px), 24px); }
           /* Outside the block the grip mark sits on the track: block colour. */
           .handle::after { background: var(--busch-schedule-color, var(--primary-color)); opacity: 0.8; }
         }
@@ -2948,6 +2954,14 @@ class BuschScheduleCard extends HTMLElement {
         element.setAttribute("aria-label", buschFuellen(this._texte.blockName, { day: labels[day].long, start: from, end: to }));
         element.classList.toggle("at-start", block.start <= 0);
         element.classList.toggle("at-end", block.end >= MINUTES_PER_DAY);
+        // Room for an outward grip: half the gap to the neighbour, as a share of this block's width.
+        const prev = blocks[index - 1];
+        const next = blocks[index + 1];
+        for (const [side, gap] of [["start", prev && block.start - prev.end], ["end", next && next.start - block.end]]) {
+          element.classList.toggle(`near-${side}`, gap !== undefined);
+          if (gap === undefined) element.style.removeProperty(`--grip-room-${side}`);
+          else element.style.setProperty(`--grip-room-${side}`, `min(24px, ${((Math.max(0, gap) / 2 / (block.end - block.start)) * 100).toFixed(4)}%)`);
+        }
         element.querySelector(".cap-short").textContent = from;
         element.querySelector(".cap-full").textContent = text;
         if (track.children[index] !== element) track.insertBefore(element, track.children[index] || null);

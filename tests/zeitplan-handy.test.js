@@ -104,3 +104,31 @@ test("M24: _onPointerDown stays byte-identical to the 0.26.0 logic", () => {
   const hash = require("node:crypto").createHash("sha256").update(body).digest("hex");
   assert.equal(hash, "83dadb787c0362c67da5029d98523d8d1d88d73d000aad94fae61bca6e2ada2b");
 });
+
+// Run karten-20261119-173556 (11-zeitplan, 320 px): Monday 08:00–12:00 is
+// narrower than 48 px, so its end grip moves outward; the 17:30 block's start
+// grip does the same and sat on top of it (elementFromPoint hit the neighbour).
+// Each outward grip may claim at most half of the gap to its neighbour.
+test("M24: outward grips of neighbouring blocks split the gap and never overlap", () => {
+  const { days } = mount({ monday: [[480, 720], [1050, 1275]], tuesday: [[600, 660]] });
+  const [first, second] = blocks(days, "monday");
+  const room = (element, side) => {
+    const value = element.style.getPropertyValue(`--grip-room-${side}`);
+    const match = value.match(/^min\(24px, ([\d.]+)%\)$/);
+    assert.ok(match, `--grip-room-${side} is a capped percentage, got "${value}"`);
+    return Number(match[1]) / 100;
+  };
+  assert.ok(first.classList.contains("near-end") && !first.classList.contains("near-start"));
+  assert.ok(second.classList.contains("near-start") && !second.classList.contains("near-end"));
+  // Percentages of the own block width; converted to minutes they add up to the gap at most.
+  const claimed = room(first, "end") * (720 - 480) + room(second, "start") * (1275 - 1050);
+  assert.ok(Math.abs(claimed - (1050 - 720)) < 0.01, `grips claim ${claimed} of 330 minutes`);
+  assert.ok(Math.abs(room(first, "end") * 240 - room(second, "start") * 225) < 0.01, "each side gets half");
+  const lone = blocks(days, "tuesday")[0];
+  assert.ok(!lone.classList.contains("near-start") && !lone.classList.contains("near-end"));
+  assert.equal(lone.style.getPropertyValue("--grip-room-start"), "");
+  const css = SOURCE.slice(SOURCE.indexOf("class BuschScheduleCard"), SOURCE.indexOf("class BuschScheduleCardEditor"));
+  const narrow = css.match(/@container block \(max-width: 47\.98px\) \{([^@]*)\n {8}\}/)[1];
+  assert.match(narrow, /\.block\.near-start \.handle\.start \{[^}]*left: calc\(-1 \* var\(--grip-room-start\)\);[^}]*width: var\(--grip-room-start\);/);
+  assert.match(narrow, /\.block\.near-end \.handle\.end \{[^}]*right: calc\(-1 \* var\(--grip-room-end\)\);[^}]*width: var\(--grip-room-end\);/);
+});
