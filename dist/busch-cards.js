@@ -3822,6 +3822,65 @@ const CAL_STIL = `
   .cal-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
   .cal-heute-knopf { width:auto; padding:0 var(--ha-space-3, 12px); font-size:inherit;
     min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* M25/W14.5: the month name opens the month picker; a quiet button with a 44 px target. */
+  .cal-monat-knopf { display:block; min-height:44px; margin:0; padding:0 var(--ha-space-2, 8px);
+    margin-inline-start:calc(-1 * var(--ha-space-2, 8px)); border:none; background:none;
+    border-radius:var(--ha-card-border-radius, 12px); font-family:inherit; text-align:start;
+    cursor:pointer; box-sizing:border-box; }
+  .cal-monat-knopf::after { content:" ▾"; content:" ▾" / ""; color:var(--secondary-text-color); font-size:0.8em; }
+  .cal-monat-knopf:hover { background:var(--secondary-background-color, transparent); }
+  .cal-monat-knopf:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+  /* Month picker: overlays the card itself (the card is its scrim), so it stays inside the card
+     rectangle. Anatomy as the schedule dialogs: title with close X on the left, Cancel at the bottom
+     right; on a phone it fills the card. */
+  .cal-wahl-offen { position:relative; min-height:420px; }
+  .cal-wahl { position:absolute; inset:0; z-index:2; display:flex; align-items:flex-start;
+    justify-content:center; padding:var(--ha-space-2, 8px); box-sizing:border-box; overflow:auto;
+    background:var(--mdc-dialog-scrim-color, rgba(0, 0, 0, 0.32)); }
+  .cal-wahl[hidden] { display:none; }
+  .cal-wahl-dlg { width:100%; max-width:360px; box-sizing:border-box; padding:var(--ha-space-4, 16px);
+    background:var(--card-background-color, #fff); color:var(--primary-text-color);
+    border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 24px rgba(0, 0, 0, 0.3); }
+  @media (max-width: 450px) {
+    .cal-wahl { padding:0; }
+    .cal-wahl-dlg { max-width:none; min-height:100%; border-radius:0; box-shadow:none;
+      display:flex; flex-direction:column; }
+    .cal-wahl-dlg .cal-wahl-aktionen { margin-top:auto; }
+  }
+  .cal-wahl-kopf { display:flex; align-items:center; gap:var(--ha-space-2, 8px);
+    margin-bottom:var(--ha-space-3, 12px); }
+  .cal-wahl-kopf h2 { flex:1 1 auto; margin:0; font-size:18px; font-weight:var(--ha-font-weight-normal, 400);
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-wahl-x { flex:0 0 auto; display:inline-grid; place-items:center; width:44px; height:44px;
+    padding:0; border:none; border-radius:50%; background:none; cursor:pointer;
+    color:var(--secondary-text-color); font:inherit; }
+  .cal-wahl-x:hover { background:var(--divider-color); }
+  .cal-wahl-x:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+  .cal-wahl-jahr { display:flex; align-items:center; gap:var(--ha-space-2, 8px);
+    margin-bottom:var(--ha-space-3, 12px); }
+  .cal-wahl-jahrzahl { flex:1 1 auto; text-align:center; font-weight:var(--ha-font-weight-bold, 600);
+    font-variant-numeric:tabular-nums; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-wahl-raster { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:var(--ha-space-2, 8px); }
+  .cal-wahl-monat { min-height:44px; min-width:0; padding:0 var(--ha-space-1, 4px); box-sizing:border-box;
+    border:1px solid var(--divider-color); border-radius:var(--ha-card-border-radius, 12px);
+    background:var(--card-background-color, #fff); color:var(--primary-text-color); font:inherit;
+    cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-wahl-monat:hover { background:var(--secondary-background-color, transparent); }
+  .cal-wahl-monat:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+  /* The current month (today) bold in the accent colour; the shown month as a filled, framed chip. */
+  .cal-wahl-jetzt { color:var(--primary-color); font-weight:var(--ha-font-weight-bold, 600); }
+  .cal-wahl-monat[aria-current="true"] { border:2px solid var(--primary-color);
+    background:color-mix(in srgb, var(--primary-color) 16%, var(--card-background-color, #fff));
+    font-weight:var(--ha-font-weight-bold, 600); }
+  .cal-wahl-aktionen { display:flex; justify-content:flex-end; gap:var(--ha-space-2, 8px);
+    margin-top:var(--ha-space-4, 16px); }
+  .cal-wahl-aktionen button { min-height:44px; min-width:64px; padding:0 var(--ha-space-3, 12px);
+    border:none; border-radius:var(--ha-card-border-radius, 12px); background:none; cursor:pointer;
+    color:var(--primary-color); font:inherit; font-size:var(--ha-font-size-m, 14px);
+    text-transform:uppercase; letter-spacing:0.05em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-wahl-aktionen button:hover { background:var(--secondary-background-color, transparent); }
+  .cal-wahl-aktionen button:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
   /* Der Kartentitel ist einzeilig und wird GEKUERZT, nicht umgebrochen
      (Regel 1, letzter Punkt). */
   .cal-titel-zeile { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) 0;
@@ -4308,6 +4367,10 @@ function calTermineHolen(hass, entity, start, ende, stempel, maxAlter) {
   return promise;
 }
 
+/** M25: own history entry of the month picker; counter for unique title ids in the light DOM. */
+const CAL_WAHL_VERLAUF = "busch-calendar-card:monat";
+let calWahlZaehler = 0;
+
 class BuschCalendarCard extends HTMLElement {
   set preview(value) { this._preview=!!value; this.toggleAttribute('data-preview',this._preview); }
   get preview() { return !!this._preview; }
@@ -4385,6 +4448,8 @@ class BuschCalendarCard extends HTMLElement {
     clearTimeout(this._mitternacht);
     this._takt = null;
     this._mitternacht = null;
+    // Leaving the page with the picker open: hide it and drop the listener, never navigate.
+    if (this._wahl && !this._wahl.el.hidden) this._wahlZu();
   }
 
   _mitternachtStellen() {
@@ -4514,6 +4579,226 @@ class BuschCalendarCard extends HTMLElement {
     // Blaettern ist ein ausdruecklicher Wunsch: immer frisch, am Cache vorbei.
     this._lade(0);
     this._render();
+  }
+
+  /* ── M25/W14.5: month picker ───────────────────────────────────────────
+   * The month name opens a picker with the twelve months of one year and
+   * year arrows. A choice jumps there (only in this view, like the arrows);
+   * Escape, Cancel, the close X, a click on the scrim and Back close it
+   * without a change. Focus returns to the month name.
+   *
+   * It lies over the card itself (inside ha-card, outside the body that each
+   * render rewrites), so new data while it is open does not close it. History
+   * as in the schedule dialogs and HA's dialog manager: one own entry on
+   * opening, popstate closes, an own close spends that entry with
+   * history.back() (300 ms fallback), so Back never leaves the dashboard and no
+   * orphaned entry stays. */
+
+  _wahlBauen() {
+    const t = this._texte;
+    const el = (tag, klasse, text) => {
+      const e = document.createElement(tag);
+      if (klasse) e.className = klasse;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    };
+    calWahlZaehler += 1;
+    const titelId = `busch-cal-wahl-${calWahlZaehler}`;
+    const huelle = el("div", "cal-wahl");
+    huelle.hidden = true;
+    huelle.setAttribute("role", "dialog");
+    huelle.setAttribute("aria-modal", "true");
+    huelle.setAttribute("aria-labelledby", titelId);
+    const dlg = el("div", "cal-wahl-dlg");
+    const kopf = el("div", "cal-wahl-kopf");
+    const x = el("button", "cal-wahl-x");
+    x.type = "button";
+    x.dataset.wahl = "abbrechen";
+    const icon = el("ha-icon");
+    icon.setAttribute("icon", "mdi:close");
+    x.append(icon);
+    const titel = el("h2");
+    titel.id = titelId;
+    kopf.append(x, titel);
+    const jahr = el("div", "cal-wahl-jahr");
+    const zurueck = el("button", "cal-pfeil", "‹");
+    const vor = el("button", "cal-pfeil", "›");
+    zurueck.dataset.jahr = "-1";
+    vor.dataset.jahr = "1";
+    const jahrzahl = el("span", "cal-wahl-jahrzahl");
+    jahrzahl.setAttribute("aria-live", "polite");
+    jahr.append(zurueck, jahrzahl, vor);
+    const raster = el("div", "cal-wahl-raster");
+    raster.setAttribute("role", "group");
+    const monate = [];
+    for (let m = 0; m < 12; m++) {
+      const b = el("button", "cal-wahl-monat");
+      b.type = "button";
+      b.dataset.monat = String(m);
+      monate.push(b);
+      raster.append(b);
+    }
+    const aktionen = el("div", "cal-wahl-aktionen");
+    const abbrechen = el("button");
+    abbrechen.type = "button";
+    abbrechen.dataset.wahl = "abbrechen";
+    aktionen.append(abbrechen);
+    dlg.append(kopf, jahr, raster, aktionen);
+    huelle.append(dlg);
+    for (const b of [zurueck, vor]) b.type = "button";
+
+    huelle.addEventListener("click", (ereignis) => {
+      // The overlay itself is the scrim: a click beside the panel closes without a change.
+      if (ereignis.target === huelle) {
+        this._wahlSchliessen();
+        return;
+      }
+      const knopf = ereignis.target.closest("button");
+      if (!knopf || !huelle.contains(knopf)) return;
+      if (knopf.dataset.wahl === "abbrechen") this._wahlSchliessen();
+      else if (knopf.dataset.jahr) {
+        this._wahl.jahr += Number(knopf.dataset.jahr);
+        this._wahlZeichnen();
+      } else if (knopf.dataset.monat !== undefined) this._wahlNehmen(Number(knopf.dataset.monat));
+    });
+    huelle.addEventListener("keydown", (ereignis) => {
+      if (ereignis.key === "Escape") {
+        ereignis.preventDefault();
+        ereignis.stopPropagation();
+        this._wahlSchliessen();
+        return;
+      }
+      if (ereignis.key === "Tab") {
+        const knoepfe = [...huelle.querySelectorAll("button")].filter((b) => !b.disabled);
+        const aktiv = document.activeElement;
+        if (ereignis.shiftKey ? aktiv === knoepfe[0] : aktiv === knoepfe.at(-1)) {
+          ereignis.preventDefault();
+          (ereignis.shiftKey ? knoepfe.at(-1) : knoepfe[0]).focus();
+        }
+        return;
+      }
+      const i = monate.indexOf(ereignis.target);
+      if (i < 0) return;
+      const schritt = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[ereignis.key];
+      let ziel = null;
+      if (schritt !== undefined) ziel = Math.min(11, Math.max(0, i + schritt));
+      else if (ereignis.key === "Home") ziel = 0;
+      else if (ereignis.key === "End") ziel = 11;
+      if (ziel === null) return;
+      ereignis.preventDefault();
+      monate[ziel].focus();
+    });
+    this._karte.appendChild(huelle);
+    this._wahl = { el: huelle, titel, jahrzahl, zurueck, vor, raster, monate, x, abbrechen, jahr: 0, generation: 0, pop: null, timer: null };
+  }
+
+  /** Texts and marks of the picker for `this._wahl.jahr` (language may have changed since building). */
+  _wahlZeichnen() {
+    const w = this._wahl, t = this._texte;
+    const locale = (this._hass && this._hass.locale && this._hass.locale.language) || "de-DE";
+    const gezeigt = calMonatsGrenzen(new Date(), this._versatzLaufend).start;
+    const jetzt = new Date();
+    w.titel.textContent = t.monatWaehlen;
+    w.x.setAttribute("aria-label", t.schliessen);
+    w.x.title = t.schliessen;
+    w.abbrechen.textContent = t.abbrechen;
+    w.zurueck.setAttribute("aria-label", t.vorigesJahr);
+    w.zurueck.title = t.vorigesJahr;
+    w.vor.setAttribute("aria-label", t.naechstesJahr);
+    w.vor.title = t.naechstesJahr;
+    w.jahrzahl.textContent = String(w.jahr);
+    w.raster.setAttribute("aria-label", buschFuellen(t.monateIm, { jahr: w.jahr }));
+    w.monate.forEach((b, m) => {
+      const datum = new Date(w.jahr, m, 1);
+      b.textContent = datum.toLocaleDateString(locale, { month: "short" });
+      b.setAttribute("aria-label", calMonatsName(datum, locale));
+      b.classList.toggle("cal-wahl-jetzt", w.jahr === jetzt.getFullYear() && m === jetzt.getMonth());
+      if (w.jahr === gezeigt.getFullYear() && m === gezeigt.getMonth()) b.setAttribute("aria-current", "true");
+      else b.removeAttribute("aria-current");
+    });
+  }
+
+  _wahlOeffnen() {
+    if (!this._karte || (this._wahl && !this._wahl.el.hidden)) return;
+    if (!this._wahl) this._wahlBauen();
+    const w = this._wahl;
+    const gezeigt = calMonatsGrenzen(new Date(), this._versatzLaufend).start;
+    w.jahr = gezeigt.getFullYear();
+    clearTimeout(w.timer);
+    w.timer = null;
+    if (w.pop) window.removeEventListener("popstate", w.pop);
+    w.pop = null;
+    w.generation += 1;
+    w.schliesst = false;
+    this._wahlZeichnen();
+    w.el.hidden = false;
+    this._karte.classList.add("cal-wahl-offen");
+    this._koerper.querySelector(".cal-monat-knopf")?.setAttribute("aria-expanded", "true");
+    (w.monate[gezeigt.getMonth()] || w.monate[0]).focus();
+    if (typeof history === "undefined") return;
+    try {
+      // Preserve host history keys and HA's opensDialog convention, as the schedule dialogs do.
+      history.replaceState({ ...history.state, opensDialog: true }, "");
+      history.pushState({ ...history.state, busch_calendar_dialog: CAL_WAHL_VERLAUF }, "");
+    } catch (fehler) {
+      // Private mode or rate limits may refuse; Escape, Cancel and the scrim still work.
+      return;
+    }
+    const generation = w.generation;
+    const aufPop = () => {
+      window.removeEventListener("popstate", aufPop);
+      if (w.pop === aufPop) w.pop = null;
+      if (w.generation !== generation) return;
+      this._wahlZu();
+    };
+    w.pop = aufPop;
+    window.addEventListener("popstate", aufPop);
+  }
+
+  /** Closes the picker and spends exactly the own history entry. */
+  _wahlSchliessen() {
+    const w = this._wahl;
+    if (!w || w.el.hidden || w.schliesst) return;
+    const zustand = typeof history !== "undefined" ? history.state : null;
+    if (w.pop && zustand && zustand.busch_calendar_dialog === CAL_WAHL_VERLAUF) {
+      // history.back() fires popstate, whose listener closes. Fallback if popstate never comes.
+      w.schliesst = true;
+      const generation = w.generation;
+      history.back();
+      w.timer = setTimeout(() => {
+        w.timer = null;
+        if (w.generation === generation && !w.el.hidden) this._wahlZu();
+      }, 300);
+      return;
+    }
+    this._wahlZu();
+  }
+
+  /** Hides the picker without touching history; focus back on the month name. */
+  _wahlZu() {
+    const w = this._wahl;
+    if (!w) return;
+    clearTimeout(w.timer);
+    w.timer = null;
+    if (w.pop) window.removeEventListener("popstate", w.pop);
+    w.pop = null;
+    w.generation += 1;
+    w.schliesst = false;
+    w.el.hidden = true;
+    this._karte.classList.remove("cal-wahl-offen");
+    const knopf = this._koerper && this._koerper.querySelector(".cal-monat-knopf");
+    if (knopf) {
+      knopf.setAttribute("aria-expanded", "false");
+      if (this.isConnected) knopf.focus({ preventScroll: true });
+    }
+  }
+
+  /** A month was chosen: jump there (nothing when it is the shown one), then close. */
+  _wahlNehmen(monat) {
+    const jetzt = new Date();
+    const ziel = (this._wahl.jahr - jetzt.getFullYear()) * 12 + (monat - jetzt.getMonth());
+    if (ziel !== this._versatzLaufend) this._blaettern(ziel - this._versatzLaufend);
+    this._wahlSchliessen();
   }
 
   /**
@@ -4656,8 +4941,9 @@ class BuschCalendarCard extends HTMLElement {
 
   _render() {
     if (!this._config) return;
+    // M25: the month name (data-schritt="monat") keeps its focus like the arrows and Today.
     const focusStep = this._koerper?.contains(document.activeElement)
-      ? document.activeElement.closest?.(".cal-pfeil")?.dataset.schritt
+      ? document.activeElement.closest?.("[data-schritt]")?.dataset.schritt
       : null;
     const listScrollTop = this._koerper?.querySelector(".cal-liste")?.scrollTop || 0;
     const pageScroll = { x: window.scrollX, y: window.scrollY };
@@ -4676,6 +4962,10 @@ class BuschCalendarCard extends HTMLElement {
       this.appendChild(this._karte);
 
       this._koerper.addEventListener("click", (ereignis) => {
+        if (ereignis.target.closest(".cal-monat-knopf")) {
+          this._wahlOeffnen();
+          return;
+        }
         const pfeil = ereignis.target.closest(".cal-pfeil");
         if (pfeil) {
           if (pfeil.dataset.schritt === "heute") this._zumAktuellenMonat();
@@ -4713,7 +5003,9 @@ class BuschCalendarCard extends HTMLElement {
         ? `<div class="cal-titel-zeile">${calEscape(this._config.title)}</div>`
         : "") +
       `<div class="cal-kopf">` +
-      `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>` +
+      (this._config.navigation
+        ? `<button class="cal-monat cal-monat-knopf" data-schritt="monat" aria-haspopup="dialog" aria-expanded="${this._wahl && !this._wahl.el.hidden ? "true" : "false"}" title="${calEscape(t.monatWaehlen)}">${calEscape(calMonatsName(start, locale))}</button>`
+        : `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>`) +
       (this._config.navigation
         ? `<button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>` +
           `<button class="cal-pfeil cal-heute-knopf" data-schritt="heute" aria-label="${calEscape(t.zumAktuellenMonat)}" title="${calEscape(t.zumAktuellenMonat)}">${calEscape(t.heute)}</button>` +
@@ -4770,8 +5062,8 @@ class BuschCalendarCard extends HTMLElement {
     this._koerper.innerHTML = kopf + rumpf + fuss + hinweis;
     const list = this._koerper.querySelector(".cal-liste");
     if (list) list.scrollTop = listScrollTop;
-    if (focusStep !== null) {
-      this._koerper.querySelector(`.cal-pfeil[data-schritt="${focusStep}"]`)?.focus({ preventScroll: true });
+    if (focusStep !== null && focusStep !== undefined) {
+      this._koerper.querySelector(`[data-schritt="${focusStep}"]`)?.focus({ preventScroll: true });
     }
     if (window.scrollX !== pageScroll.x || window.scrollY !== pageScroll.y) {
       window.scrollTo(pageScroll.x, pageScroll.y);
@@ -4848,7 +5140,7 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
       title: "Zeile über dem Monatsnamen. Leer lässt sie ganz weg. Vorgabe: leer.",
       entities: "Die Kalender, deren Termine die Karte zeigt. Ab dem zweiten erscheint darunter je ein Farbfeld. Vorgabe: keiner.",
       month_offset: "0 zeigt den laufenden Monat, -1 den Vormonat, 1 den nächsten. Vorgabe 0.",
-      navigation: "Setzt links und rechts vom Monatsnamen je einen Pfeil. Geblättert wird nur in dieser Ansicht, das Dashboard bleibt unverändert. Vorgabe an.",
+      navigation: "Setzt Pfeile und einen Heute-Knopf neben den Monatsnamen, ein Klick auf den Monatsnamen öffnet die Monatsauswahl. Geblättert wird nur in dieser Ansicht, das Dashboard bleibt unverändert. Vorgabe an.",
       show_empty_days: "An steht jeder Tag des Monats in der Liste, auch ohne Termin. Vorgabe an.",
       show_total: "Zeigt unter der Liste Tage mit Terminen, Stunden und ganztägige Termine des gezeigten Monats. Vorgabe aus.",
       open_event_on_tap: "An öffnet ein Klick auf eine Terminzeile den Termin-Dialog von Home Assistant. Vorgabe an.",
@@ -4871,6 +5163,12 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
       naechsterMonat: "Nächster Monat",
       heute: "Heute",
       zumAktuellenMonat: "Zum aktuellen Monat",
+      monatWaehlen: "Monat wählen",
+      vorigesJahr: "Voriges Jahr",
+      naechstesJahr: "Nächstes Jahr",
+      monateIm: "Monate {jahr}",
+      abbrechen: "Abbrechen",
+      schliessen: "Schließen",
       farben: "Farben",
     },
   },
@@ -4892,7 +5190,7 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
       title: "A line above the month name. Empty leaves it out entirely. Default: empty.",
       entities: "The calendars whose events this card shows. From the second one on, a colour field appears below. Default: none.",
       month_offset: "0 shows the current month, -1 the previous one, 1 the next. Default 0.",
-      navigation: "Puts an arrow on each side of the month name. Paging affects this view only, the dashboard stays unchanged. Default on.",
+      navigation: "Puts arrows and a Today button next to the month name, a tap on the month name opens the month picker. Paging affects this view only, the dashboard stays unchanged. Default on.",
       show_empty_days: "On, every day of the month is listed, even without an event. Default on.",
       show_total: "Shows days with events, hours and all-day events of the shown month below the list. Default off.",
       open_event_on_tap: "On, a tap on an event row opens Home Assistant's event dialog. Default on.",
@@ -4915,6 +5213,12 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
       naechsterMonat: "Next month",
       heute: "Today",
       zumAktuellenMonat: "Go to the current month",
+      monatWaehlen: "Choose month",
+      vorigesJahr: "Previous year",
+      naechstesJahr: "Next year",
+      monateIm: "Months of {jahr}",
+      abbrechen: "Cancel",
+      schliessen: "Close",
       farben: "Colours",
     },
   },

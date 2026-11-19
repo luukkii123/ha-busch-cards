@@ -3,6 +3,10 @@
 M25: compact month list measured against the finding (card height at 480 px at least 30 %
 below 1411 px, date and time on one baseline, Today button) in kalender-kompakt-<w>-<theme>.png.
 
+M25/W14.5: month picker opened with Enter on the month name, measured (inside the card rectangle,
+targets at least 44 px, centre hits the picker), Escape/Back/Cancel close without a change and return
+focus, a keyboard choice jumps to August 2026; kalender-monatswahl-<w>-<theme>.png.
+
 M23: HA's card helpers never answer here, so a tapped row stays in its waiting state
 (aria-busy, dimmed) for the calendar-waiting-<width>-<theme>.png variants."""
 import json,pathlib,sys
@@ -88,9 +92,61 @@ with sync_playwright() as p:
  heute=kp.evaluate("()=>({versatz:kcard._versatzLaufend,fokus:document.activeElement===kcard.querySelector('.cal-heute-knopf'),text:kcard.querySelector('.cal-heute-knopf').textContent})")
  kompakt['heuteKnopf']=heute
  assert heute['versatz']==0 and heute['fokus'] and heute['text']=='Heute',heute
+ # M25/W14.5: month picker. Enter on the month name opens it over the card.
+ WAHL_OFFEN="()=>{const w=kcard.querySelector('.cal-wahl');return !!w&&!w.hidden}"
+ WAHL_ZUSTAND="()=>({offen:(()=>{const w=kcard.querySelector('.cal-wahl');return !!w&&!w.hidden})(),versatz:kcard._versatzLaufend,fokus:document.activeElement===kcard.querySelector('.cal-monat-knopf'),eintrag:!!(history.state&&history.state.busch_calendar_dialog),href:location.href,monat:kcard.querySelector('.cal-monat-knopf').textContent})"
+ kp.evaluate("()=>{kcard.querySelector('.cal-monat-knopf').focus()}")
+ kp.keyboard.press('Enter')
+ kp.wait_for_timeout(200)
+ assert kp.evaluate(WAHL_OFFEN)
+ monatswahl={'faelle':[]}
+ for width in (320,480):
+  for theme in ('light','dark'):
+   kp.set_viewport_size({'width':width,'height':1600})
+   _thema_setzen(kp,theme)
+   kp.wait_for_timeout(300)
+   geo=kp.evaluate("""()=>{const karte=kcard.querySelector('ha-card').getBoundingClientRect(),wahl=kcard.querySelector('.cal-wahl'),dlg=wahl.querySelector('.cal-wahl-dlg').getBoundingClientRect();const r=e=>{const b=e.getBoundingClientRect();return {l:b.left,t:b.top,r:b.right,b:b.bottom,w:b.width,h:b.height}};const innen=b=>b.l>=karte.left-0.5&&b.t>=karte.top-0.5&&b.r<=karte.right+0.5&&b.b<=karte.bottom+0.5;const knoepfe=[...wahl.querySelectorAll('button')].map(e=>({text:e.textContent||e.getAttribute('aria-label'),...r(e)}));const texte=[...wahl.querySelectorAll('h2,span,button')].filter(e=>e.textContent.trim()).map(e=>({text:e.textContent,...r(e)}));const mitte=document.elementFromPoint(dlg.left+dlg.width/2,dlg.top+dlg.height/2);return {karte:{w:Math.round(karte.width),h:Math.round(karte.height)},dlg:r(wahl.querySelector('.cal-wahl-dlg')),dlgInnen:innen(r(wahl.querySelector('.cal-wahl-dlg'))),knoepfe:knoepfe.length,klein:knoepfe.filter(k=>k.w<44||k.h<44).map(k=>[k.text,Math.round(k.w),Math.round(k.h)]),aussen:[...knoepfe,...texte].filter(k=>!innen(k)).map(k=>k.text),monate:wahl.querySelectorAll('.cal-wahl-monat').length,mitteImDialog:wahl.contains(mitte),gewaehlt:wahl.querySelector('.cal-wahl-monat[aria-current="true"]')?.getAttribute('aria-label')}}""")
+   monatswahl['faelle'].append({'breite':width,'thema':theme,**geo})
+   # Inside the card rectangle, every target at least 44 x 44 px, the centre hits the picker.
+   assert geo['dlgInnen'] and not geo['aussen'] and not geo['klein'] and geo['monate']==12 and geo['knoepfe']==16 and geo['mitteImDialog'],geo
+   kp.locator('#karte-a').screenshot(path=str(out/f'kalender-monatswahl-{width}-{theme}.png'))
+ # Escape closes without a change; focus returns to the month name; no own history entry left.
+ vorher=kp.evaluate(WAHL_ZUSTAND)
+ kp.keyboard.press('Escape')
+ kp.wait_for_timeout(400)
+ esc=kp.evaluate(WAHL_ZUSTAND)
+ assert not esc['offen'] and esc['versatz']==vorher['versatz'] and esc['fokus'] and not esc['eintrag'] and esc['href']==vorher['href'],esc
+ # Back closes and stays on the page.
+ kp.evaluate("()=>{kcard.querySelector('.cal-monat-knopf').click()}")
+ kp.wait_for_timeout(200)
+ assert kp.evaluate(WAHL_OFFEN)
+ kp.evaluate("()=>history.back()")
+ kp.wait_for_timeout(400)
+ zurueck=kp.evaluate(WAHL_ZUSTAND)
+ assert not zurueck['offen'] and zurueck['versatz']==vorher['versatz'] and zurueck['href']==vorher['href'] and not zurueck['eintrag'],zurueck
+ # Cancel.
+ kp.evaluate("()=>{kcard.querySelector('.cal-monat-knopf').click()}")
+ kp.wait_for_timeout(200)
+ kp.evaluate("()=>{kcard.querySelector('.cal-wahl-aktionen button').click()}")
+ kp.wait_for_timeout(400)
+ abbrechen=kp.evaluate(WAHL_ZUSTAND)
+ assert not abbrechen['offen'] and abbrechen['versatz']==vorher['versatz'] and abbrechen['fokus'] and not abbrechen['eintrag'],abbrechen
+ # Keyboard choice: Enter opens, year arrows to 2026, Enter on August jumps to the fixture month.
+ kp.evaluate("()=>{kcard.querySelector('.cal-monat-knopf').focus()}")
+ kp.keyboard.press('Enter')
+ kp.wait_for_timeout(200)
+ kp.evaluate("()=>{const w=kcard.querySelector('.cal-wahl');for(let i=0;i<50&&Number(w.querySelector('.cal-wahl-jahrzahl').textContent)!==2026;i++)w.querySelector(Number(w.querySelector('.cal-wahl-jahrzahl').textContent)>2026?'.cal-pfeil[data-jahr=\"-1\"]':'.cal-pfeil[data-jahr=\"1\"]').click();w.querySelector('.cal-wahl-monat[data-monat=\"7\"]').focus()}")
+ kp.keyboard.press('Enter')
+ kp.wait_for_timeout(400)
+ kp.wait_for_selector('#karte-a .cal-termin[data-uid]')
+ gewaehlt=kp.evaluate(WAHL_ZUSTAND)
+ ziel=kp.evaluate("()=>{const n=new Date();return (2026*12+7)-(n.getFullYear()*12+n.getMonth())}")
+ assert not gewaehlt['offen'] and gewaehlt['versatz']==ziel and gewaehlt['fokus'] and not gewaehlt['eintrag'] and gewaehlt['monat'].startswith('August 2026'),gewaehlt
+ monatswahl.update({'escape':esc,'zurueck':zurueck,'abbrechen':abbrechen,'gewaehlt':gewaehlt})
+ kompakt['monatswahl']=monatswahl
  kp.close()
  report={'retention':result,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe'])}
  (out/'report.json').write_text(json.dumps(report,indent=2))
- print(json.dumps({'retention':result,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
+ print(json.dumps({'retention':result,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
  assert not bewerte(matrix) and not errors,report
  browser.close()
