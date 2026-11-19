@@ -63,6 +63,14 @@ with sync_playwright() as p:
    if width in [390,960]:page.locator('#schedule-r04-probe').locator('.block-dialog').screenshot(path=str(out/f'editor-{width}-{dark}.png'))
    page.keyboard.press('Escape');page.wait_for_timeout(350)
    report.append({'width':width,'dark':dark,'cleanScrim':scrim,'dirtyBack':'protected','dirtyEscape':'protected','focusTrap':True,'focusReturn':True,'saveDataKept':True,'urlKept':page.url==original_url})
+ # M28: one dialog anatomy. X left of the title in the head; in the foot Delete on the left, then Cancel
+ # before Save on the right, all on one line at 960 px; the labels are in sentence case.
+ page.set_viewport_size({'width':960,'height':1000})
+ page.evaluate("card._openBlockDialog('monday',0)")
+ anatomy=page.evaluate('''()=>{const d=card._els.blockDialog,r=s=>d.querySelector(s).getBoundingClientRect(),x=r('.dlg-x'),t=r('h2'),del=r('.actions [data-act=delete]'),c=r('.actions [data-act=cancel]'),ok=r('.actions [data-act=ok]'),texts=[...d.querySelectorAll('.actions button')].map(b=>({text:b.textContent,transform:getComputedStyle(b).textTransform}));return {xLeftOfTitle:x.right<=t.left+1,headAbove:x.bottom<=del.top,order:del.right<=c.left&&c.right<=ok.left,oneLine:Math.abs(del.top-ok.top)<2&&Math.abs(c.top-ok.top)<2,deleteLeft:del.left-d.getBoundingClientRect().left<40,texts}}''')
+ assert anatomy['xLeftOfTitle'] and anatomy['headAbove'] and anatomy['order'] and anatomy['oneLine'] and anatomy['deleteLeft'],anatomy
+ assert all(t['transform']=='none' and t['text'] and t['text']!=t['text'].upper() for t in anatomy['texts']),anatomy
+ page.keyboard.press('Escape');page.wait_for_timeout(350);assert not opened()
  # A delayed close fallback for the previous modal session must not close a
  # newly reopened editor on the same native <dialog> element.
  page.evaluate("card._openBlockDialog('monday',0);card._resolveBlockDialog('cancel')")
@@ -75,7 +83,7 @@ with sync_playwright() as p:
  page.wait_for_timeout(350)
  assert page.evaluate("card._els.blockDialog.open && card._els.blockDialog.querySelector('.f-from').value==='07:30'")
  assert page.evaluate("card.shadowRoot.activeElement===card._els.blockDialog.querySelector('.f-from')")
- assert page.evaluate("history.state.busch_schedule_dialog?.endsWith('schedule-card:block') && card._els.blockDialog._buschPop!==null && !card._els.blockDialog._buschClosing")
+ assert page.evaluate("history.state?.buschUiDialog?.name?.endsWith('schedule-card:block') && card._els.blockDialog._buschVerlauf?.active===true && !!card._els.blockDialog._buschFalle")
  page.evaluate("window.__scheduleTestConfirm=window.confirm;window.confirm=()=>true;card._resolveBlockDialog('cancel');window.confirm=window.__scheduleTestConfirm;delete window.__scheduleTestConfirm")
  # Adding a draft never exposes delete semantics that could remove the last
  # saved block. Every cancellation path leaves the model and save count intact.

@@ -1800,10 +1800,7 @@ class BuschScheduleCard extends HTMLElement {
     // popstate-Lauscher zurücklassen — der hielte die Karte am Leben und
     // reagierte auf jede spätere Navigation.
     for (const dialog of [this._els?.blockDialog, this._els?.dayDialog]) {
-      if (dialog && dialog._buschPop) {
-        window.removeEventListener("popstate", dialog._buschPop);
-        dialog._buschPop = null;
-      }
+      if (dialog?._buschVerlauf || dialog?._buschFalle) this._dialogSchliessen(dialog);
     }
   }
 
@@ -2439,23 +2436,11 @@ class BuschScheduleCard extends HTMLElement {
           80% { transform: translateX(4px); }
         }
         dialog.wackelt { animation: busch-schedule-wackeln 0.25s ease-in-out; }
-        .dlg { padding: var(--ha-space-4, 16px); }
-        .dlg-kopf {
-          display: flex;
-          align-items: center;
-          gap: var(--ha-space-2, 8px);
-          margin-bottom: var(--ha-space-4, 16px);
-        }
-        .dlg h2 {
-          flex: 1 1 auto;
-          margin: 0;
-          font-size: var(--ha-font-size-l, 16px);
-          font-weight: var(--ha-font-weight-medium, 500);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          min-width: 0;
-        }
+        /* M28: the shared dialog skeleton (BuschUI.styles): head with the X on the left and a one-line
+           title, content, foot with Delete on the left and Cancel before Save on the right. The native
+           <dialog> keeps its own frame; the skeleton classes sit inside it. */
+        .dlg { padding: 0; }
+        .dlg-kopf { margin-bottom: var(--ha-space-2, 8px); }
         .dlg-kopf button {
           flex: 0 0 auto;
           font: inherit;
@@ -2469,7 +2454,6 @@ class BuschScheduleCard extends HTMLElement {
           cursor: pointer;
         }
         .dlg-kopf button:hover { background: var(--divider-color); }
-        .dlg-kopf button.danger { color: var(--error-color, #db4437); }
         .fields { display: flex; gap: var(--ha-space-3, 12px); }
         .fields label {
           flex: 1 1 0;
@@ -2509,14 +2493,9 @@ class BuschScheduleCard extends HTMLElement {
           overflow-wrap: anywhere;
         }
         .dlg .msg:empty { display: none; }
-        .actions {
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: var(--ha-space-2, 8px);
-          margin: var(--ha-space-5, 20px) 0 0;
-          padding: 0;
-        }
+        .actions { margin: var(--ha-space-2, 8px) 0 0; }
+        /* .busch-btn sets display, which beats the UA rule for [hidden]: hide Delete for a new block. */
+        .actions .busch-btn[hidden] { display: none; }
         /* M62: the dialog actions are the shared .busch-btn (secondary with a frame, primary filled);
            only the label clipping stays here (rule 1). */
         .actions .busch-btn {
@@ -2567,12 +2546,11 @@ class BuschScheduleCard extends HTMLElement {
 
       <dialog class="block-dialog" aria-modal="true" aria-labelledby="busch-block-title">
         <div class="dlg">
-          <div class="dlg-kopf">
-            <button class="dlg-x" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
-            <h2 id="busch-block-title"></h2>
-            <button class="danger dlg-del" data-act="delete"><ha-icon icon="mdi:delete"></ha-icon></button>
+          <div class="dlg-kopf busch-dialog-head">
+            <button class="dlg-x busch-dialog-close" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
+            <h2 id="busch-block-title" class="busch-dialog-title"></h2>
           </div>
-          <div class="body">
+          <div class="body busch-dialog-content">
             <div class="fields">
               <label><span class="l-from"></span> <input type="time" class="f-from"></label>
               <label><span class="l-to"></span> <input type="time" class="f-to"></label>
@@ -2580,20 +2558,21 @@ class BuschScheduleCard extends HTMLElement {
             <div class="note"></div>
             <div class="msg" role="status" aria-live="polite"></div>
           </div>
-          <menu class="actions">
+          <menu class="actions busch-dialog-foot">
+            <button class="busch-btn dlg-del" data-variant="destructive" data-act="delete"></button>
             <button class="busch-btn" data-variant="secondary" data-act="cancel"></button>
             <button class="busch-btn" data-variant="primary" data-act="ok"></button>
           </menu>
         </div>
       </dialog>
 
-      <dialog class="day-dialog">
+      <dialog class="day-dialog" aria-modal="true" aria-labelledby="busch-day-title">
         <div class="dlg">
-          <div class="dlg-kopf">
-            <button class="dlg-x" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
-            <h2></h2>
+          <div class="dlg-kopf busch-dialog-head">
+            <button class="dlg-x busch-dialog-close" data-act="cancel"><ha-icon icon="mdi:close"></ha-icon></button>
+            <h2 id="busch-day-title" class="busch-dialog-title"></h2>
           </div>
-          <div class="body">
+          <div class="body busch-dialog-content">
             <div class="choices">
               <button data-act="all"></button>
               <button data-act="weekdays"></button>
@@ -2601,7 +2580,7 @@ class BuschScheduleCard extends HTMLElement {
               <button data-act="clear" class="danger"></button>
             </div>
           </div>
-          <menu class="actions">
+          <menu class="actions busch-dialog-foot">
             <button class="busch-btn" data-variant="secondary" data-act="cancel"></button>
           </menu>
         </div>
@@ -2648,6 +2627,7 @@ class BuschScheduleCard extends HTMLElement {
     setze(".block-dialog .l-to", t.dialogBis);
     setze(".block-dialog .actions button[data-act='cancel']", t.abbrechen);
     setze(".block-dialog .actions button[data-act='ok']", t.speichern);
+    setze(".block-dialog .actions button[data-act='delete']", t.loeschen);
     setze(".day-dialog .actions button[data-act='cancel']", t.abbrechen);
     setze(".day-dialog .choices button[data-act='all']", t.kopierenAlle);
     setze(".day-dialog .choices button[data-act='weekdays']", t.kopierenWerktage);
@@ -2661,13 +2641,14 @@ class BuschScheduleCard extends HTMLElement {
     for (const [sel, titel] of [
       [".block-dialog .dlg-x", t.schliessen],
       [".day-dialog .dlg-x", t.schliessen],
-      [".block-dialog .dlg-del", t.blockLoeschen],
     ]) {
       const el = this.shadowRoot.querySelector(sel);
       if (!el) continue;
       el.setAttribute("title", titel);
       el.setAttribute("aria-label", titel);
     }
+    // Delete has a visible label; the tooltip names what it deletes.
+    this.shadowRoot.querySelector(".block-dialog .dlg-del")?.setAttribute("title", t.blockLoeschen);
   }
 
   _buildRuler() {
@@ -2702,17 +2683,9 @@ class BuschScheduleCard extends HTMLElement {
       event.preventDefault();
       this._resolveBlockDialog("escape");
     });
+    // Escape stays in the dialog; Tab is kept inside by BuschUI.focusTrap (M28).
     blockDialog.addEventListener("keydown", (event) => {
       if (event.key === "Escape") event.stopPropagation();
-      if (event.key !== "Tab") return;
-      const fields = [...blockDialog.querySelectorAll("button,input,select,textarea,[tabindex]")]
-        .filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
-      if (!fields.length) return;
-      const active = this.shadowRoot.activeElement;
-      if ((event.shiftKey && active === fields[0]) || (!event.shiftKey && active === fields.at(-1))) {
-        event.preventDefault();
-        (event.shiftKey ? fields.at(-1) : fields[0]).focus();
-      }
     });
 
     const dayDialog = this._els.dayDialog;
@@ -2738,120 +2711,73 @@ class BuschScheduleCard extends HTMLElement {
   /* ── Verlauf: Zurück-Taste und Zurück-Geste ──────────────────────────────
    *
    * `docs/ui-regeln.md`, Regel 2: Ein Popup schließt mit der Zurück-Taste,
-   * OHNE die Seite zu verlassen. Ein selbstgebautes Überlagerungsfenster tut
-   * das nicht von allein — die Zurück-Geste am Handy ist eine
-   * Verlaufsnavigation, und ohne eigenen Eintrag verlässt sie das ganze
-   * Dashboard. Genau das war der Stand bis hierher.
-   *
-   * Das Muster ist HAs eigenem Dialog-Manager (`addHistory`) nachgebaut, so
-   * wie es in `ha-busch-lightcards` schon steht:
-   *
-   *   1. Beim Öffnen `history.pushState({ dialog: '<name>' }, '')` — die URL
-   *      bleibt unangetastet, sonst wechselte das Dashboard die Ansicht.
-   *   2. Ein `popstate`-Listener schließt das Popup, sobald der eigene
-   *      Eintrag verschwunden ist.
-   *   3. Beim Schließen über Knopf, Scrim oder Escape: liegt der eigene
-   *      Eintrag oben, `history.back()`; sonst wird am Verlauf nichts
-   *      geändert. So bleibt kein verwaister Eintrag stehen.
-   *   4. Der Listener wird beim Schließen wieder entfernt.
+   * OHNE die Seite zu verlassen. M28: beide Dialoge nutzen dafür den einen
+   * gemeinsamen Baustein `BuschUI.dialogHistory` (ein eigener Eintrag je
+   * Dialog, `popstate` schließt, eigenes Schließen gibt den Eintrag nur zurück,
+   * wenn er obenauf liegt) und `BuschUI.focusTrap` (Tab bleibt im Dialog).
+   * Die Karte selbst ruft kein `pushState` mehr auf.
    * ────────────────────────────────────────────────────────────────────── */
 
-  /** Kennung des eigenen Verlaufseintrags eines der beiden Dialoge. */
+  /** Name des eigenen Verlaufseintrags eines der beiden Dialoge. */
   _dialogName(dialog) {
     return dialog === this._els.dayDialog
       ? "busch-schedule-card:tag"
       : "busch-schedule-card:block";
   }
 
-  _liegtObenauf(dialog) {
-    const zustand = typeof history !== "undefined" ? history.state : null;
-    return Boolean(zustand && zustand.busch_schedule_dialog === this._dialogName(dialog));
-  }
-
   _dialogOeffnen(dialog) {
     if (dialog.open) return;
-    clearTimeout(dialog._buschCloseTimer);
-    dialog._buschCloseTimer = null;
-    if (dialog._buschPop) {
-      window.removeEventListener("popstate", dialog._buschPop);
-      dialog._buschPop = null;
-    }
-    const generation = (dialog._buschGeneration || 0) + 1;
-    dialog._buschGeneration = generation;
-    dialog._buschExplicitClose = false;
-    dialog._buschClosing = false;
     const opener = this.shadowRoot.activeElement || document.activeElement;
     const day = this._dialogTarget?.day;
     dialog.addEventListener("close", () => {
       const fallback = day && this.shadowRoot.querySelector(`.track[data-day="${day}"]`);
       (opener?.isConnected ? opener : fallback)?.focus?.();
     }, { once: true });
+    dialog._buschFalle?.release({ returnFocus: false });
+    dialog._buschFalle = BuschUI.focusTrap(dialog);
     dialog.showModal();
     if (typeof history === "undefined") return;
     try {
       // Preserve host history keys and its native opensDialog convention.
       history.replaceState({ ...history.state, opensDialog: true }, "");
-      history.pushState({ ...history.state, busch_schedule_dialog: this._dialogName(dialog) }, "");
-    } catch (fehler) {
-      // Privater Modus und Ratenbegrenzung können das ablehnen. Escape,
-      // Scrim und Schließ-Knopf wirken weiter; nur die Zurück-Geste fehlt.
-      return;
-    }
-    const aufPop = () => {
-      if (dialog._buschGeneration !== generation) {
-        window.removeEventListener("popstate", aufPop);
-        if (dialog._buschPop === aufPop) dialog._buschPop = null;
-        return;
-      }
-      if (dialog === this._els.blockDialog && dialog.open && !dialog._buschExplicitClose && this._blockGeaendert()) {
-        // Browser/mobile Back hat den Dialogeintrag bereits entfernt. Wieder
-        // einsetzen, ohne die HA-Seite zu verlassen oder Eingaben zu verlieren.
-        history.pushState({ ...history.state, busch_schedule_dialog: this._dialogName(dialog) }, "");
-        dialog.querySelector(".msg").textContent = this._texte.ungespeichert;
-        this._wackeln(dialog);
-        return;
-      }
-      window.removeEventListener("popstate", aufPop);
-      if (dialog._buschPop === aufPop) dialog._buschPop = null;
-      clearTimeout(dialog._buschCloseTimer);
-      dialog._buschCloseTimer = null;
-      if (dialog.open) dialog.close();
-      if (dialog === this._els.blockDialog) this._dialogTarget = null;
-      else this._dayTarget = null;
-    };
-    dialog._buschPop = aufPop;
-    window.addEventListener("popstate", aufPop);
+    } catch (fehler) { /* private mode: Escape, X and Cancel still work */ }
+    this._dialogVerlauf(dialog);
   }
 
-  /** Schließt den Dialog und räumt genau den eigenen Verlaufseintrag ab. */
-  _dialogSchliessen(dialog) {
-    if (!dialog.open || dialog._buschClosing) return;
-    // Some native/host combinations emit cancel twice before popstate arrives.
-    // Spend the history entry only once, never navigate past the dashboard.
-    dialog._buschClosing = true;
-    dialog._buschExplicitClose = true;
-    const generation = dialog._buschGeneration;
-    const aufPop = dialog._buschPop;
-    if (aufPop && this._liegtObenauf(dialog)) {
-      // `history.back()` löst `popstate` aus; der Listener schließt und
-      // räumt sich selbst ab. Ein Notnagel für den Fall, dass `popstate`
-      // ausbleibt — sonst bliebe der Dialog offen stehen.
-      history.back();
-      dialog._buschCloseTimer = setTimeout(() => {
-        dialog._buschCloseTimer = null;
-        if (dialog._buschGeneration !== generation || !dialog.open || !dialog._buschClosing) return;
-        if (dialog._buschPop) {
-          window.removeEventListener("popstate", dialog._buschPop);
-          dialog._buschPop = null;
-        }
-        dialog.close();
-      }, 300);
+  /** Ein eigener Verlaufseintrag; Zurück schließt (oder schützt ungespeicherte Eingaben). */
+  _dialogVerlauf(dialog) {
+    dialog._buschVerlauf = BuschUI.dialogHistory({
+      name: this._dialogName(dialog),
+      onClose: () => this._dialogZurueck(dialog),
+    });
+  }
+
+  /** Browser- oder Handy-Zurück hat den eigenen Eintrag schon entfernt. */
+  _dialogZurueck(dialog) {
+    dialog._buschVerlauf = null;
+    if (dialog === this._els.blockDialog && dialog.open && this._blockGeaendert()) {
+      // Wieder einsetzen, ohne die HA-Seite zu verlassen oder Eingaben zu verlieren.
+      this._dialogVerlauf(dialog);
+      dialog.querySelector(".msg").textContent = this._texte.ungespeichert;
+      this._wackeln(dialog);
       return;
     }
-    if (aufPop) {
-      window.removeEventListener("popstate", aufPop);
-      dialog._buschPop = null;
-    }
+    this._dialogZu(dialog);
+    if (dialog === this._els.blockDialog) this._dialogTarget = null;
+    else this._dayTarget = null;
+  }
+
+  /** Schließt den Dialog und gibt genau den eigenen Verlaufseintrag zurück. */
+  _dialogSchliessen(dialog) {
+    const verlauf = dialog._buschVerlauf;
+    dialog._buschVerlauf = null;
+    verlauf?.close();
+    this._dialogZu(dialog);
+  }
+
+  _dialogZu(dialog) {
+    dialog._buschFalle?.release({ returnFocus: false });
+    dialog._buschFalle = null;
     if (dialog.open) dialog.close();
   }
 
@@ -3984,7 +3910,7 @@ const CAL_STIL = `
     justify-content:center; padding:var(--ha-space-2, 8px); box-sizing:border-box; overflow:auto;
     background:var(--mdc-dialog-scrim-color, rgba(0, 0, 0, 0.32)); }
   .cal-wahl[hidden] { display:none; }
-  .cal-wahl-dlg { width:100%; max-width:360px; box-sizing:border-box; padding:var(--ha-space-4, 16px);
+  .cal-wahl-dlg { width:100%; max-width:360px; box-sizing:border-box; padding:0;
     background:var(--card-background-color, #fff); color:var(--primary-text-color);
     border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 24px rgba(0, 0, 0, 0.3); }
   @media (max-width: 450px) {
@@ -3993,10 +3919,7 @@ const CAL_STIL = `
       display:flex; flex-direction:column; }
     .cal-wahl-dlg .cal-wahl-aktionen { margin-top:auto; }
   }
-  .cal-wahl-kopf { display:flex; align-items:center; gap:var(--ha-space-2, 8px);
-    margin-bottom:var(--ha-space-3, 12px); }
-  .cal-wahl-kopf h2 { flex:1 1 auto; margin:0; font-size:var(--ha-font-size-l, 16px); font-weight:var(--ha-font-weight-medium, 500);
-    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* M28: head, title, content and foot come from the shared dialog skeleton (BuschUI.styles). */
   .cal-wahl-x { flex:0 0 auto; display:inline-grid; place-items:center; width:44px; height:44px;
     padding:0; border:none; border-radius:50%; background:none; cursor:pointer;
     color:var(--secondary-text-color); font:inherit; }
@@ -4018,8 +3941,7 @@ const CAL_STIL = `
   .cal-wahl-monat[aria-current="true"] { border:2px solid var(--primary-color);
     background:color-mix(in srgb, var(--primary-color) 16%, var(--card-background-color, #fff));
     font-weight:var(--ha-font-weight-bold, 600); }
-  .cal-wahl-aktionen { display:flex; justify-content:flex-end; gap:var(--ha-space-2, 8px);
-    margin-top:var(--ha-space-4, 16px); }
+  .cal-wahl-aktionen { margin-top:var(--ha-space-2, 8px); }
   /* M62: Cancel is the shared .busch-btn (secondary); only the label clipping stays here. */
   .cal-wahl-aktionen button { min-height:44px; min-width:64px; font-size:var(--ha-font-size-m, 14px);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -4589,8 +4511,9 @@ class BuschCalendarCard extends HTMLElement {
     clearTimeout(this._mitternacht);
     this._takt = null;
     this._mitternacht = null;
-    // Leaving the page with the picker open: hide it and drop the listener, never navigate.
-    if (this._wahl && !this._wahl.el.hidden) this._wahlZu();
+    // Leaving the page with the picker open: hide it and drop the listener. dialogHistory only
+    // spends its own entry when it is on top, so this never leaves the dashboard.
+    if (this._wahl && !this._wahl.el.hidden) this._wahlSchliessen();
   }
 
   _mitternachtStellen() {
@@ -4729,11 +4652,10 @@ class BuschCalendarCard extends HTMLElement {
    * without a change. Focus returns to the month name.
    *
    * It lies over the card itself (inside ha-card, outside the body that each
-   * render rewrites), so new data while it is open does not close it. History
-   * as in the schedule dialogs and HA's dialog manager: one own entry on
-   * opening, popstate closes, an own close spends that entry with
-   * history.back() (300 ms fallback), so Back never leaves the dashboard and no
-   * orphaned entry stays. */
+   * render rewrites), so new data while it is open does not close it. M28:
+   * history and focus through the shared BuschUI.dialogHistory and
+   * BuschUI.focusTrap, the anatomy through the shared dialog skeleton classes
+   * (head with the X on the left, content, foot with Cancel). */
 
   _wahlBauen() {
     const t = this._texte;
@@ -4751,16 +4673,17 @@ class BuschCalendarCard extends HTMLElement {
     huelle.setAttribute("aria-modal", "true");
     huelle.setAttribute("aria-labelledby", titelId);
     const dlg = el("div", "cal-wahl-dlg");
-    const kopf = el("div", "cal-wahl-kopf");
-    const x = el("button", "cal-wahl-x");
+    const kopf = el("div", "cal-wahl-kopf busch-dialog-head");
+    const x = el("button", "cal-wahl-x busch-dialog-close");
     x.type = "button";
     x.dataset.wahl = "abbrechen";
     const icon = el("ha-icon");
     icon.setAttribute("icon", "mdi:close");
     x.append(icon);
-    const titel = el("h2");
+    const titel = el("h2", "busch-dialog-title");
     titel.id = titelId;
     kopf.append(x, titel);
+    const inhalt = el("div", "cal-wahl-inhalt busch-dialog-content");
     const jahr = el("div", "cal-wahl-jahr");
     const zurueck = el("button", "cal-pfeil busch-btn", "‹");
     const vor = el("button", "cal-pfeil busch-btn", "›");
@@ -4781,13 +4704,14 @@ class BuschCalendarCard extends HTMLElement {
       monate.push(b);
       raster.append(b);
     }
-    const aktionen = el("div", "cal-wahl-aktionen");
+    const aktionen = el("div", "cal-wahl-aktionen busch-dialog-foot");
     const abbrechen = el("button", "busch-btn");
     abbrechen.type = "button";
     abbrechen.dataset.variant = "secondary";
     abbrechen.dataset.wahl = "abbrechen";
     aktionen.append(abbrechen);
-    dlg.append(kopf, jahr, raster, aktionen);
+    inhalt.append(jahr, raster);
+    dlg.append(kopf, inhalt, aktionen);
     huelle.append(dlg);
     for (const b of [zurueck, vor]) b.type = "button";
 
@@ -4812,15 +4736,6 @@ class BuschCalendarCard extends HTMLElement {
         this._wahlSchliessen();
         return;
       }
-      if (ereignis.key === "Tab") {
-        const knoepfe = [...huelle.querySelectorAll("button")].filter((b) => !b.disabled);
-        const aktiv = document.activeElement;
-        if (ereignis.shiftKey ? aktiv === knoepfe[0] : aktiv === knoepfe.at(-1)) {
-          ereignis.preventDefault();
-          (ereignis.shiftKey ? knoepfe.at(-1) : knoepfe[0]).focus();
-        }
-        return;
-      }
       const i = monate.indexOf(ereignis.target);
       if (i < 0) return;
       const schritt = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[ereignis.key];
@@ -4833,7 +4748,7 @@ class BuschCalendarCard extends HTMLElement {
       monate[ziel].focus();
     });
     this._karte.appendChild(huelle);
-    this._wahl = { el: huelle, titel, jahrzahl, zurueck, vor, raster, monate, x, abbrechen, jahr: 0, generation: 0, pop: null, timer: null };
+    this._wahl = { el: huelle, titel, jahrzahl, zurueck, vor, raster, monate, x, abbrechen, jahr: 0, verlauf: null, falle: null };
   }
 
   /** Texts and marks of the picker for `this._wahl.jahr` (language may have changed since building). */
@@ -4868,53 +4783,27 @@ class BuschCalendarCard extends HTMLElement {
     const w = this._wahl;
     const gezeigt = calMonatsGrenzen(new Date(), this._versatzLaufend).start;
     w.jahr = gezeigt.getFullYear();
-    clearTimeout(w.timer);
-    w.timer = null;
-    if (w.pop) window.removeEventListener("popstate", w.pop);
-    w.pop = null;
-    w.generation += 1;
-    w.schliesst = false;
     this._wahlZeichnen();
     w.el.hidden = false;
     this._karte.classList.add("cal-wahl-offen");
     this._koerper.querySelector(".cal-monat-knopf")?.setAttribute("aria-expanded", "true");
-    (w.monate[gezeigt.getMonth()] || w.monate[0]).focus();
+    // Tab and Shift+Tab stay inside; the shown month gets the focus.
+    w.falle = BuschUI.focusTrap(w.el, { initial: w.monate[gezeigt.getMonth()] || w.monate[0] });
     if (typeof history === "undefined") return;
     try {
       // Preserve host history keys and HA's opensDialog convention, as the schedule dialogs do.
       history.replaceState({ ...history.state, opensDialog: true }, "");
-      history.pushState({ ...history.state, busch_calendar_dialog: CAL_WAHL_VERLAUF }, "");
-    } catch (fehler) {
-      // Private mode or rate limits may refuse; Escape, Cancel and the scrim still work.
-      return;
-    }
-    const generation = w.generation;
-    const aufPop = () => {
-      window.removeEventListener("popstate", aufPop);
-      if (w.pop === aufPop) w.pop = null;
-      if (w.generation !== generation) return;
-      this._wahlZu();
-    };
-    w.pop = aufPop;
-    window.addEventListener("popstate", aufPop);
+    } catch (fehler) { /* private mode: Escape, Cancel and the scrim still work */ }
+    w.verlauf = BuschUI.dialogHistory({ name: CAL_WAHL_VERLAUF, onClose: () => { w.verlauf = null; this._wahlZu(); } });
   }
 
   /** Closes the picker and spends exactly the own history entry. */
   _wahlSchliessen() {
     const w = this._wahl;
-    if (!w || w.el.hidden || w.schliesst) return;
-    const zustand = typeof history !== "undefined" ? history.state : null;
-    if (w.pop && zustand && zustand.busch_calendar_dialog === CAL_WAHL_VERLAUF) {
-      // history.back() fires popstate, whose listener closes. Fallback if popstate never comes.
-      w.schliesst = true;
-      const generation = w.generation;
-      history.back();
-      w.timer = setTimeout(() => {
-        w.timer = null;
-        if (w.generation === generation && !w.el.hidden) this._wahlZu();
-      }, 300);
-      return;
-    }
+    if (!w || w.el.hidden) return;
+    const verlauf = w.verlauf;
+    w.verlauf = null;
+    verlauf?.close();
     this._wahlZu();
   }
 
@@ -4922,12 +4811,8 @@ class BuschCalendarCard extends HTMLElement {
   _wahlZu() {
     const w = this._wahl;
     if (!w) return;
-    clearTimeout(w.timer);
-    w.timer = null;
-    if (w.pop) window.removeEventListener("popstate", w.pop);
-    w.pop = null;
-    w.generation += 1;
-    w.schliesst = false;
+    w.falle?.release({ returnFocus: false });
+    w.falle = null;
     w.el.hidden = true;
     this._karte.classList.remove("cal-wahl-offen");
     const knopf = this._koerper && this._koerper.querySelector(".cal-monat-knopf");

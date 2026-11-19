@@ -34,6 +34,8 @@ function world(language = "de") {
   const clock = kit.createClock(new Date(2026, 7, 15, 12, 0).getTime());
   const env = kit.createEnvironment({ clock, language, globals: { performance } });
   env.history = fakeHistory(env);
+  // M28: BuschUI.dialogHistory works on window.history, as in the browser.
+  env.window.history = env.history;
   kit.loadScript(BUNDLE, { globals: env });
   const ha = kit.createHass({ clock, language, states: { "calendar.a": { state: "off", attributes: { friendly_name: "A" } } } });
   ha.respond("call_api", () => []);
@@ -99,7 +101,7 @@ test("M25 picker: a click on the month name opens it with title, year, 12 months
   assert.deepEqual(dialog.querySelectorAll(".cal-wahl-aktionen button").map((b) => b.textContent), ["Abbrechen"]);
   assert.equal(dialog.querySelector(".cal-wahl-x").getAttribute("aria-label"), "Schließen");
   assert.equal(w.env.history.length, before + 1, "one own history entry");
-  assert.equal(w.env.history.state.busch_calendar_dialog, "busch-calendar-card:monat");
+  assert.equal(w.env.history.state.buschUiDialog.name, "busch-calendar-card:monat");
   assert.equal(card._karte.classList.contains("cal-wahl-offen"), true);
 });
 
@@ -115,10 +117,15 @@ test("M25 picker: next year, then March jumps to March 2027 with one fresh fetch
   w.ha.resetStats();
   // The answer comes after the close, as on a real network.
   w.ha.behave("call_api", { delay: 100 });
+  // The choice redraws the head synchronously and draws the month button anew; the kit DOM does
+  // not parse innerHTML, so the redraw puts the new button where the browser would (M28: the
+  // picker now closes in the same task instead of after popstate).
+  let fresh = null;
+  const render = card._render.bind(card);
+  card._render = () => { render(); fresh = monthButton(w, card); };
   months(card)[2].click();
+  card._render = render;
   assert.equal(card._versatzLaufend, 7, "August 2026 + 7 = March 2027");
-  // The list was redrawn; the month button is drawn anew.
-  const fresh = monthButton(w, card);
   await w.clock.advance(10);
   assert.equal(isOpen(card), false, "closed after the choice");
   assert.equal(w.env.history.index, 0, "own entry consumed");
