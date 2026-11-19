@@ -6600,7 +6600,7 @@ const DEV_STIL = `
   .dev-quick :disabled { opacity:var(--disabled-opacity,.5);cursor:default; }
   .dev-quick .dev-quick-pending { cursor:progress; }
   /* M14: the busy power button shows a ring and a progress mark on the button itself, not only its text. */
-  .dev-quick button.dev-quick-pending { display:inline-flex;align-items:center;justify-content:center;gap:var(--ha-space-1,4px);box-shadow:inset 0 0 0 2px var(--primary-color); }
+  .dev-quick button.dev-quick-pending { display:inline-flex;align-items:center;justify-content:center;gap:var(--ha-space-1,4px);box-shadow:inset 0 0 0 2px var(--primary-color,#03a9f4); }
   .dev-quick button.dev-quick-pending::before { content:"";flex:none;box-sizing:border-box;width:1em;height:1em;border-radius:50%;border:2px solid currentColor;border-inline-end-color:transparent;animation:dev-quick-spin 1s linear infinite; }
   @keyframes dev-quick-spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .dev-quick button.dev-quick-pending::before { animation:none;border-style:dotted; } }

@@ -229,3 +229,13 @@ test("M14: the busy power button shows its state on the button, not only in its 
   await clock.advance(1500);
   assert.ok(!button().classList.contains("dev-quick-pending"));
 });
+
+test("M14: the busy ring keeps a colour without a theme variable (no box-shadow: none)", () => {
+  // A var() without fallback that is unset makes the whole box-shadow invalid at computed-value time (none);
+  // the render check device-quick-interactions.py measured exactly that before the theme variables were set.
+  const { DEV_STIL } = kit.loadScript(BUNDLE, { expose: ["DEV_STIL"] }).exposed;
+  const body = /\.dev-quick button\.dev-quick-pending\s*\{([^}]*)\}/.exec(DEV_STIL)?.[1] || "";
+  const shadow = /box-shadow:([^;]*)/.exec(body)?.[1] || "";
+  assert.ok(shadow, "the busy button has a ring");
+  for (const v of shadow.matchAll(/var\(\s*(--[\w-]+)\s*(,)?/g)) assert.ok(v[2], `${v[1]} in the ring needs a fallback`);
+});
