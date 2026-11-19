@@ -87,3 +87,12 @@ test('M30: toolbar and row texts exist in German and English on both cards',()=>
   for(const key of ['search','search_placeholder','filter_presence','filter_all','filter_home','filter_not_home','view_sort','sort_default','sort_name','sort_last_seen','result_count','more'])assert.equal(typeof t[key],'string',Card.name+' '+language+' '+key);
   assert.match(t.more,/\{n\}/);assert.match(t.result_count,/\{shown\}.*\{total\}/);c.disconnectedCallback();}
 });
+
+test('M30: the icon-only Details button in the row head keeps a 44 px width despite the card-wide min-width reset',()=>{
+ // The card sheet resets `*{min-width:0}` after BuschUI's `:where(.busch-ui-action){min-width:44px}`; both have zero
+ // specificity, so the later reset wins and the icon button shrinks to its padding plus icon (run 20261119-131747: < 44 px).
+ const {BUSCH_NETWORK_STYLE:css}=require('./laden').ladeKarte(['BUSCH_NETWORK_STYLE']);
+ const reset=css.lastIndexOf('*{box-sizing:border-box;min-width:0}');assert.ok(reset>0,'card-wide min-width reset present');
+ const rules=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m=>m.index>reset&&m[1].split(',').some(s=>s.trim()==='.client-line>.busch-ui-action'));
+ assert.ok(rules.some(m=>/(^|;)\s*min-width:\s*var\(--ha-space-11,\s*44px\)/.test(m[2])),'row-head action declares min-width 44 px after the reset');
+});
