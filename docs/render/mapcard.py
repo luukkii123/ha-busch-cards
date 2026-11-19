@@ -126,7 +126,7 @@ PAGE = """<!doctype html>
   /* Nachbau der eingebauten map-Karte: ein `ha-map` mit einer ECHTEN
      Leaflet-Instanz und einer echten Rasterebene — genau das, woran der
      Eingriff ansetzt.  __modus steuert die drei geprueften Lagen. */
-  window.__modus = 'raster';   // 'raster' | 'ohneLeaflet' | 'ohneRaster'
+  window.__modus = 'raster';   // 'raster' | 'ohneLeaflet' | 'ohneRaster' | 'spaet'
   window.__innerConfigs = [];
   class FakeMapCard extends HTMLElement {
     constructor(){ super(); this.attachShadow({mode:'open'}); }
@@ -190,14 +190,31 @@ PAGE = """<!doctype html>
         window.__stubMap = haMap.leafletMap;
         return;
       }
+      /* M66: 'spaet' baut wie HA erst nach einem asynchronen Laden auf (40 ms): Leaflet legt seine
+         Ebenen an, `leafletMap` folgt eine Aufgabe spaeter. Gemessen wird ab dieser Zuweisung bis
+         zum ersten `setUrl` der Karte (`window.__stilDa`). */
+      if (window.__modus === 'spaet') {
+        setTimeout(() => this._aufbau(haMap, 'spaet'), 40);
+        return;
+      }
+      this._aufbau(haMap, window.__modus);
+    }
+    _aufbau(haMap, modus){
       const div = document.createElement('div');
       div.style.cssText = 'width:100%;height:300px';
       haMap.appendChild(div);
       const map = window.L.map(div).setView(window.__mitte || [0, 0], 13);
-      if (window.__modus === 'raster') {
-        window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      if (modus === 'raster' || modus === 'spaet') {
+        const ebene = window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: 'HA-Standardangabe', maxZoom: 19,
         }).addTo(map);
+        if (modus === 'spaet') {
+          const setUrl = ebene.setUrl.bind(ebene);
+          ebene.setUrl = (...a) => {
+            if (window.__stilDa === null) window.__stilDa = performance.now();
+            return setUrl(...a);
+          };
+        }
       } else {
         /* 'ohneRaster' bildet den Vektorfall nach: die Grundkarte ist eine
            MapLibre-Ebene ohne `setUrl`. Sie gibt sich ueber `getMaplibreMap`
@@ -233,6 +250,10 @@ PAGE = """<!doctype html>
           icon: window.L.divIcon({ html: el, iconSize: [36, 36], className: '' }),
           title: id,
         }).addTo(map);
+      }
+      if (modus === 'spaet') {
+        setTimeout(() => { haMap.leafletMap = map; window.__leafletDa = performance.now(); }, 0);
+        return;
       }
       haMap.leafletMap = map;
     }
@@ -512,6 +533,24 @@ with sync_playwright() as pw:
         };
     }""")
 
+    # M66 (M6-Messung): Kachelstil gesetzt nach N ms, gemessen ab der Zuweisung von
+    # `ha-map.leafletMap` (wie in HA erst nach asynchronem Laden) bis zum ersten `setUrl`.
+    # Die alte 250-ms-Suchschleife lag hier bei rund 250 ms; Grenze 100 ms (P20).
+    kachelstil = page.evaluate("""async () => {
+        window.__modus = 'spaet'; window.__leafletDa = null; window.__stilDa = null;
+        const c = await window.__mk({type:'custom:busch-map-card',
+          entities:['person.demo'], map_style:'osm'});
+        const start = performance.now();
+        while (performance.now() - start < 3000
+               && (window.__stilDa === null || window.__leafletDa === null)) {
+          await new Promise(r => setTimeout(r, 5));
+        }
+        window.__modus = 'raster';
+        const da = window.__leafletDa, stil = window.__stilDa;
+        return { leafletDa: da, stilDa: stil, layer: !!c._layer,
+                 ms: (da !== null && stil !== null) ? Math.round((stil - da) * 10) / 10 : null };
+    }""")
+
     # Schluessel: mit und ohne.
     schluessel = page.evaluate("""async () => {
         window.__modus = 'raster';
@@ -773,6 +812,8 @@ checks["eingebettet: Ebene angelegt"] = eingebettet["ebeneAngelegt"] is True
 checks["eingebettet: echte TileLayer-Klasse"] = eingebettet["istTileLayer"] is True
 checks["eingebettet: richtige URL"] = (eingebettet["url"] or "") == (
     "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+checks["M66: Kachelstil gesetzt nach <= 100 ms (spaetes leafletMap)"] = (
+    kachelstil["ms"] is not None and 0 <= kachelstil["ms"] <= 100 and kachelstil["layer"] is True)
 checks["Rueckfall: innere Karte bleibt stehen"] = rueckfall["innerVorhanden"] is True
 checks["Rueckfall: ha-map bleibt stehen"] = rueckfall["haMapVorhanden"] is True
 checks["Rueckfall: kein erzwungener Filter"] = rueckfall["mapFilter"] in ("", None)
@@ -848,6 +889,7 @@ report = {
     "unberuehrt": unberuehrt, "ohneRaster": ohneRaster, "vektor": vektor,
     "paar": paar, "gegenprobe_stapel": gegenprobe, "referer": referer,
     "eingebettet": eingebettet, "rueckfall": rueckfall,
+    "kachelstil": kachelstil, "kachelstil_ms": kachelstil["ms"],
     "schluessel": schluessel, "ohneSchluessel": ohneSchluessel,
     "ausHelfer": ausHelfer, "nachAenderung": nachAenderung,
     "editor": editor,

@@ -5567,6 +5567,9 @@ const MAP_KEY_ENTITY = "input_text.carto_api_key";
  *  Aufruf dieselbe Ebene wiederfindet statt eine weitere anzulegen. */
 const MAP_PANE = "busch-map-tiles";
 
+/** How long the card waits for `ha-map.leafletMap` before it leaves HA's tiles alone (M66). */
+const MAP_SEARCH_MS = 10000;
+
 /** Referrer-Regel fuer jedes Kachelbild — gesetzt am `<img>`, das schlaegt
  *  die Regel der Seite.
  *
@@ -5847,30 +5850,93 @@ class BuschMapCard extends HTMLElement {
   }
 
   /** Die Leaflet-Instanz taucht erst auf, wenn die innere Karte gerendert hat.
-   *  Deshalb ein paar Anlaeufe statt eines einzelnen Versuchs. */
+   *  M66 (P20): event-driven instead of a 250 ms search loop. Wait for `ha-map` to be defined
+   *  and the inner card's first update, then re-check after every DOM change below the inner
+   *  card and inside `ha-map` (Leaflet builds its panes just before HA assigns `leafletMap`,
+   *  hence the check one task later). The old loop stays only as fallback where
+   *  MutationObserver or customElements.whenDefined are missing. */
   _sucheKarte() {
-    this._versuche = 0;
-    const versuch = () => {
-      this._versuche += 1;
-      const haMap = queryDeepShadow(this._inner?.shadowRoot || this._inner, "ha-map");
+    this._sucheBeenden();
+    const lauf = this._suchLauf;
+    const inner = this._inner;
+    const finden = () => {
+      if (lauf !== this._suchLauf) return true;   // a newer build took over
+      const haMap = queryDeepShadow(inner?.shadowRoot || inner, "ha-map");
       if (haMap && haMap.leafletMap) {
         this._haMap = haMap;
-        if (this._applyTiles()) return;
+        if (this._applyTiles()) return true;
       }
-      if (this._versuche < 40) {
-        setTimeout(versuch, 250);
+      if (haMap?.shadowRoot && this._beobachter && !this._beobachtet.has(haMap.shadowRoot)) {
+        this._beobachtet.add(haMap.shadowRoot);
+        this._beobachter.observe(haMap.shadowRoot, { childList: true, subtree: true });
+      }
+      return false;
+    };
+    const Beobachter = globalThis.MutationObserver;
+    const registry = globalThis.customElements;
+    if (typeof Beobachter !== "function" || typeof registry?.whenDefined !== "function") {
+      this._sucheSchleife(finden, lauf);
+      return;
+    }
+    if (finden()) return;
+    let geplant = null;
+    const pruefen = () => {
+      if (geplant !== null || lauf !== this._suchLauf) return;
+      geplant = setTimeout(() => {
+        geplant = null;
+        if (lauf === this._suchLauf && finden()) this._sucheBeenden();
+      }, 0);
+    };
+    this._beobachtet = new Set();
+    this._beobachter = new Beobachter(pruefen);
+    const wurzel = inner?.shadowRoot || inner;
+    if (wurzel) {
+      this._beobachtet.add(wurzel);
+      this._beobachter.observe(wurzel, { childList: true, subtree: true });
+    }
+    registry.whenDefined("ha-map").then(() => inner?.updateComplete).then(pruefen, pruefen);
+    this._suchFrist = setTimeout(() => {
+      if (lauf !== this._suchLauf) return;
+      if (!finden()) this._sucheAufgeben();
+      this._sucheBeenden();
+    }, MAP_SEARCH_MS);
+  }
+
+  /** Fallback without MutationObserver: the former loop, 40 tries every 250 ms. */
+  _sucheSchleife(finden, lauf) {
+    this._versuche = 0;
+    const versuch = () => {
+      if (lauf !== this._suchLauf) return;
+      this._versuche += 1;
+      if (finden()) return;
+      if (this._versuche < MAP_SEARCH_MS / 250) {
+        this._suchFrist = setTimeout(versuch, 250);
         return;
       }
-      // Rueckfall: HAs Karte bleibt, wie sie ist. Kein leeres Feld.
-      if (!this._gewarnt) {
-        this._gewarnt = true;
-        console.warn(
-          "busch-map-card: `ha-map.leafletMap` nicht gefunden — die Kacheln "
-          + "bleiben die von Home Assistant. Die Karte funktioniert unveraendert weiter."
-        );
-      }
+      this._sucheAufgeben();
     };
     versuch();
+  }
+
+  /** Stops a running search (observer, deadline, loop) and starts a new generation. */
+  _sucheBeenden() {
+    this._suchLauf = (this._suchLauf || 0) + 1;
+    this._beobachter?.disconnect();
+    this._beobachter = null;
+    this._beobachtet = null;
+    if (this._suchFrist) clearTimeout(this._suchFrist);
+    this._suchFrist = null;
+  }
+
+  _sucheAufgeben() {
+    // Rueckfall: HAs Karte bleibt, wie sie ist. Kein leeres Feld.
+    if (!this._gewarnt) {
+      this._gewarnt = true;
+      console.warn(
+        "busch-map-card: `ha-map.leafletMap` nicht gefunden — die Kacheln "
+        + "bleiben die von Home Assistant. Die Karte funktioniert unveraendert weiter."
+      );
+    }
   }
 
   _applyTiles() {
