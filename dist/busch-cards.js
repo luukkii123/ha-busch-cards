@@ -2373,6 +2373,7 @@ class BuschScheduleCard extends HTMLElement {
           .block.at-end .handle.start { left: auto; right: 24px; }
           /* A neighbour's outward grip shares the gap: each side claims at most
              half of it (--grip-room-*, set per block), so neither covers the other. */
+          .block { --grip-room-start: 24px; --grip-room-end: 24px; }
           .block.near-start .handle.start { left: calc(-1 * var(--grip-room-start)); width: var(--grip-room-start); }
           .block.near-end .handle.end { right: calc(-1 * var(--grip-room-end)); width: var(--grip-room-end); }
           .block.at-start.near-end .handle.end { right: auto; left: 24px; width: clamp(0px, calc(100% + var(--grip-room-end) - 24px), 24px); }
