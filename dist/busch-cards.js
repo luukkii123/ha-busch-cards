@@ -2142,8 +2142,8 @@ class BuschScheduleCard extends HTMLElement {
         }
         .head.on ha-icon { color: var(--state-active-color, var(--primary-color)); }
         .head .text { flex: 1 1 auto; min-width: 0; }
+        /* M61: size and weight come from BuschUI.header level 1 (--ha-card-header-font-size, medium). */
         .head .name {
-          font-size: var(--ha-card-header-font-size, 20px);
           line-height: 1.2;
           color: var(--ha-card-header-color, var(--primary-text-color));
           overflow: hidden;
@@ -2902,6 +2902,8 @@ class BuschScheduleCard extends HTMLElement {
     );
     this._els.name.textContent =
       this._config.title || state?.attributes?.friendly_name || this._config.entity;
+    // M61: the family-wide card header (title step 1, subtitle), named after the current title.
+    BuschUI.header({ node: this._els.head, titleNode: this._els.name, subtitleNode: this._els.sub, level: 1 });
 
     if (!state) {
       this._els.sub.textContent = this._texte.entitaetFehlt;
@@ -4024,9 +4026,8 @@ const CAL_STIL = `
   .cal-wahl-aktionen .busch-btn:hover { background:var(--secondary-background-color, transparent); }
   /* Der Kartentitel ist einzeilig und wird GEKUERZT, nicht umgebrochen
      (Regel 1, letzter Punkt). */
-  .cal-titel-zeile { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) 0;
-    font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color);
-    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* M61: the title text is BuschUI.header level 1 (size, weight, one line with ellipsis). */
+  .cal-titel-zeile { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) 0; min-width:0; }
   .cal-liste { padding:0 var(--ha-space-2, 8px) var(--ha-space-2, 8px); }
   /* M25: fixed date column, events beside it on the same baseline. */
   .cal-tag { display:grid; grid-template-columns:64px minmax(0, 1fr); column-gap:var(--ha-space-3, 12px);
@@ -5143,7 +5144,7 @@ class BuschCalendarCard extends HTMLElement {
 
     const kopf =
       (this._config.title
-        ? `<div class="cal-titel-zeile">${calEscape(this._config.title)}</div>`
+        ? `<div class="cal-titel-zeile"><div class="cal-titel-text">${calEscape(this._config.title)}</div></div>`
         : "") +
       `<div class="cal-kopf">` +
       (this._config.navigation
@@ -5210,6 +5211,8 @@ class BuschCalendarCard extends HTMLElement {
       : "";
 
     this._koerper.innerHTML = kopf + rumpf + fuss + hinweis;
+    const titelZeile = this._koerper.querySelector(".cal-titel-zeile");
+    if (titelZeile) BuschUI.header({ node: titelZeile, titleNode: titelZeile.firstElementChild, level: 1 });
     const platz = this._koerper.querySelector(".cal-zustand-platz");
     if (platz) platz.parentNode.replaceChild(this._zustand, platz);
     const list = this._koerper.querySelector(".cal-liste");
@@ -7183,8 +7186,8 @@ const DEV_STIL = `
     color:var(--primary-color); --mdc-icon-size:24px; }
   .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
   /* M60/E12: a card title may wrap to two lines, then it is cut; the full name is the tooltip. */
-  .dev-name { font-size:1.05em; font-weight:var(--ha-font-weight-semibold, 600);
-    line-height:1.2; color:var(--primary-text-color);
+  /* M61: size and weight from BuschUI.header level 1; white-space resets its one-line rule for E12. */
+  .dev-name { line-height:1.2; color:var(--primary-text-color); white-space:normal; text-overflow:clip;
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2;
     overflow:hidden; overflow-wrap:anywhere; min-width:0; }
   .dev-unter { display:flex; align-items:center; gap:var(--ha-space-2, 8px); min-width:0;
@@ -7219,7 +7222,7 @@ const DEV_STIL = `
   .dev-gruppe-kopf { display:flex; align-items:center; gap:var(--ha-space-2, 8px); min-width:0;
     padding:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px);
     min-height:44px;
-    font-size:var(--ha-font-size-m, 14px); font-weight:var(--ha-font-weight-medium, 500);
+    font-size:inherit; font-weight:inherit;
     color:var(--primary-text-color); background:none; border:0; width:100%;
     text-align:left; font-family:inherit; cursor:pointer; }
   .dev-gruppe-kopf .dev-gruppe-text { overflow:hidden; text-overflow:ellipsis;
@@ -7390,6 +7393,7 @@ class BuschDeviceCard extends HTMLElement {
     this._unterText.className = "dev-unter-text";
     this._unter.append(this._brand, this._unterText);
     this._titel.append(this._name, this._unter);
+    BuschUI.header({ node: this._titel, titleNode: this._name, subtitleNode: this._unter, level: 1 });
     this._pfeil = document.createElement("button");
     this._pfeil.className = "dev-pfeil";
     this._pfeil.type = "button";
@@ -7620,7 +7624,10 @@ class BuschDeviceCard extends HTMLElement {
       this._zeichneChips();
       this._baueBausteine(stempel, vorlage, gruppen);
     }
-    if (this._name.textContent !== (this._config.title || a.name)) this._name.textContent = this._config.title || a.name;
+    if (this._name.textContent !== (this._config.title || a.name)) {
+      this._name.textContent = this._config.title || a.name;
+      BuschUI.header({ node: this._titel, titleNode: this._name, subtitleNode: this._unter, level: 1 });
+    }
     if (this._unterText.textContent !== a.untertitel) this._unterText.textContent = a.untertitel;
     if (this._name.title !== this._name.textContent) this._name.title = this._name.textContent;
     if (this._unterText.title !== a.untertitel) this._unterText.title = a.untertitel;
@@ -7634,6 +7641,7 @@ class BuschDeviceCard extends HTMLElement {
 
   _zeichneKopf(a) {
     this._name.textContent = this._config.title || a.name;
+    BuschUI.header({ node: this._titel, titleNode: this._name, subtitleNode: this._unter, level: 1 });
     this._unter.hidden = !this._config.show_subtitle;
     this._unterText.textContent = a.untertitel;
     if (a.platform) {
@@ -7848,7 +7856,11 @@ class BuschDeviceCard extends HTMLElement {
           zeilen.appendChild(rahmen);
         } catch (e) { /* eine kaputte Zeile reißt die anderen nicht mit */ }
       }
-      block.append(kopf, zeilen);
+      // M61: the group name is the one level-2 section heading; the toggle sits inside it (accordion pattern).
+      const ueberschrift = BuschUI.sectionHeading({ node: document.createElement("div") });
+      ueberschrift.classList.add("dev-gruppe-ueberschrift");
+      ueberschrift.appendChild(kopf);
+      block.append(ueberschrift, zeilen);
       this._liste.appendChild(block);
     }
     // Auch der reine AUSSCHLUSS kann die Liste leeren — am 10.09.2026 an
@@ -10522,7 +10534,7 @@ function buschNetworkSchema(core,config,kind='network'){
 
 const BUSCH_NETWORK_STYLE=BuschUI.cardStyles+BuschUI.editorStyles+`
 :host{display:block;min-width:0;container-type:inline-size;color:var(--primary-text-color);font-family:var(--ha-font-family-body,inherit);--network-columns:1;--network-media-size:var(--ha-space-12,48px)}*{box-sizing:border-box;min-width:0}ha-card{display:block;overflow:hidden;padding:var(--ha-space-4,16px);color:var(--primary-text-color);background:var(--card-background-color)}
-.header{display:grid;grid-template-columns:var(--network-media-size) minmax(0,1fr);gap:var(--ha-space-3,12px);align-items:center;margin-bottom:var(--ha-space-4,16px)}.header-status{grid-column:2}.main{display:grid;gap:var(--ha-space-1,4px)}h2,.client-name{font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.client-name{font-size:var(--ha-font-size-m,14px)}p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail,.hint{color:var(--secondary-text-color)}.hint{font-size:var(--ha-font-size-s,12px)}.message{padding-block:var(--ha-space-2,8px)}.error{color:var(--error-color)}
+.header{display:grid;grid-template-columns:var(--network-media-size) minmax(0,1fr);gap:var(--ha-space-3,12px);align-items:center;margin-bottom:var(--ha-space-4,16px)}.header-status{grid-column:2}.main{display:grid;gap:var(--ha-space-1,4px)}/* M61: the card title takes BuschUI.header level 1; rows keep their own step. */.header h2{margin:0;min-width:0}.client-name{font-size:var(--ha-font-size-l,18px);font-weight:var(--ha-font-weight-medium,500);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.client-name{font-size:var(--ha-font-size-m,14px)}p,.detail,.message{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.detail,.hint{color:var(--secondary-text-color)}.hint{font-size:var(--ha-font-size-s,12px)}.message{padding-block:var(--ha-space-2,8px)}.error{color:var(--error-color)}
 .card-icon,.row-icon{display:grid;place-items:center;overflow:hidden;background:var(--secondary-background-color);border-radius:var(--ha-card-border-radius,12px);color:var(--primary-color)}.card-icon{width:var(--network-media-size);height:var(--network-media-size)}.row-icon{width:var(--ha-space-10,40px);height:var(--ha-space-10,40px)}.busch-media img{width:100%;height:100%;object-fit:contain}.busch-media ha-icon{--mdc-icon-size:var(--ha-space-6,24px)}
 .status-badge{justify-self:start;display:inline-flex;align-items:center;gap:var(--ha-space-1,4px);border-radius:var(--ha-card-border-radius,12px);padding:var(--ha-space-1,4px) var(--ha-space-2,8px);font-size:var(--ha-font-size-s,12px);max-width:100%;overflow-wrap:anywhere;background:var(--secondary-background-color)}.status-dot{width:var(--ha-space-2,8px);height:var(--ha-space-2,8px);border-radius:50%;background:currentColor;flex:none}.status-success{color:var(--success-color)}.status-warning{color:var(--warning-color)}.status-error{color:var(--error-color)}.status-unknown,.status-unavailable,.status-neutral{color:var(--secondary-text-color)}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--ha-space-30,120px)),1fr));gap:var(--ha-space-3,12px);margin-block:var(--ha-space-4,16px)}.metric{display:grid;gap:var(--ha-space-1,4px);overflow-wrap:anywhere}.metric-label{font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color)}.metric-value{font-size:var(--ha-font-size-m,14px);font-weight:var(--ha-font-weight-medium,500)}
@@ -10624,7 +10636,7 @@ class BuschNetworkBaseCard extends HTMLElement {
   /* M30: the toolbar moves into the new shell; keep focus and caret in it across rebuilds (router sensors, clock, busy state). */
   const active=this.shadowRoot.activeElement,caret=active&&this._toolbar?.contains?.(active)?[active.selectionStart??null,active.selectionEnd??null]:null;
   const style=buschNetworkNode('style',BUSCH_NETWORK_STYLE),card=buschNetworkNode('ha-card'),name=c.title||model?.name||t[this._kind];
-  if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}if(c.show_status&&model?.roles.link){const state=model.roles.link.state,label=state==='on'?t.link_on:state==='off'?t.link_off:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'online':state==='off'?'offline':state,t.link+': '+label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title});card.appendChild(header);}
+  if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}if(c.show_status&&model?.roles.link){const state=model.roles.link.state,label=state==='on'?t.link_on:state==='off'?t.link_off:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'online':state==='off'?'offline':state,t.link+': '+label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title,level:1});card.appendChild(header);}
   /* M27: one live region per card; an error replaces the loading line instead of standing next to it. */
   const error=this._configError||this._queryError||this._error;this._stateNode||=buschZustandsRegion(buschNetworkNode('div'),'card-state');
   buschZustand(this._stateNode,error?{kind:'error',title:t[error]||t.invalid_config}:!this._core?{kind:'loading',title:t.loading}:this._kind==='fritz'&&!this._configError&&!model?.device?{kind:'empty',icon:'mdi:router-wireless',title:t.choose}:null);card.appendChild(this._stateNode);

@@ -43,6 +43,10 @@ with sync_playwright() as pw:
      # M30: values sit in a definition list inside each row's <details> (collapsed, so read textContent, not innerText).
      if scenario=='normal':pairs=page.evaluate("[...document.querySelector('[data-test-card]').shadowRoot.querySelectorAll('dl.client-details>div')].map(d=>d.children[0].textContent+': '+d.children[1].textContent)");assert 'Verbindungspunkt: Unbekannt' in pairs,pairs
      if scenario=='error':assert 'CIDR benötigt' in text
+     # M61: the card title is the family-wide step 1 (--ha-card-header-font-size, fallback 24 px, medium) in both themes.
+     if scenario=='normal':
+      head=page.evaluate("(()=>{const h=document.querySelector('[data-test-card]').shadowRoot.querySelector('.header h2');if(!h)return null;const s=getComputedStyle(h);return {size:s.fontSize,weight:s.fontWeight,level:h.dataset.level}})()")
+      assert head=={'size':'24px','weight':'500','level':'1'},(kind,head)
      # M27: the error replaces the loading line; every error/empty/loading uses the shared state block as a live region.
      if scenario=='error':assert 'werden geladen' not in text,text
      if scenario in ('error','empty','loading'):

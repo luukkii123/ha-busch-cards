@@ -72,7 +72,7 @@ test("M60: group heads toggle with aria-expanded; the whole head is the button",
   assert.equal(kopf.querySelector(".dev-gruppe-text").textContent, "Sensoren (1)");
   kopf.click();
   assert.equal(kopf.getAttribute("aria-expanded"), "false");
-  assert.ok(kopf.parentNode.classList.contains("dev-zu"));
+  assert.ok(kopf.closest(".dev-gruppe").classList.contains("dev-zu"));
   kopf.click();
   assert.equal(kopf.getAttribute("aria-expanded"), "true");
 });
