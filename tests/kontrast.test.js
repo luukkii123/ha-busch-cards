@@ -17,6 +17,7 @@ const CAL = slice("const CAL_STIL = `", "`;");
 const NET = slice("const BUSCH_NETWORK_STYLE=", "`;");
 const SMART = slice("const BUSCH_SMART_EDITOR_CSS", "`;");
 const DEV = slice("const DEV_STIL = `", "`;");
+const SHARED = slice("/* BEGIN BUSCH SHARED UI", "/* END BUSCH SHARED UI");
 
 const THEMA = {
   light: { "primary-color": "#03a9f4", "primary-text-color": "#212121", "secondary-text-color": "#727272", "card-background-color": "#ffffff",
@@ -112,7 +113,8 @@ const FAELLE = [
   // Run karten-20261119-164604: icons measured in the render harness (its ha-icon draws a glyph).
   ["schedule plus icon", SCHEDULE, ".day .add-block", "background"],
   ["device icon", DEV, ".dev-icon", "var(--secondary-background-color)"],
-  ["device error state icon", DEV, ".dev-hinweis .busch-state[data-kind=error] .busch-state-icon", CARD],
+  // The device card shows the shared state block; its error icon colour comes from Shared UI 0.5.0 (no local override).
+  ["device error state icon", SHARED, ".busch-state[data-kind=error] .busch-state-icon", CARD],
 ];
 
 test("M26: text colours of busch-cards reach 4.5:1 in light and dark (blocks, today marks, buttons, badges, errors, icons)", () => {
@@ -131,4 +133,8 @@ test("M26: the schedule colour hook stays the whole block surface; HA blue stays
   assert.match(regel(SCHEDULE, ".block"), /background: var\(--busch-schedule-color, color-mix\(in srgb, var\(--primary-color\) 50%, var\(--card-background-color, #fff\)\)\);/);
   assert.match(regel(SCHEDULE, ".day.today"), /box-shadow: inset 3px 0 0 var\(--primary-color\);/);
   assert.match(regel(SCHEDULE, ".day.today .label"), /font-weight: var\(--ha-font-weight-bold, 700\);/, "today is not marked by colour alone");
+});
+
+test("M26: the device card has no local override of the shared state icon colour", () => {
+  assert.doesNotMatch(DEV, /busch-state-icon/);
 });

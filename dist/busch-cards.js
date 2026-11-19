@@ -7137,9 +7137,6 @@ const DEV_STIL = `
   .dev-gruppe.dev-zu .dev-zeilen { display:none; }
   .dev-zeilen > * { display:block; padding:var(--ha-space-1, 4px) 0; }
   .dev-hinweis { overflow-wrap:anywhere; min-width:0; }
-  /* M26 (E6): the shared error icon (HA red) is 4.0:1 on the dark card; mixed toward the text colour like the
-     schedule error texts. The shared source keeps HA red; this card measured it. */
-  .dev-hinweis .busch-state[data-kind=error] .busch-state-icon { color:color-mix(in srgb, var(--error-color, #db4437) 70%, var(--primary-text-color)); }
   .dev-kopf:focus-visible,.dev-gruppe-kopf:focus-visible,.dev-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:-2px; }
   @container (max-width:380px) {
     .dev-kopf { gap:var(--ha-space-2, 8px); padding:var(--ha-space-3, 12px); }
