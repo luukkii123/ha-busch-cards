@@ -3608,7 +3608,8 @@ function calTerminHtml(termin, optionen) {
   const punkt = optionen.mehrereKalender
     ? `<span class="cal-punkt" style="background:${calEscape(farbe)}"></span>`
     : "";
-  const zeit = calIstGanztags(termin)
+  const ganztags = calIstGanztags(termin);
+  const zeit = ganztags
     ? texte.ganztags
     : `${calFormatUhrzeit(calStartDatum(termin), optionen.locale)} – ` +
       `${calFormatUhrzeit(calEndDatum(termin), optionen.locale)}`;
@@ -3631,10 +3632,34 @@ function calTerminHtml(termin, optionen) {
     `data-idx="${calEscape(idx)}" ` +
     `data-rid="${calEscape(termin.recurrence_id || "")}" ` +
     `title="${calEscape(hinweis)}">` +
-    `${punkt}<span class="cal-zeit">${calEscape(zeit)}</span>` +
+    `${punkt}<span class="cal-zeit${ganztags ? " cal-ganztags" : ""}">${calEscape(zeit)}</span>` +
     `<span class="cal-titel">${calEscape(termin.summary || texte.ohneTitel)}</span>` +
     `</div>`
   );
+}
+
+/**
+ * M25: the lines of the month list. A day with events is its own row; with
+ * `zeigeLeereTage`, consecutive empty days of the same kind (weekday or
+ * weekend) share one line (`lauf`), so every day stays in the list while the
+ * month gets far shorter. Used by the list and by `getCardSize`.
+ */
+function calZeilen(tage, zeigeLeereTage) {
+  const zeilen = [];
+  let lauf = null;
+  for (const tag of tage || []) {
+    if (tag.termine.length) {
+      zeilen.push({ art: "tag", tag });
+      lauf = null;
+    } else if (zeigeLeereTage) {
+      if (!lauf || lauf.wochenende !== Boolean(tag.istWochenende)) {
+        lauf = { art: "lauf", wochenende: Boolean(tag.istWochenende), tage: [] };
+        zeilen.push(lauf);
+      }
+      lauf.tage.push(tag);
+    }
+  }
+  return zeilen;
 }
 
 function calListeHtml(tage, optionen) {
@@ -3642,27 +3667,28 @@ function calListeHtml(tage, optionen) {
   // vor allem der Fall, dass sie im Vormonat gerade NICHT erscheinen darf.
   // Ohne Angabe bleibt es bei der Uhr; fuer die Karte aendert sich nichts.
   const heuteSchluessel = calTagesSchluessel(optionen.heute || new Date());
-  const zeilen = [];
-  for (const tag of tage) {
-    if (!optionen.zeigeLeereTage && tag.termine.length === 0) continue;
+  const tagHtml = (tag) => {
     const klassen = ["cal-tag"];
     if (tag.istWochenende) klassen.push("cal-wochenende");
     if (tag.schluessel === heuteSchluessel) klassen.push("cal-heute");
     if (tag.termine.length === 0) klassen.push("cal-leer");
     const inhalt = tag.termine.length
-      ? tag.termine.map((t) => calTerminHtml(t, optionen)).join("")
-      : `<div class="cal-termin cal-nichts"></div>`;
-    zeilen.push(
+      ? `<div class="cal-inhalt">${tag.termine.map((t) => calTerminHtml(t, optionen)).join("")}</div>`
+      : "";
+    return (
       `<div class="${klassen.join(" ")}">` +
         `<div class="cal-datum">` +
         `<span class="cal-wt">${calEscape(calWochentagKurz(tag.datum, optionen.locale))}</span>` +
         `<span class="cal-nr">${tag.tagNummer}.</span>` +
         `</div>` +
-        `<div class="cal-inhalt">${inhalt}</div>` +
+        inhalt +
         `</div>`
     );
-  }
-  return zeilen.join("");
+  };
+  return calZeilen(tage, optionen.zeigeLeereTage).map((zeile) => (zeile.art === "tag"
+    ? tagHtml(zeile.tag)
+    : `<div class="cal-lauf${zeile.wochenende ? " cal-wochenende-lauf" : ""}">${zeile.tage.map(tagHtml).join("")}</div>`
+  )).join("");
 }
 
 const CAL_STANDARD = {
@@ -3764,10 +3790,11 @@ const CAL_STIL = `
   busch-calendar-card .cal-body > * { flex-shrink:0; }
   busch-calendar-card .cal-body > .cal-liste { flex:1 1 auto; min-height:0; overflow:auto; }
 
-  .cal-kopf { display:flex; align-items:center; justify-content:space-between;
+  /* M25: month name left, then Today and the two arrows as buttons with a surface. */
+  .cal-kopf { display:flex; align-items:center;
     gap:var(--ha-space-2, 8px);
     padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
-  .cal-monat { font-size:1.1em; font-weight:var(--ha-font-weight-bold, 600);
+  .cal-monat { flex:1 1 auto; font-size:1.1em; font-weight:var(--ha-font-weight-bold, 600);
     color:var(--primary-text-color); min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Zum \`user-select: none\` an dieser Stelle und an \`.cal-termin\`:
@@ -3785,23 +3812,39 @@ const CAL_STIL = `
      WebKit, und dort gilt bis heute nur die praefigierte Form. \`-moz-\` und
      \`-ms-\` stehen bewusst NICHT da — Firefox versteht die schlichte Form seit
      69, und der alte Edge spielt hier keine Rolle. */
-  .cal-pfeil { display:inline-grid; place-items:center; width:44px; height:44px;
-    background:none; border:none; cursor:pointer; padding:0;
-    color:var(--secondary-text-color); font-size:1.2em; line-height:1; border-radius:6px;
+  .cal-pfeil { display:inline-grid; place-items:center; flex:0 0 auto; width:44px; height:44px;
+    background:var(--secondary-background-color, transparent);
+    border:1px solid var(--divider-color); cursor:pointer; padding:0; box-sizing:border-box;
+    color:var(--primary-text-color); font:inherit; font-size:1.2em; line-height:1;
+    border-radius:var(--ha-card-border-radius, 12px);
     -webkit-user-select:none; user-select:none; }
   .cal-pfeil:hover { background:var(--divider-color); color:var(--primary-text-color); }
+  .cal-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+  .cal-heute-knopf { width:auto; padding:0 var(--ha-space-3, 12px); font-size:inherit;
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Der Kartentitel ist einzeilig und wird GEKUERZT, nicht umgebrochen
      (Regel 1, letzter Punkt). */
   .cal-titel-zeile { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) 0;
     font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color);
     min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cal-liste { padding:0 var(--ha-space-2, 8px) var(--ha-space-2, 8px); }
-  .cal-tag { display:flex; gap:12px; padding:6px 8px; border-radius:8px;
+  /* M25: fixed date column, events beside it on the same baseline. */
+  .cal-tag { display:grid; grid-template-columns:64px minmax(0, 1fr); column-gap:12px;
+    align-items:baseline; padding:0 8px; border-radius:8px;
     border-bottom:1px solid var(--divider-color); }
-  .cal-tag:last-child { border-bottom:none; }
-  .cal-wochenende { background:var(--secondary-background-color); }
-  .cal-heute { outline:2px solid var(--primary-color); outline-offset:-2px; }
-  .cal-datum { display:flex; gap:6px; flex:0 0 auto; min-width:64px;
+  /* Consecutive empty days of one kind share one line; each day is a small chip. */
+  .cal-lauf { display:flex; flex-wrap:wrap; gap:4px 6px; padding:4px 0;
+    border-bottom:1px solid var(--divider-color); }
+  .cal-lauf .cal-tag { display:flex; padding:2px 8px; border-bottom:none; border-radius:6px; }
+  .cal-liste > :last-child { border-bottom:none; }
+  /* Weekend: surface plus a rim, so it also reads in a dark theme. */
+  .cal-wochenende { background:var(--secondary-background-color);
+    box-shadow:inset 0 0 0 1px var(--divider-color); }
+  /* Today as in the schedule card: tint, accent bar, bold date. */
+  .cal-heute { background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color, #fff));
+    box-shadow:inset 3px 0 0 var(--primary-color); }
+  .cal-heute .cal-wt, .cal-heute .cal-nr { color:var(--primary-color); }
+  .cal-datum { display:flex; gap:6px; min-width:0;
     align-items:baseline;
     color:var(--secondary-text-color); font-variant-numeric:tabular-nums; }
   .cal-wt, .cal-nr { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -3816,7 +3859,7 @@ const CAL_STIL = `
      nichts zu markieren, die Regel kann dort folglich nichts wegnehmen. Eine
      Ausnahme (\`user-select: text\`) waere eine zweite Stelle, die dasselbe
      regelt, ohne etwas zu bewirken — und die eines Tages auseinanderlaeuft. */
-  .cal-leer .cal-termin { cursor:default; min-height:1.2em; }
+  .cal-leer { cursor:default; }
   /* M23: tapped row while HA's dialog loads (dimmed, not only a colour change). */
   .cal-termin-wartet { opacity:.55; cursor:progress; }
   .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
@@ -3827,6 +3870,8 @@ const CAL_STIL = `
   .cal-zeit { color:var(--secondary-text-color); font-variant-numeric:tabular-nums;
     flex:0 0 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-ganztags { padding:0 8px; border-radius:999px; line-height:1.6;
+    background:var(--secondary-background-color); box-shadow:inset 0 0 0 1px var(--divider-color); }
   .cal-titel { color:var(--primary-text-color); flex:1 1 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Linksbuendig mit festem Abstand, NICHT ueber die Breite verteilt.
@@ -4355,8 +4400,17 @@ class BuschCalendarCard extends HTMLElement {
     return this._lade(0);
   }
 
+  /** M25: from the rendered lines (50 px per unit): an event row 1 px border plus 48 px per event, a shared line of
+   *  empty days 33 px, head 64 px (+31 with a title), footer 40 px, list padding 8 px.
+   *  Before the first load the old estimate stays. */
   getCardSize() {
-    return this._config && this._config.show_empty_days ? 12 : 6;
+    if (!this._config) return 6;
+    if (!Array.isArray(this._tage)) return this._config.show_empty_days ? 12 : 6;
+    let px = 64 + 8 + (this._config.title ? 31 : 0) + (this._config.show_total ? 40 : 0);
+    for (const zeile of calZeilen(this._tage, this._config.show_empty_days)) {
+      px += zeile.art === "tag" ? 1 + 48 * zeile.tag.termine.length : 33;
+    }
+    return Math.max(2, Math.ceil(px / 50));
   }
 
   /** Spalten in Vielfachen von 3 (Regel 3). Eine Monatsliste braucht Hoehe,
@@ -4445,6 +4499,12 @@ class BuschCalendarCard extends HTMLElement {
     this._fehler = fehler;
     this._nichtGezeigt = calZaehleNichtGezeigt(alle, this._tage);
     this._render();
+  }
+
+  /** M25: the Today button. Back to the running month; already there, nothing happens. */
+  _zumAktuellenMonat() {
+    if (this._versatzLaufend === 0) return;
+    this._blaettern(-this._versatzLaufend);
   }
 
   _blaettern(schritt) {
@@ -4618,7 +4678,8 @@ class BuschCalendarCard extends HTMLElement {
       this._koerper.addEventListener("click", (ereignis) => {
         const pfeil = ereignis.target.closest(".cal-pfeil");
         if (pfeil) {
-          this._blaettern(Number(pfeil.dataset.schritt));
+          if (pfeil.dataset.schritt === "heute") this._zumAktuellenMonat();
+          else this._blaettern(Number(pfeil.dataset.schritt));
           return;
         }
         const zeile = ereignis.target.closest(".cal-termin");
@@ -4652,13 +4713,12 @@ class BuschCalendarCard extends HTMLElement {
         ? `<div class="cal-titel-zeile">${calEscape(this._config.title)}</div>`
         : "") +
       `<div class="cal-kopf">` +
-      (this._config.navigation
-        ? `<button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>`
-        : `<span></span>`) +
       `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>` +
       (this._config.navigation
-        ? `<button class="cal-pfeil" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button>`
-        : `<span></span>`) +
+        ? `<button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>` +
+          `<button class="cal-pfeil cal-heute-knopf" data-schritt="heute" aria-label="${calEscape(t.zumAktuellenMonat)}" title="${calEscape(t.zumAktuellenMonat)}">${calEscape(t.heute)}</button>` +
+          `<button class="cal-pfeil" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button>`
+        : "") +
       `</div>`;
 
     let rumpf;
@@ -4809,6 +4869,8 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
       summeGanztags: "{n} ganztägig",
       vorigerMonat: "Voriger Monat",
       naechsterMonat: "Nächster Monat",
+      heute: "Heute",
+      zumAktuellenMonat: "Zum aktuellen Monat",
       farben: "Farben",
     },
   },
@@ -4851,6 +4913,8 @@ const TEXTE_BUSCH_CALENDAR_CARD = {
       summeGanztags: "{n} all day",
       vorigerMonat: "Previous month",
       naechsterMonat: "Next month",
+      heute: "Today",
+      zumAktuellenMonat: "Go to the current month",
       farben: "Colours",
     },
   },
