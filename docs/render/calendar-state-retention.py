@@ -78,13 +78,16 @@ with sync_playwright() as p:
    kp.set_viewport_size({'width':width,'height':1600})
    _thema_setzen(kp,theme)
    kp.wait_for_timeout(300)
-   geo=kp.evaluate("""()=>{const k=document.getElementById('karte-a');const row=k.querySelector('.cal-tag:not(.cal-leer)');const nr=row.querySelector('.cal-nr').getBoundingClientRect(),zeit=row.querySelector('.cal-zeit').getBoundingClientRect();return {hoehe:Math.round(k.getBoundingClientRect().height),zeilen:k.querySelectorAll('.cal-tag').length,laeufe:k.querySelectorAll('.cal-lauf').length,datumZeitUnten:Math.round((zeit.bottom-nr.bottom)*10)/10,datumZeitOben:Math.round((zeit.top-nr.top)*10)/10,zeileHoehe:Math.round(row.getBoundingClientRect().height),termine:[...k.querySelectorAll('.cal-termin[data-uid]')].map(e=>Math.round(e.getBoundingClientRect().height)),knopf:[...k.querySelectorAll('.cal-kopf .cal-pfeil')].map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)]})}}""")
+   geo=kp.evaluate("""()=>{const k=document.getElementById('karte-a');const row=k.querySelector('.cal-tag:not(.cal-leer)');const nr=row.querySelector('.cal-nr').getBoundingClientRect(),zeit=row.querySelector('.cal-zeit').getBoundingClientRect();return {hoehe:Math.round(k.getBoundingClientRect().height),zeilen:k.querySelectorAll('.cal-tag').length,laeufe:k.querySelectorAll('.cal-lauf').length,datumZeitUnten:Math.round((zeit.bottom-nr.bottom)*10)/10,datumZeitOben:Math.round((zeit.top-nr.top)*10)/10,zeileHoehe:Math.round(row.getBoundingClientRect().height),termine:[...k.querySelectorAll('.cal-termin[data-uid]')].map(e=>Math.round(e.getBoundingClientRect().height)),knopf:[...k.querySelectorAll('.cal-kopf .cal-pfeil')].map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)]}),monat:(()=>{const m=k.querySelector('.cal-monat-knopf'),r=m.getBoundingClientRect(),c=k.querySelector('ha-card').getBoundingClientRect(),n=k.querySelector('.cal-nav').getBoundingClientRect();return {text:m.textContent,scrollW:m.scrollWidth,clientW:m.clientWidth,innen:r.left>=c.left-0.5&&r.right<=c.right+0.5,navUeberlappt:!(n.top>=r.bottom-0.5||n.left>=r.right-0.5)}})()}}""")
    kompakt['faelle'].append({'breite':width,'thema':theme,**geo})
    # The card must size to its content, not to the viewport: a quirks-mode or stretched frame would pass no height check.
    assert kp.evaluate("()=>document.compatMode")=='CSS1Compat' and geo['hoehe']<kp.viewport_size['height']-2*16,geo
    # Date and the event time on one line: same baseline (bottoms within 3 px), one row.
    assert abs(geo['datumZeitUnten'])<=3 and geo['zeileHoehe']<=60,geo
    assert geo['zeilen']==31 and min(geo['termine'])>=44 and all(w>=44 and h>=44 for w,h in geo['knopf']),geo
+   # Bildprüfung 19.11. (kalender-kompakt-320-*: "Augu…", no ▾): the full month name with its ▾ (::after, part of
+   # the button's scroll width) is not shortened, sits in the card and the controls do not cover it.
+   assert geo['monat']['text'].startswith('August 2026') and geo['monat']['scrollW']<=geo['monat']['clientW'] and geo['monat']['innen'] and not geo['monat']['navUeberlappt'],geo
    if width==480: assert geo['hoehe']<=GRENZE_480,geo
    kp.locator('#karte-a').screenshot(path=str(out/f'kalender-kompakt-{width}-{theme}.png'))
  # Today button: page back with the keyboard, then Today; the month returns and focus stays on it.

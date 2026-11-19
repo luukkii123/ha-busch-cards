@@ -3790,10 +3790,13 @@ const CAL_STIL = `
   busch-calendar-card .cal-body > * { flex-shrink:0; }
   busch-calendar-card .cal-body > .cal-liste { flex:1 1 auto; min-height:0; overflow:auto; }
 
-  /* M25: month name left, then Today and the two arrows as buttons with a surface. */
-  .cal-kopf { display:flex; align-items:center;
+  /* M25: month name left, then Today and the two arrows as buttons with a surface. When the full
+     month name and the controls do not fit one line (320 px), the controls wrap below it, right-aligned:
+     the month keeps its flex basis auto, so the line breaks before the name would be shortened. */
+  .cal-kopf { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center;
     gap:var(--ha-space-2, 8px);
     padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
+  .cal-nav { display:flex; flex:0 0 auto; gap:var(--ha-space-2, 8px); min-width:0; }
   .cal-monat { flex:1 1 auto; font-size:1.1em; font-weight:var(--ha-font-weight-bold, 600);
     color:var(--primary-text-color); min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -5007,9 +5010,9 @@ class BuschCalendarCard extends HTMLElement {
         ? `<button class="cal-monat cal-monat-knopf" data-schritt="monat" aria-haspopup="dialog" aria-expanded="${this._wahl && !this._wahl.el.hidden ? "true" : "false"}" title="${calEscape(t.monatWaehlen)}">${calEscape(calMonatsName(start, locale))}</button>`
         : `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>`) +
       (this._config.navigation
-        ? `<button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>` +
+        ? `<div class="cal-nav"><button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>` +
           `<button class="cal-pfeil cal-heute-knopf" data-schritt="heute" aria-label="${calEscape(t.zumAktuellenMonat)}" title="${calEscape(t.zumAktuellenMonat)}">${calEscape(t.heute)}</button>` +
-          `<button class="cal-pfeil" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button>`
+          `<button class="cal-pfeil" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button></div>`
         : "") +
       `</div>`;
 
