@@ -43,6 +43,11 @@ with sync_playwright() as pw:
      # M30: values sit in a definition list inside each row's <details> (collapsed, so read textContent, not innerText).
      if scenario=='normal':pairs=page.evaluate("[...document.querySelector('[data-test-card]').shadowRoot.querySelectorAll('dl.client-details>div')].map(d=>d.children[0].textContent+': '+d.children[1].textContent)");assert 'Verbindungspunkt: Unbekannt' in pairs,pairs
      if scenario=='error':assert 'CIDR benötigt' in text
+     # Bildprüfung 19.11. (network-normal-320: "40 von 40 Clients" above two rows and "2 weitere anzeigen"): the count names
+     # the rows shown. normal pages with count 2; many sets count 0 (no limit), so all 40 rows and no "more" button.
+     if kind=='network' and scenario in ('normal','many'):
+      shown=page.evaluate("(()=>{const r=document.querySelector('[data-test-card]').shadowRoot;return {rows:r.querySelectorAll('article.client').length,count:r.querySelector('[data-control=count]').textContent,more:[...r.querySelectorAll('button')].map(b=>b.getAttribute('aria-label')||'').filter(l=>/weitere anzeigen$/.test(l))}})()")
+      assert shown==({'rows':2,'count':'2 von 40 Clients','more':['2 weitere anzeigen']} if scenario=='normal' else {'rows':40,'count':'40 von 40 Clients','more':[]}),shown
      if scenario=='nicht-admin':
       # M17: admin_actions true and a non-admin viewer: no router, WLAN or internet buttons; WOL stays.
       labels=page.evaluate("[...document.querySelector('[data-test-card]').shadowRoot.querySelectorAll('button')].map(b=>b.getAttribute('aria-label'))")

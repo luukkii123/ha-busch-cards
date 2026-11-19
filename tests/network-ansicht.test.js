@@ -104,3 +104,16 @@ test('Bildprüfung 19.11.: narrow cards put each detail key above its value and 
  assert.match(css,/@container\s*\(max-width:\s*400px\)\s*\{[^{}]*\.client-details\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
  assert.match(css,/\.client-tools\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,180px\),1fr\)\)/);
 });
+
+test('Bildprüfung 19.11.: the count names the rows actually shown while "N more" hides some',()=>{
+ // network-normal-320: two rows and "2 weitere anzeigen" under "40 von 40 Clients" read as if all 40 were listed.
+ const l=load(),f=many(l),c=card(l,f,{count:5});const count=()=>descend(toolbar(c)).find(n=>n.dataset?.control==='count').textContent;
+ assert.equal(articles(c).length,5);assert.equal(count(),'5 von 13 Clients');
+ const more=()=>descend(c._clientBody).find(n=>n.tagName==='BUTTON'&&/weitere anzeigen$/.test(n.attributes['aria-label']||''));
+ more().listeners.click({stopPropagation(){}});assert.equal(count(),'10 von 13 Clients');
+ more().listeners.click({stopPropagation(){}});assert.equal(count(),'13 von 13 Clients');
+ choose(c,'filter','not_home');assert.equal(articles(c).length,4);assert.equal(count(),'4 von 13 Clients','all four matches visible');
+ choose(c,'filter','home');assert.equal(articles(c).length,5);assert.equal(count(),'5 von 9 Treffern, 13 Clients gesamt');
+ c._hass={...c._hass,locale:{language:'en'}};c._toolbarLocale=null;c._renderClients();assert.equal(count(),'5 of 9 matches, 13 clients in total');
+ for(const Card of [l.BuschNetworkCard,l.BuschFritzDeviceCard])for(const language of ['de','en']){const x=card(l,f,{device_id:'router',count:0},Card);x._hass={...x._hass,locale:{language}};assert.match(x._text().result_count_paged,/\{shown\}.*\{matches\}.*\{total\}/,Card.name+' '+language);x.disconnectedCallback();}
+});

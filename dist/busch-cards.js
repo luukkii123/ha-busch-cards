@@ -8282,6 +8282,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
   sort_name: "Name",
   sort_last_seen: "Zuletzt gesehen",
   result_count: "{shown} von {total} Clients",
+  result_count_paged: "{shown} von {matches} Treffern, {total} Clients gesamt",
   all: "Alle",
   auto: "Automatisch",
   image_mode: "Bild",
@@ -8604,6 +8605,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
   sort_name: "Name",
   sort_last_seen: "Last seen",
   result_count: "{shown} of {total} clients",
+  result_count_paged: "{shown} of {matches} matches, {total} clients in total",
   all: "All",
   auto: "Automatic",
   image_mode: "Image",
@@ -8928,6 +8930,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   sort_name: "Name",
   sort_last_seen: "Zuletzt gesehen",
   result_count: "{shown} von {total} Clients",
+  result_count_paged: "{shown} von {matches} Treffern, {total} Clients gesamt",
   all: "Alle",
   auto: "Automatisch",
   image_mode: "Bild",
@@ -9250,6 +9253,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   sort_name: "Name",
   sort_last_seen: "Last seen",
   result_count: "{shown} of {total} clients",
+  result_count_paged: "{shown} of {matches} matches, {total} clients in total",
   all: "All",
   auto: "Automatic",
   image_mode: "Image",
@@ -10464,7 +10468,7 @@ class BuschNetworkBaseCard extends HTMLElement {
   /* M30: a real button that names how many rows the next step reveals (after search and filter). */
   if(rows.length<all.length){const label=t.more.replace('{n}',String(Math.min(c.count,all.length-rows.length))),key=label+'|'+this._busy;if(this._moreNodeKey!==key){this._moreNodeKey=key;this._moreNode=buschNetworkNode('div',undefined,'actions more-actions');this._button(this._moreNode,label,()=>{this._visible=Math.min(all.length,(this._visible??this._config.count)+this._config.count);this._renderClients();},'secondary');}nodes.push(this._moreNode);}
   if(this._clientBody.children.length!==nodes.length||nodes.some((n,i)=>this._clientBody.children[i]!==n))this._clientBody.replaceChildren(...nodes);if(this._clientBody.isConnected)this._pruneGestures();
-  if(this._toolbar){const view=this._view,hidden=this._rows.length<=BUSCH_NETWORK_TOOLBAR_MIN&&!view.search&&view.filter==='all';if(this._toolbar.hidden!==hidden)this._toolbar.hidden=hidden;this._syncToolbar();const count=t.result_count.replace('{shown}',String(all.length)).replace('{total}',String(this._rows.length));if(this._toolbarParts.count.textContent!==count)this._toolbarParts.count.textContent=count;}
+  if(this._toolbar){const view=this._view,hidden=this._rows.length<=BUSCH_NETWORK_TOOLBAR_MIN&&!view.search&&view.filter==='all';if(this._toolbar.hidden!==hidden)this._toolbar.hidden=hidden;this._syncToolbar();/* Bildprüfung 19.11.: count the rows actually shown; while "N more" hides matches of a search/filter, name both. */const count=(rows.length<all.length&&all.length<this._rows.length?t.result_count_paged.replace('{matches}',String(all.length)):t.result_count).replace('{shown}',String(rows.length)).replace('{total}',String(this._rows.length));if(this._toolbarParts.count.textContent!==count)this._toolbarParts.count.textContent=count;}
   if(this._clientSection?.firstChild){const text=t.clients+' ('+this._rows.length+')';if(this._clientSection.firstChild.textContent!==text)this._clientSection.firstChild.textContent=text;}}
  _render(){if(!this._hass||!this._config)return;const t=this._text(),c=this._config;let model;try{model=this._kind==='fritz'&&this._core?buschFritzModel(this._core,c):null;}catch(error){this._queryError=error.message;}const signature=buschCoreKey({config:c,clock:this._clockEpoch,locale:BuschUI.language(this._hass),model:model?{device:model.device,roles:Object.fromEntries(Object.entries(model.roles).map(([k,e])=>[k,e?.stateObject])),wlan:model.wlan.map(e=>e.stateObject),ambiguous:model.ambiguous}:null,busy:this._busy,error:this._error,configError:this._configError,queryError:this._queryError,registryError:[...(this._core?.lastErrors?.keys()||[])],admin:this._hass.user?.is_admin});if(signature===this._shellSignature){this._renderClients();return;}this._shellSignature=signature;
   /* M30: the toolbar moves into the new shell; keep focus and caret in it across rebuilds (router sensors, clock, busy state). */
