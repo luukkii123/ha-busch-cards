@@ -2517,25 +2517,16 @@ class BuschScheduleCard extends HTMLElement {
           margin: 20px 0 0;
           padding: 0;
         }
-        .actions button {
-          font: inherit;
+        /* M62: the dialog actions are the shared .busch-btn (secondary with a frame, primary filled);
+           only the label clipping stays here (rule 1). */
+        .actions .busch-btn {
           font-size: var(--ha-font-size-m, 14px);
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          border: none;
-          background: none;
-          color: var(--primary-color);
-          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
-          border-radius: 6px;
-          cursor: pointer;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          min-width: 0;
         }
-        .actions button:hover { background: color-mix(in srgb, var(--primary-color) 12%, transparent); }
-        .actions button.danger { color: var(--error-color, #db4437); }
-        .actions button.danger:hover { background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
+        .actions .busch-btn[data-variant="secondary"]:hover,
+        .actions .busch-btn[data-variant="destructive"]:hover { background: var(--secondary-background-color, transparent); }
 
         .choices { display: flex; flex-direction: column; }
         .choices button {
@@ -2590,8 +2581,8 @@ class BuschScheduleCard extends HTMLElement {
             <div class="msg" role="status" aria-live="polite"></div>
           </div>
           <menu class="actions">
-            <button data-act="cancel"></button>
-            <button data-act="ok"></button>
+            <button class="busch-btn" data-variant="secondary" data-act="cancel"></button>
+            <button class="busch-btn" data-variant="primary" data-act="ok"></button>
           </menu>
         </div>
       </dialog>
@@ -2611,7 +2602,7 @@ class BuschScheduleCard extends HTMLElement {
             </div>
           </div>
           <menu class="actions">
-            <button data-act="cancel"></button>
+            <button class="busch-btn" data-variant="secondary" data-act="cancel"></button>
           </menu>
         </div>
       </dialog>
@@ -3969,14 +3960,10 @@ const CAL_STIL = `
      WebKit, und dort gilt bis heute nur die praefigierte Form. \`-moz-\` und
      \`-ms-\` stehen bewusst NICHT da — Firefox versteht die schlichte Form seit
      69, und der alte Edge spielt hier keine Rolle. */
-  .cal-pfeil { display:inline-grid; place-items:center; flex:0 0 auto; width:44px; height:44px;
-    background:var(--secondary-background-color, transparent);
-    border:1px solid var(--divider-color); cursor:pointer; padding:0; box-sizing:border-box;
-    color:var(--primary-text-color); font:inherit; font-size:1.2em; line-height:1;
-    border-radius:var(--ha-card-border-radius, 12px);
-    -webkit-user-select:none; user-select:none; }
-  .cal-pfeil:hover { background:var(--divider-color); color:var(--primary-text-color); }
-  .cal-pfeil:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+  /* M62: the arrows and Today are the shared .busch-btn (secondary, 44 px); size and glyph here. */
+  .cal-pfeil { flex:0 0 auto; width:44px; height:44px; padding:0; font-size:1.2em; line-height:1;
+    cursor:pointer; -webkit-user-select:none; user-select:none; }
+  .cal-pfeil:hover { background:var(--secondary-background-color, transparent); }
   .cal-heute-knopf { width:auto; padding:0 var(--ha-space-3, 12px); font-size:inherit;
     min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* M25/W14.5: the month name opens the month picker; a quiet button with a 44 px target. */
@@ -4031,13 +4018,10 @@ const CAL_STIL = `
     font-weight:var(--ha-font-weight-bold, 600); }
   .cal-wahl-aktionen { display:flex; justify-content:flex-end; gap:var(--ha-space-2, 8px);
     margin-top:var(--ha-space-4, 16px); }
-  .cal-wahl-aktionen button { min-height:44px; min-width:64px; padding:0 var(--ha-space-3, 12px);
-    border:none; border-radius:var(--ha-card-border-radius, 12px); background:none; cursor:pointer;
-    color:var(--primary-color); font:inherit; font-size:var(--ha-font-size-m, 14px);
-    text-transform:uppercase; letter-spacing:0.05em;
+  /* M62: Cancel is the shared .busch-btn (secondary); only the label clipping stays here. */
+  .cal-wahl-aktionen button { min-height:44px; min-width:64px; font-size:var(--ha-font-size-m, 14px);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .cal-wahl-aktionen button:hover { background:var(--secondary-background-color, transparent); }
-  .cal-wahl-aktionen button:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+  .cal-wahl-aktionen .busch-btn:hover { background:var(--secondary-background-color, transparent); }
   /* Der Kartentitel ist einzeilig und wird GEKUERZT, nicht umgebrochen
      (Regel 1, letzter Punkt). */
   .cal-titel-zeile { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px) 0;
@@ -4102,8 +4086,8 @@ const CAL_STIL = `
     border-top:1px solid var(--divider-color); color:var(--secondary-text-color); }
   .cal-fuss span { min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; }
-  .cal-hinweis { padding:var(--ha-space-3, 12px) var(--ha-space-4, 16px);
-    color:var(--error-color, #db4437); overflow-wrap:anywhere; }
+  /* M62: partial data is the shared warning notice (icon, frame), not red body text. */
+  .cal-hinweis { margin:var(--ha-space-2, 8px) var(--ha-space-4, 16px) var(--ha-space-3, 12px); overflow-wrap:anywhere; }
   .cal-leermeldung { overflow-wrap:anywhere; min-width:0; }
 `;
 
@@ -4777,8 +4761,10 @@ class BuschCalendarCard extends HTMLElement {
     titel.id = titelId;
     kopf.append(x, titel);
     const jahr = el("div", "cal-wahl-jahr");
-    const zurueck = el("button", "cal-pfeil", "‹");
-    const vor = el("button", "cal-pfeil", "›");
+    const zurueck = el("button", "cal-pfeil busch-btn", "‹");
+    const vor = el("button", "cal-pfeil busch-btn", "›");
+    zurueck.dataset.variant = "secondary";
+    vor.dataset.variant = "secondary";
     zurueck.dataset.jahr = "-1";
     vor.dataset.jahr = "1";
     const jahrzahl = el("span", "cal-wahl-jahrzahl");
@@ -4795,8 +4781,9 @@ class BuschCalendarCard extends HTMLElement {
       raster.append(b);
     }
     const aktionen = el("div", "cal-wahl-aktionen");
-    const abbrechen = el("button");
+    const abbrechen = el("button", "busch-btn");
     abbrechen.type = "button";
+    abbrechen.dataset.variant = "secondary";
     abbrechen.dataset.wahl = "abbrechen";
     aktionen.append(abbrechen);
     dlg.append(kopf, jahr, raster, aktionen);
@@ -5163,9 +5150,9 @@ class BuschCalendarCard extends HTMLElement {
         ? `<button class="cal-monat cal-monat-knopf" data-schritt="monat" aria-haspopup="dialog" aria-expanded="${this._wahl && !this._wahl.el.hidden ? "true" : "false"}" title="${calEscape(t.monatWaehlen)}">${calEscape(calMonatsName(start, locale))}</button>`
         : `<span class="cal-monat">${calEscape(calMonatsName(start, locale))}</span>`) +
       (this._config.navigation
-        ? `<div class="cal-nav"><button class="cal-pfeil" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>` +
-          `<button class="cal-pfeil cal-heute-knopf" data-schritt="heute" aria-label="${calEscape(t.zumAktuellenMonat)}" title="${calEscape(t.zumAktuellenMonat)}">${calEscape(t.heute)}</button>` +
-          `<button class="cal-pfeil" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button></div>`
+        ? `<div class="cal-nav"><button class="cal-pfeil busch-btn" data-variant="secondary" data-schritt="-1" aria-label="${calEscape(t.vorigerMonat)}" title="${calEscape(t.vorigerMonat)}">‹</button>` +
+          `<button class="cal-pfeil cal-heute-knopf busch-btn" data-variant="secondary" data-schritt="heute" aria-label="${calEscape(t.zumAktuellenMonat)}" title="${calEscape(t.zumAktuellenMonat)}">${calEscape(t.heute)}</button>` +
+          `<button class="cal-pfeil busch-btn" data-variant="secondary" data-schritt="1" aria-label="${calEscape(t.naechsterMonat)}" title="${calEscape(t.naechsterMonat)}">›</button></div>`
         : "") +
       `</div>`;
 
@@ -5219,7 +5206,7 @@ class BuschCalendarCard extends HTMLElement {
 
     const hinweisText = calHinweisText(zustand?.kind === "error" ? [] : this._fehler || [], this._nichtGezeigt || 0, t);
     const hinweis = hinweisText
-      ? `<div class="cal-hinweis">${calEscape(hinweisText)}</div>`
+      ? `<div class="cal-hinweis busch-notice" data-tone="warning" role="status"><ha-icon class="busch-notice-icon" icon="mdi:alert-outline" aria-hidden="true"></ha-icon><div class="busch-notice-text">${calEscape(hinweisText)}</div></div>`
       : "";
 
     this._koerper.innerHTML = kopf + rumpf + fuss + hinweis;
@@ -7223,8 +7210,7 @@ const DEV_STIL = `
      Absicherung wie bei .dev-liste. */
   .dev-tile[hidden] { display:none !important; }
   .dev-zeile { display:block; }
-  .dev-dienstfehler { padding:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px);
-    color:var(--error-color); font-size:.85em; overflow-wrap:anywhere; }
+  .dev-dienstfehler { margin:0 var(--ha-space-4, 16px) var(--ha-space-2, 8px); overflow-wrap:anywhere; }
   .dev-dienstfehler[hidden] { display:none; }
   .dev-liste { border-top:1px solid var(--divider-color);
     padding:var(--ha-space-1, 4px) var(--ha-space-4, 16px) var(--ha-space-2, 8px); }
@@ -7425,7 +7411,9 @@ class BuschDeviceCard extends HTMLElement {
     // M27: the live region exists before its first state.
     this._hinweis = buschZustandsRegion(document.createElement("div"), "dev-hinweis");
     this._dienstFehler = document.createElement("div");
-    this._dienstFehler.className = "dev-dienstfehler";
+    this._dienstFehler.className = "dev-dienstfehler busch-notice";
+    this._dienstFehler.dataset.tone = "error";
+    this._dienstFehler.setAttribute("role", "alert");
     this._dienstFehler.hidden = true;
 
     this._karte.append(this._kopf, this._chips, this._dienstFehler,
@@ -7462,9 +7450,16 @@ class BuschDeviceCard extends HTMLElement {
   /** Ein fehlgeschlagener Dienstaufruf, zwei Sekunden sichtbar. */
   _zeigeDienstFehler(fehler) {
     if (!this._dienstFehler) return;
-    this._dienstFehler.textContent = buschFuellen(this._texte.dienstFehler, {
+    // M62: the shared error notice (icon plus text) instead of bare red text.
+    const icon = BuschUI.ha.icon("mdi:alert-circle-outline");
+    icon.className = "busch-notice-icon";
+    icon.setAttribute("aria-hidden", "true");
+    const text = document.createElement("div");
+    text.className = "busch-notice-text";
+    text.textContent = buschFuellen(this._texte.dienstFehler, {
       fehler: (fehler && fehler.message) || String(fehler),
     });
+    this._dienstFehler.replaceChildren(icon, text);
     this._dienstFehler.hidden = false;
     if (this._fehlerUhr) clearTimeout(this._fehlerUhr);
     this._fehlerUhr = setTimeout(() => { this._dienstFehler.hidden = true; }, 2000);
@@ -10535,6 +10530,8 @@ const BUSCH_NETWORK_STYLE=BuschUI.cardStyles+BuschUI.editorStyles+`
 .busch-ui-section{margin-block:var(--ha-space-4,16px)}summary{padding-block:var(--ha-space-2,8px);min-height:var(--ha-space-11,44px);overflow-wrap:anywhere}.clients{display:grid;grid-template-columns:repeat(var(--network-columns,1),minmax(0,1fr));gap:var(--ha-space-4,16px)}.clients{gap:var(--ha-space-1,4px)}.client{display:grid;align-content:start;gap:var(--ha-space-1,4px);padding-block:var(--ha-space-1,4px);border-bottom:1px solid var(--divider-color,transparent)}.client:last-of-type{border-bottom:0}.client-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--ha-space-2,8px);align-items:start}.client-line>.busch-ui-action{align-self:start;min-width:var(--ha-space-11,44px)}.client-entry{min-width:0}.client-entry>summary.client-head{list-style:none;display:grid;grid-template-columns:var(--ha-space-4,16px) var(--ha-space-10,40px) minmax(0,1fr);gap:var(--ha-space-2,8px);align-items:center;min-height:var(--ha-space-11,44px);padding-block:var(--ha-space-1,4px);cursor:pointer;border-radius:var(--ha-card-border-radius,12px)}.client-entry>summary.client-head::-webkit-details-marker{display:none}.client-entry>summary.client-head::before{content:'';justify-self:center;width:var(--ha-space-2,8px);height:var(--ha-space-2,8px);border-right:2px solid var(--secondary-text-color);border-bottom:2px solid var(--secondary-text-color);transform:rotate(-45deg)}.client-entry[open]>summary.client-head::before{transform:rotate(45deg)}.client-entry>summary.client-head:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}.client-meta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ha-space-1,4px) var(--ha-space-2,8px)}.client-ip{font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.client-details{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:var(--ha-space-1,4px) var(--ha-space-3,12px);margin:var(--ha-space-1,4px) 0 var(--ha-space-2,8px);padding-inline-start:calc(var(--ha-space-4,16px) + var(--ha-space-2,8px))}.client-details>div{display:contents}.client-details dt{color:var(--secondary-text-color);overflow-wrap:anywhere;font-size:var(--ha-font-size-s,12px)}.client-details dd{margin:0;overflow-wrap:anywhere;font-size:var(--ha-font-size-m,14px)}.compact .client-details dd{font-size:var(--ha-font-size-s,12px)}.client>.actions{margin-block:0 var(--ha-space-1,4px);padding-inline-start:calc(var(--ha-space-4,16px) + var(--ha-space-2,8px))}.client-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:var(--ha-space-2,8px);margin-block-end:var(--ha-space-2,8px)}.client-tools label{display:grid;gap:var(--ha-space-1,4px);font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere}.client-tools .tool-search{grid-column:1/-1}.client-tools input,.client-tools select{font:inherit;font-size:var(--ha-font-size-m,14px);min-height:var(--ha-space-11,44px);width:100%;padding-inline:var(--ha-space-3,12px);border:1px solid var(--divider-color);border-radius:var(--ha-card-border-radius,12px);background:var(--card-background-color);color:var(--primary-text-color)}.client-tools input:focus-visible,.client-tools select:focus-visible{outline:2px solid var(--primary-color);outline-offset:1px}.client-count{grid-column:1/-1;margin:0;font-size:var(--ha-font-size-s,12px);color:var(--secondary-text-color);overflow-wrap:anywhere}.clients>.more-actions{justify-content:flex-start}.registry-form{display:grid;gap:var(--ha-space-2,8px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--secondary-text-color);font-size:var(--ha-font-size-s,12px)}[hidden]{display:none!important}@container(max-width:600px){.clients{grid-template-columns:minmax(0,1fr)}}@container (max-width:400px){.client-details{grid-template-columns:minmax(0,1fr);row-gap:0}.client-details dd{margin-block-end:var(--ha-space-1,4px)}}
 `;
 function buschNetworkNode(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+/* M62: a hint that needs attention is the shared notice (icon, frame, text), not a bare paragraph. */
+function buschNetworkNotice(text,tone='info'){const node=buschNetworkNode('div',undefined,'busch-notice'),icon=BuschUI.ha.icon(tone==='info'?'mdi:information-outline':'mdi:alert-outline');node.dataset.tone=tone;icon.className='busch-notice-icon';icon.setAttribute('aria-hidden','true');node.appendChild(icon);node.appendChild(buschNetworkNode('div',text,'busch-notice-text'));return node;}
 function buschNetworkDuration(stamp,t,now=Date.now()){const age=buschNetworkTime(stamp,now);if(age===null)return t.time_unknown;const minutes=Math.floor(age/60000),hours=Math.floor(minutes/60),days=Math.floor(hours/24);return `${days?days+' '+t.days+' ':''}${hours%24} ${t.hours} ${minutes%60} ${t.minutes}`;}
 function buschNetworkTimestamp(stamp,hass,t){return stamp?new Date(stamp).toLocaleString(BuschUI.language(hass,{legacy:true})):t.time_unknown;}
 /* M30: view state of the client list (search, presence filter, sort). Filter and sort are remembered per card (R21);
@@ -10633,7 +10630,7 @@ class BuschNetworkBaseCard extends HTMLElement {
   buschZustand(this._stateNode,error?{kind:'error',title:t[error]||t.invalid_config}:!this._core?{kind:'loading',title:t.loading}:this._kind==='fritz'&&!this._configError&&!model?.device?{kind:'empty',icon:'mdi:router-wireless',title:t.choose}:null);card.appendChild(this._stateNode);
   if(this._core?.lastErrors?.size)card.appendChild(buschZustand(buschNetworkNode('div',undefined,'registry-state'),{kind:'error',icon:'mdi:database-alert-outline',title:t.registry_error}));
   if(this._kind==='fritz'&&!this._configError){
-   if(this._core&&model?.device){if(model.ambiguous.length)card.appendChild(buschNetworkNode('p',t.ambiguous,'message'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);
+   if(this._core&&model?.device){if(model.ambiguous.length)card.appendChild(buschNetworkNotice(t.ambiguous,'warning'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);
     const actions=buschNetworkNode('div',undefined,'actions');if(c.show_controls&&BuschUI.mayAct(this._hass,c,'admin')){for(const role of ['reboot','reconnect','update']){const e=model.roles[role];if(c['show_'+role]&&buschNetworkAvailable(e)&&(role!=='update'||(e.state==='on'&&(Number(e.attributes.supported_features)&1)&&!e.attributes.in_progress)))this._button(actions,t[role],()=>this._nativeAction(role),role==='reconnect'?'danger':'secondary');}}if(c.show_controls)this._customButtons(actions,null);if(c.show_details){const e=model.roles.connection||model.roles.uptime||model.roles.update;if(e)this._button(actions,t.details,()=>this._details(e.entity_id),'quiet');}if(actions.children.length)card.appendChild(actions);
     if(c.show_wlan&&model.wlan.length){const body=buschNetworkNode('div',undefined,'actions');for(const e of model.wlan){const label=e.registry?.name||e.attributes.friendly_name||e.entity_id;const known=buschNetworkAvailable(e)&&['on','off'].includes(e.state);if(c.show_controls&&known&&BuschUI.mayAct(this._hass,c,'admin'))this._button(body,label+' · '+(e.state==='on'?t.yes:t.no),()=>this._wlanAction(e.entity_id));else body.appendChild(buschNetworkNode('p',label+' · '+(known?(e.state==='on'?t.yes:t.no):(t[e.state]||t.unavailable)),'detail'));}this._section(card,'wlan',t.wlan,body);}
    }

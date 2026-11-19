@@ -234,7 +234,7 @@ test("M25 header at 320 px: the controls wrap below the month instead of cutting
   assert.match(css, /\.cal-kopf \{[^}]*flex-wrap:wrap;[^}]*justify-content:flex-end;/);
   assert.match(css, /\.cal-nav \{[^}]*display:flex;/);
   const card = await mount(world());
-  assert.match(card._koerper.innerHTML, /<div class="cal-nav"><button class="cal-pfeil" data-schritt="-1"[^>]*>‹<\/button><button class="cal-pfeil cal-heute-knopf"[^>]*>[^<]*<\/button><button class="cal-pfeil" data-schritt="1"[^>]*>›<\/button><\/div>/);
+  assert.match(card._koerper.innerHTML, /<div class="cal-nav"><button class="cal-pfeil busch-btn" data-variant="secondary" data-schritt="-1"[^>]*>‹<\/button><button class="cal-pfeil cal-heute-knopf busch-btn" data-variant="secondary"[^>]*>[^<]*<\/button><button class="cal-pfeil busch-btn" data-variant="secondary" data-schritt="1"[^>]*>›<\/button><\/div>/);
   // ... and the month keeps its full width as flex basis (auto), so the line breaks before it is shortened.
   assert.match(css, /\.cal-monat \{[^}]*flex:1 1 auto;/);
 });

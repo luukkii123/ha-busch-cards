@@ -77,7 +77,7 @@ async function mount(w, config) {
 test("M25: the Today button returns from another month, a second tap does nothing", async () => {
   const w = world();
   const card = await mount(w, { month_offset: 0, title: "Arbeitszeit" });
-  assert.match(card._koerper.innerHTML, /<button class="cal-pfeil cal-heute-knopf" data-schritt="heute" aria-label="Zum aktuellen Monat" title="Zum aktuellen Monat">Heute<\/button>/);
+  assert.match(card._koerper.innerHTML, /<button class="cal-pfeil cal-heute-knopf busch-btn" data-variant="secondary" data-schritt="heute" aria-label="Zum aktuellen Monat" title="Zum aktuellen Monat">Heute<\/button>/);
   card._blaettern(-2);
   await w.clock.advance(50);
   assert.equal(card._versatzLaufend, -2);
