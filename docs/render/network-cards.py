@@ -11,6 +11,10 @@ add('binary_sensor.wan','router','router-key-is_connected','on');add('button.reb
 for(let i=1;i<=40;i++){const mac='02:00:00:00:00:'+i.toString(16).padStart(2,'0');add('device_tracker.client'+i,'client',mac+'_tracker',i%3?'home':'not_home',{source_type:'router',mac,ip:'192.0.2.'+i,host_name:'example-host-'+i,friendly_name:'Ein Netzwerkclient mit einem besonders langen Namen '+i,...(i%2?{last_time_reachable:'2026-09-29T12:00:00Z'}:{}),...(i%5?{}:{connected_via_device_id:'ap'})});if(i===1){add('switch.internet','client',mac+'_internet_access','on');add('button.wake','client',mac+'_wake_on_lan','unknown');}}
 window.fixtureBase=JSON.stringify({states,entities,devices});window.calls=[];window.hass={locale:{language:'de'},user:{is_admin:true},states,entities,devices,callService:async(...args)=>calls.push(args),callWS:async(...args)=>calls.push(args)};core.retain=()=>()=>{};core.watch=()=>()=>{};core.watchDevice=()=>()=>{};core.attach=()=>{};ensureBuschCore=()=>core;
 '''
+WORTE_UND_AUSWAHL='''()=>{const root=document.querySelector('[data-test-card]').shadowRoot,issues=[];const entry=root.querySelector('details.client-entry'),was=entry?.open;if(entry)entry.open=true;
+ for(const node of root.querySelectorAll('dl.client-details dt,dl.client-details dd')){const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);for(let t=walker.nextNode();t;t=walker.nextNode())for(const m of t.textContent.matchAll(/\\S+/g)){const r=document.createRange();r.setStart(t,m.index);r.setEnd(t,m.index+m[0].length);const lines=new Set([...r.getClientRects()].filter(x=>x.width>0).map(x=>Math.round(x.top)));if(lines.size>1)issues.push({wordBreak:m[0]});}}
+ const ctx=document.createElement('canvas').getContext('2d');for(const sel of root.querySelectorAll('select')){const b=sel.getBoundingClientRect(),st=getComputedStyle(sel);if(!b.width||st.display==='none')continue;ctx.font=st.font;const text=sel.selectedOptions[0]?.textContent||'',need=ctx.measureText(text).width+parseFloat(st.paddingLeft)+parseFloat(st.paddingRight)+20;if(need>sel.clientWidth)issues.push({selectCut:text,need:Math.round(need),width:sel.clientWidth});}
+ if(entry)entry.open=was;return issues}'''
 # The test loads the genuine standalone bundle as an ES module, and fixture code in its scope.
 with sync_playwright() as pw:
  browser=pw.chromium.launch();page=browser.new_page(viewport={'width':1000,'height':2000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
@@ -30,6 +34,10 @@ with sync_playwright() as pw:
      if scenario=='image-error':page.wait_for_function("!document.querySelector('[data-test-card]').shadowRoot.querySelector('.card-icon img')")
      if scenario=='image-good':page.wait_for_function("document.querySelector('[data-test-card]').shadowRoot.querySelector('.card-icon img')?.naturalWidth>0")
      findings=page.evaluate('''()=>{const c=document.querySelector('[data-test-card]'),bounds=c.getBoundingClientRect(),issues=[];for(const e of c.shadowRoot.querySelectorAll('*')){const b=e.getBoundingClientRect(),s=getComputedStyle(e);if(!b.width||!b.height||s.display==='none')continue;if(b.left<bounds.left-1||b.right>bounds.right+1)issues.push({overflow:e.className});if(e.tagName==='BUTTON'&&(b.width<44||b.height<44))issues.push({touch:e.textContent});if(e.tagName==='BUTTON'&&!e.getAttribute('aria-label'))issues.push({aria:e.textContent});if([...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())&&!(s.overflow==='hidden'&&s.textOverflow==='ellipsis')&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1))issues.push({text:e.textContent});}return issues}''')
+     # Bildprüfung 19.11. (network-search-320: "Verbindungsp unkt", sort select "Wie eingerichte"): with the first row
+     # opened, no word of a detail key or value spans two lines (one client rect per word), and every visible select
+     # fits its chosen text (canvas width at the select's font + its padding + 20 px for the arrow). Closed again before the image.
+     findings+=page.evaluate(WORTE_UND_AUSWAHL)
      text=page.evaluate("document.querySelector('[data-test-card]').shadowRoot.querySelector('ha-card').innerText")
      if scenario=='normal' and kind=='fritz-device':assert '42 °C' in text and '1.250,5 kB/s' in text and 'CPU-Auslastung' not in text
      # M30: values sit in a definition list inside each row's <details> (collapsed, so read textContent, not innerText).
@@ -65,6 +73,7 @@ with sync_playwright() as pw:
  search.fill('');page.locator('[data-test-card] select[data-control=filter]').select_option('not_home');assert rows()==13,rows()
  summary=page.locator('[data-test-card] article.client summary.client-head').first;summary.focus();page.keyboard.press('Enter')
  opened=page.evaluate(card+".shadowRoot.querySelector('article.client details').open");assert opened is True
+ cut=page.evaluate(WORTE_UND_AUSWAHL);assert not cut,cut
  page.locator('[data-test-card]').screenshot(path=str(out/'network-search-320-light.png'))
  page.keyboard.press('Space');assert page.evaluate(card+".shadowRoot.querySelector('article.client details').open") is False
  page.evaluate(mount,20);kept=page.evaluate(card+".shadowRoot.querySelector('select[data-control=filter]').value");assert kept=='not_home' and rows()==13,(kept,rows())

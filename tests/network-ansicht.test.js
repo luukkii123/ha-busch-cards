@@ -96,3 +96,11 @@ test('M30: the icon-only Details button in the row head keeps a 44 px width desp
  const rules=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m=>m.index>reset&&m[1].split(',').some(s=>s.trim()==='.client-line>.busch-ui-action'));
  assert.ok(rules.some(m=>/(^|;)\s*min-width:\s*var\(--ha-space-11,\s*44px\)/.test(m[2])),'row-head action declares min-width 44 px after the reset');
 });
+
+test('Bildprüfung 19.11.: narrow cards put each detail key above its value and give the selects a full-text track',()=>{
+ // network-search-320: "Verbindungsp unkt", "Zustandsände rung" broke inside the word in the 2fr key column;
+ // the sort select showed "Wie eingerichte" in a 120 px track.
+ const {BUSCH_NETWORK_STYLE:css}=require('./laden').ladeKarte(['BUSCH_NETWORK_STYLE']);
+ assert.match(css,/@container\s*\(max-width:\s*400px\)\s*\{[^{}]*\.client-details\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
+ assert.match(css,/\.client-tools\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,180px\),1fr\)\)/);
+});
