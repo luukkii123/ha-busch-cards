@@ -154,11 +154,16 @@ with sync_playwright() as p:
  # really reaches (elementFromPoint); blocks are named "<weekday>: from–to".
  m24=[]
  if not native:
-  page.evaluate("card._model.thursday=[{start:600,end:620}];card._model.friday=[{start:0,end:60}];card._renderDays()")
+  # The stable-rendering check above left .days as a 40 px scroll box (scrollTop 17) – it asserts that the same
+  # element survives, so _renderDays keeps it. Thursday and Friday then sat outside that clip, elementFromPoint
+  # could not reach any grip (run 20261119-131747: reached False for all four at visibleWidth 24, height 44).
+  # Restore the card's own layout before measuring, and assert it, so the hit test measures the card.
+  page.evaluate("card._model.thursday=[{start:600,end:620}];card._model.friday=[{start:0,end:60}];stableDays.style.cssText='';stableDays.scrollTop=0;card._renderDays()")
+  assert page.evaluate("()=>{const d=card.shadowRoot.querySelector('.days');return !d.style.cssText&&d.scrollHeight<=d.clientHeight+1}")
   for dark in [False,True]:
    page.evaluate("dark=>{for(const [key,light,night] of [['--primary-text-color','#212121','#eee'],['--secondary-text-color','#555','#ccc'],['--card-background-color','#fff','#222'],['--secondary-background-color','#eef5fb','#303b47'],['--divider-color','#dbe4ed','#46505b']])host.style.setProperty(key,dark?night:light)}",dark)
-   page.set_viewport_size({'width':320,'height':1000});page.wait_for_timeout(150)
-   geo=page.evaluate("""()=>{const root=card.shadowRoot;const tracks=[...root.querySelectorAll('.track')].map(t=>t.getBoundingClientRect().height);const grips=[];for(const day of ['thursday','friday']){const track=root.querySelector(`.day[data-day="${day}"] .track`);const t=track.getBoundingClientRect();for(const h of track.querySelectorAll('.block .handle')){const r=h.getBoundingClientRect();const left=Math.max(r.left,t.left),right=Math.min(r.right,t.right);const hit=root.elementFromPoint((left+right)/2,r.top+r.height/2);grips.push({day,kind:h.classList.contains('start')?'start':'end',visibleWidth:right-left,height:r.height,reached:hit===h})}}return {tracks,minTrack:Math.min(...tracks),grips,labels:[...root.querySelectorAll('.day[data-day="thursday"] .block,.day[data-day="friday"] .block')].map(b=>b.getAttribute('aria-label'))}}""")
+   page.set_viewport_size({'width':320,'height':1600});page.wait_for_timeout(150)
+   geo=page.evaluate("""()=>{const root=card.shadowRoot;const tracks=[...root.querySelectorAll('.track')].map(t=>t.getBoundingClientRect().height);const grips=[];for(const day of ['thursday','friday']){const track=root.querySelector(`.day[data-day="${day}"] .track`);const t=track.getBoundingClientRect();for(const h of track.querySelectorAll('.block .handle')){const r=h.getBoundingClientRect();const left=Math.max(r.left,t.left),right=Math.min(r.right,t.right);const hit=root.elementFromPoint((left+right)/2,r.top+r.height/2);grips.push({day,kind:h.classList.contains('start')?'start':'end',visibleWidth:right-left,height:r.height,reached:hit===h,hit:hit?(hit.className||hit.tagName):null})}}return {tracks,minTrack:Math.min(...tracks),grips,labels:[...root.querySelectorAll('.day[data-day="thursday"] .block,.day[data-day="friday"] .block')].map(b=>b.getAttribute('aria-label'))}}""")
    m24.append({'dark':dark,**geo})
    assert geo['minTrack']>=44,geo
    assert len(geo['grips'])==4 and all(g['visibleWidth']>=24 and g['reached'] for g in geo['grips']),geo
