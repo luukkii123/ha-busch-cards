@@ -7999,6 +7999,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
   from: "Anfang",
   to: "Ende",
   rule: "Regel",
+  add_rule: "Regel hinzufügen",
   name: "Name",
   action_name: "Aktionsname",
   variant: "Darstellung",
@@ -8320,6 +8321,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
   from: "Start",
   to: "End",
   rule: "Rule",
+  add_rule: "Add rule",
   name: "Name",
   action_name: "Action name",
   variant: "Presentation",
@@ -8643,6 +8645,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   from: "Anfang",
   to: "Ende",
   rule: "Regel",
+  add_rule: "Regel hinzufügen",
   name: "Name",
   action_name: "Aktionsname",
   variant: "Darstellung",
@@ -8964,6 +8967,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   from: "Start",
   to: "End",
   rule: "Rule",
+  add_rule: "Add rule",
   name: "Name",
   action_name: "Action name",
   variant: "Presentation",
@@ -10191,7 +10195,7 @@ function buschNetworkRuleEditor(parent,initial,change,t){
   else if(key==='attributes')buschSmartObject(wrap,value,replace,t,t.value);
   else{const label=buschNetworkNode('label',t.value),input=BuschUI.ha.input({native:true});input.value=String(value);input.setAttribute('aria-label',(t.rules[key]||key)+' · '+t.value);input.addEventListener('input',()=>replace(input.value));label.appendChild(input);wrap.appendChild(label);}
  }
- body.appendChild(BuschUI.action({label:t.add+' · '+t.rule,text:t.add+' · '+t.rule,onClick:()=>{const field=BUSCH_NETWORK_RULE_FIELDS.find(k=>!Object.hasOwn(rule,k)&&!['and','or','not','ip_range','cidr','attributes','last_changed','last_time_reachable'].includes(k));if(field)publish({...rule,[field]:''},true);}}));
+ body.appendChild(BuschUI.action({label:t.add_rule,text:t.add_rule,onClick:()=>{const field=BUSCH_NETWORK_RULE_FIELDS.find(k=>!Object.hasOwn(rule,k)&&!['and','or','not','ip_range','cidr','attributes','last_changed','last_time_reachable'].includes(k));if(field)publish({...rule,[field]:''},true);}}));
 }
 class BuschNetworkBaseEditor extends BuschEditorBase {
  constructor(){super();this._echo=BuschUI.createEchoState();this._forms=[];this._sectionOpen=new Map();}
