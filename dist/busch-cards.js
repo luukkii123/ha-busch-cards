@@ -7369,6 +7369,9 @@ const DEV_STIL = `
     font-size:var(--ha-font-size-s, 12px); color:var(--secondary-text-color); }
   .dev-unter[hidden] { display:none; }
   .dev-unter-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  /* The logo is a network image: when it fails (offline, unknown brand) an empty subtitle
+     would still add the 2 px title gap (CI contract device-filters, --network none). */
+  .dev-unter:has(> .dev-brand[hidden]):has(> .dev-unter-text:empty) { display:none; }
   .dev-brand { width:16px; height:16px; flex:0 0 16px; }
   .dev-brand[hidden] { display:none; }
   .dev-pfeil { flex:0 0 44px; width:44px; height:44px; display:grid; place-items:center;
