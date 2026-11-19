@@ -433,6 +433,7 @@ def horchen(page):
 try:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--no-sandbox"])
+        regeln.ha_icon_attrappe(browser)  # M79: shared ha-icon with the real MDI glyphs (hacs/docs/render/mdi-pfade.json)
 
         # ── Durchgang 1: Uhr im August, month_offset 0 ────────────────────────
         page = browser.new_page(viewport={"width": WIDTH, "height": 900},
@@ -506,6 +507,7 @@ try:
         page.evaluate("() => { document.documentElement.dataset.theme = 'light'; }")
         page.wait_for_timeout(300)
         selbsttest = regeln.selbsttest(page, "#karte-a")
+        ha_icon = regeln.ha_icon_fehlend(page)  # M79: stand-in active, names without a path
         page.close()
 
         # ── Durchgang 2: Uhr im September, month_offset -1 ────────────────────
@@ -553,6 +555,7 @@ report = {
     "console_errors": [c for c in console if c[0] == "error"],
     "console_all": console,
     "page_errors": errors,
+    "ha_icon": ha_icon,
     "laufend": {
         "seite": "page.html",
         "uhrGestelltAuf": "2026-08-15 12:00",

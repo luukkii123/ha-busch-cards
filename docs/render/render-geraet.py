@@ -381,6 +381,7 @@ def horchen(page):
 try:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--no-sandbox"])
+        regeln.ha_icon_attrappe(browser)  # M79: shared ha-icon with the real MDI glyphs (hacs/docs/render/mdi-pfade.json)
         page = browser.new_page(viewport={"width": WIDTH, "height": 1400},
                                 device_scale_factor=2, locale="de-DE")
         horchen(page)
@@ -427,6 +428,7 @@ try:
         page.wait_for_timeout(300)
         page.locator("#karte-a").screenshot(path=str(OUT / "geraet-a-offen.png"))
         nachher = page.evaluate(AUSLESEN)
+        ha_icon = regeln.ha_icon_fehlend(page)  # M79: stand-in active, names without a path
         page.close()
         browser.close()
 finally:
@@ -441,6 +443,7 @@ report = {
     "console_errors": [c for c in console if c[0] == "error"],
     "console_all": console,
     "page_errors": errors,
+    "ha_icon": ha_icon,
     "umgebung": umgebung,
     "karten": bericht,
     "verhalten": verhalten,

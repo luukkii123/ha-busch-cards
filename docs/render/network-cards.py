@@ -1,6 +1,14 @@
 """Synthetic network/FRITZ gallery, interaction and native-form wiring. No live services."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
+# M79: shared ha-icon stand-in with real MDI glyphs from hacs/docs/render/regeln.py (/work in the runner container).
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+else:
+    sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+import regeln  # noqa: E402
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 fixture='''
 customElements.define('ha-icon',class extends HTMLElement{connectedCallback(){this.textContent='◇';}});
@@ -15,9 +23,14 @@ WORTE_UND_AUSWAHL='''()=>{const root=document.querySelector('[data-test-card]').
  for(const node of root.querySelectorAll('dl.client-details dt,dl.client-details dd')){const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);for(let t=walker.nextNode();t;t=walker.nextNode())for(const m of t.textContent.matchAll(/\\S+/g)){const r=document.createRange();r.setStart(t,m.index);r.setEnd(t,m.index+m[0].length);const lines=new Set([...r.getClientRects()].filter(x=>x.width>0).map(x=>Math.round(x.top)));if(lines.size>1)issues.push({wordBreak:m[0]});}}
  const ctx=document.createElement('canvas').getContext('2d');for(const sel of root.querySelectorAll('select')){const b=sel.getBoundingClientRect(),st=getComputedStyle(sel);if(!b.width||st.display==='none')continue;ctx.font=st.font;const text=sel.selectedOptions[0]?.textContent||'',need=ctx.measureText(text).width+parseFloat(st.paddingLeft)+parseFloat(st.paddingRight)+20;if(need>sel.clientWidth)issues.push({selectCut:text,need:Math.round(need),width:sel.clientWidth});}
  if(entry)entry.open=was;return issues}'''
+# M79: every named ha-icon in the card (also inside nested shadow roots) draws a real glyph of the shared stand-in.
+SYMBOLE='''()=>{const c=document.querySelector('[data-test-card]'),issues=[];let n=0;const go=r=>{for(const e of r.querySelectorAll('*')){
+ if(e.localName==='ha-icon'){const s=e.shadowRoot&&e.shadowRoot.querySelector('svg[data-busch-icon]'),name=e.getAttribute('icon')||'';
+  if(!name)continue;if(s&&!String(s.getAttribute('data-busch-icon')).startsWith('fehlt:'))n++;else issues.push({symbolOhneGlyphe:name});}
+ else if(e.shadowRoot)go(e.shadowRoot);}};go(c.shadowRoot);return {n,issues}}'''
 # The test loads the genuine standalone bundle as an ES module, and fixture code in its scope.
 with sync_playwright() as pw:
- browser=pw.chromium.launch();page=browser.new_page(viewport={'width':1000,'height':2000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+ browser=pw.chromium.launch();regeln.ha_icon_attrappe(browser);glyphen=0;page=browser.new_page(viewport={'width':1000,'height':2000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
  # M30: an http origin (served locally, no network) so localStorage works for the remembered view; about:blank denies it.
  page.route('http://busch-render.test/**',lambda route:route.fulfill(status=200,content_type='text/html',body='<!doctype html><html><body></body></html>'));page.goto('http://busch-render.test/')
  page.set_content('<style>body{margin:0;font-family:Arial;background:var(--primary-background-color)}ha-card{display:block;border-radius:16px;border:1px solid var(--divider-color)}ha-form{display:grid;gap:8px}label{display:grid;gap:4px}html{--primary-color:#0879d0;--primary-text-color:#212121;--secondary-text-color:#555;--card-background-color:#fff;--primary-background-color:#fff;--secondary-background-color:#eef5fb;--divider-color:#dbe4ed;--success-color:#16864b;--warning-color:#a76900;--error-color:#db4437}</style>')
@@ -38,6 +51,7 @@ with sync_playwright() as pw:
      # opened, no word of a detail key or value spans two lines (one client rect per word), and every visible select
      # fits its chosen text (canvas width at the select's font + its padding + 20 px for the arrow). Closed again before the image.
      findings+=page.evaluate(WORTE_UND_AUSWAHL)
+     symbole=page.evaluate(SYMBOLE);findings+=symbole['issues'];glyphen+=symbole['n']
      text=page.evaluate("document.querySelector('[data-test-card]').shadowRoot.querySelector('ha-card').innerText")
      if scenario=='normal' and kind=='fritz-device':assert '42 °C' in text and '1.250,5 kB/s' in text and 'CPU-Auslastung' not in text
      # M30: values sit in a definition list inside each row's <details> (collapsed, so read textContent, not innerText).
@@ -112,4 +126,5 @@ with sync_playwright() as pw:
      page.evaluate("""({lang,width,dark,kind})=>{document.querySelectorAll('[data-test-card]').forEach(e=>e.remove());document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#212121');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');document.documentElement.style.setProperty('--secondary-background-color',dark?'#303b47':'#eef5fb');document.documentElement.style.setProperty('--secondary-text-color',dark?'#bbb':'#555');const e=document.createElement('busch-'+kind+'-card-editor');e.dataset.testCard='true';e.style.width=width+'px';e._core=core;e.hass={...hass,locale:{language:lang}};e.setConfig({device_id:'router',title:'Editor example',filter:{include:[{cidr:'192.0.2.0/24',and:[{ip_range:{from:'192.0.2.1',to:'192.0.2.100'}}]}],exclude:[{hostname:'guest-*'}]},actions:[{name:'Example',variant:'secondary',tap_action:{action:'more-info'}}]});e._connect=()=>{};document.body.append(e);for(const d of e.shadowRoot.querySelectorAll('details'))d.open=true;}""",{'lang':lang,'width':width,'dark':dark,'kind':kind})
      findings=page.evaluate("""()=>{const e=document.querySelector('[data-test-card]');return e.scrollWidth>e.clientWidth+1?[{editorOverflow:true}]:[];}""")
      file=f'editor-{kind}-{lang}-{width}-'+('dark' if dark else 'light')+'.png';page.locator('[data-test-card]').screenshot(path=str(out/file));cases.append({'kind':kind+'-editor','lang':lang,'width':width,'dark':dark,'findings':findings,'screenshot':file})
- result={'cases':cases,'pageErrors':errors,'domContract':dom_contract};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'cases':len(cases),'findings':sum(len(c['findings'])for c in cases),'errors':errors}));assert not errors and not any(c['findings']for c in cases);browser.close()
+ ha_icon={**regeln.ha_icon_fehlend(page),'glyphen':glyphen};assert ha_icon['aktiv'] and glyphen>0 and not ha_icon['fehlend'],ha_icon
+ result={'cases':cases,'pageErrors':errors,'domContract':dom_contract,'haIcon':ha_icon};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'cases':len(cases),'findings':sum(len(c['findings'])for c in cases),'errors':errors}));assert not errors and not any(c['findings']for c in cases);browser.close()

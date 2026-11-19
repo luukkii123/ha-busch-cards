@@ -192,6 +192,7 @@ requests, responses, failures, console, errors = [], [], [], [], []
 try:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--no-sandbox"])
+        regeln.ha_icon_attrappe(browser)  # M79: shared ha-icon with the real MDI glyphs (hacs/docs/render/mdi-pfade.json)
         page = browser.new_page(viewport={"width": WIDTH, "height": 900},
                                 device_scale_factor=2, locale="de-DE",
                                 timezone_id="Europe/Vienna")
@@ -671,6 +672,7 @@ try:
                           "   if (d.open) d.close(); }")
             page.wait_for_timeout(200)
 
+        ha_icon = regeln.ha_icon_fehlend(page)  # M79: stand-in active, names without a path
         browser.close()
 finally:
     server.terminate()
@@ -682,6 +684,7 @@ report = {
     "request_failures": failures,
     "console_errors": [c for c in console if c[0] == "error"],
     "page_errors": errors,
+    "ha_icon": ha_icon,
     "probe": probe,
     "ui_regeln": ui,
     "ui_regeln_zaehlung": regeln.zaehle(ui),
