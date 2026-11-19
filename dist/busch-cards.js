@@ -6378,6 +6378,20 @@ function devNavigiere(pfad) {
  * Die einzige Stelle, die eine Aktion ausführt — für Kopfzeile und Zeilen.
  * `karte` darf fehlen; dann entfallen die Wege, die sie brauchen.
  */
+/** M74 (F11): the keyboard way to a hold action, Shift+Enter or the context menu key. Never
+ *  inside a text field (the event's own origin, also across shadow roots) and not on key repeat. */
+function devHalteTaste(e) {
+  if (e.repeat || !((e.key === "Enter" && e.shiftKey) || e.key === "ContextMenu")) return false;
+  const quelle = (typeof e.composedPath === "function" && e.composedPath()[0]) || e.target;
+  const tag = String(quelle?.tagName || "").toUpperCase();
+  return !(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || quelle?.isContentEditable);
+}
+
+/** Whether an action does anything; `none` leaves the key to the browser. */
+function devHatAktion(aktion) {
+  return !!(aktion && aktion.action && aktion.action !== "none");
+}
+
 function devFuehreAus(karte, hass, aktion, kontext) {
   const art = aktion && aktion.action;
   if (!art || art === "none") return;
@@ -6838,11 +6852,11 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       show_subtitle: "Hersteller, Modell und Bereich unter dem Namen. Vorgabe an.",
       start_expanded: "An zeigt Bedienelement und Entitäten sofort, aus erst nach dem Aufklappen. Vorgabe aus.",
       tap_kind: "Aufklappen zeigt Bedienelement und Entitäten. Geräteseite öffnet die Seite von Home Assistant. Bei Aktion von Home Assistant erscheint darunter dessen eigener Editor. Vorgabe: Aufklappen.",
-      hold_kind: "Dasselbe für einen eine halbe Sekunde langen Griff. Vorgabe: Aktion von Home Assistant.",
+      hold_kind: "Dasselbe für einen eine halbe Sekunde langen Griff, per Tastatur Umschalt+Enter oder die Kontextmenütaste. Vorgabe: Aktion von Home Assistant.",
       tap_action: "Der Aktionseditor von Home Assistant. In Ziel und Daten setzt {{ entity }} die Hauptentität ein, {{ device }} das Gerät, {{ area }} den Bereich. Kein Jinja, nur diese drei. Vorgabe: Details öffnen.",
       hold_action: "Derselbe Editor für das Halten. Dieselben drei Platzhalter. Vorgabe: Details öffnen.",
       row_tap_action: "Was ein Tippen auf eine Entitätenzeile tut. {{ entity }} ist dann die angetippte Zeile. Ein leeres Ziel füllt sich mit ihr. Vorgabe: Details öffnen.",
-      row_hold_action: "Dasselbe für das Halten auf einer Zeile. Vorgabe: nichts.",
+      row_hold_action: "Dasselbe für das Halten auf einer Zeile, per Tastatur Umschalt+Enter oder die Kontextmenütaste. Vorgabe: nichts.",
     },
     texte: {
       display_mode_auto: "Automatisch",
@@ -6995,11 +7009,11 @@ const TEXTE_BUSCH_DEVICE_CARD = {
       show_subtitle: "Manufacturer, model and area below the name. Default on.",
       start_expanded: "On shows the control and the entities right away, off only after expanding. Default off.",
       tap_kind: "Expand shows the control and the entities. Device page opens Home Assistant's own page. With Home Assistant action its editor appears below. Default: expand.",
-      hold_kind: "The same for a half-second press. Default: Home Assistant action.",
+      hold_kind: "The same for a half-second press, on a keyboard Shift+Enter or the context menu key. Default: Home Assistant action.",
       tap_action: "Home Assistant's action editor. In target and data, {{ entity }} inserts the main entity, {{ device }} the device, {{ area }} the area. No Jinja, just these three. Default: open details.",
       hold_action: "The same editor for holding. The same three placeholders. Default: open details.",
       row_tap_action: "What a tap on an entity row does. {{ entity }} is the tapped row then. An empty target fills itself with it. Default: open details.",
-      row_hold_action: "The same for holding a row. Default: nothing.",
+      row_hold_action: "The same for holding a row, on a keyboard Shift+Enter or the context menu key. Default: nothing.",
     },
     texte: {
       display_mode_auto: "Auto",
@@ -7503,6 +7517,21 @@ class BuschDeviceCard extends HTMLElement {
     rahmen.addEventListener("pointerup", () => { abbrechen(); start = null; });
     rahmen.addEventListener("pointercancel", abbrechen);
     rahmen.addEventListener("pointerleave", abbrechen);
+    // M74: keyboard hold on the focused row. HA's row fires its own tap on the Enter keyup,
+    // so that one more-info is swallowed like after a pointer hold; reset after the keyup.
+    let tasteGehalten = false;
+    rahmen.addEventListener("keydown", (e) => {
+      const aktion = this._config.row_hold_action;
+      if (!devHatAktion(aktion) || !devHalteTaste(e)) return;
+      e.preventDefault();
+      if (e.key === "Enter") { this._haltVerbraucht = true; tasteGehalten = true; }
+      devFuehreAus(this, this._hass, aktion, this._zeilenKontext(entityId));
+    });
+    rahmen.addEventListener("keyup", (e) => {
+      if (!tasteGehalten || e.key !== "Enter") return;
+      tasteGehalten = false;
+      setTimeout(() => { this._haltVerbraucht = false; }, 0);
+    });
   }
 
   /** Tippen/Halten wie in HA: 500 ms, Bewegung über 10 px bricht ab. */
@@ -7541,6 +7570,13 @@ class BuschDeviceCard extends HTMLElement {
     this._kopf.tabIndex = 0;
     this._kopf.addEventListener("keydown", (e) => {
       if (e.target.closest(".dev-pfeil, .dev-quick")) return;
+      // M74 (F11): hold by keyboard, before the plain Enter of the tap action.
+      if (devHalteTaste(e)) {
+        if (!devHatAktion(this._config.hold_action)) return;
+        e.preventDefault();
+        devFuehreAus(this, this._hass, this._config.hold_action, this._kopfKontext());
+        return;
+      }
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         devFuehreAus(this, this._hass, this._config.tap_action, this._kopfKontext());
