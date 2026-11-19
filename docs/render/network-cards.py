@@ -14,6 +14,8 @@ window.fixtureBase=JSON.stringify({states,entities,devices});window.calls=[];win
 # The test loads the genuine standalone bundle as an ES module, and fixture code in its scope.
 with sync_playwright() as pw:
  browser=pw.chromium.launch();page=browser.new_page(viewport={'width':1000,'height':2000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+ # M30: an http origin (served locally, no network) so localStorage works for the remembered view; about:blank denies it.
+ page.route('http://busch-render.test/**',lambda route:route.fulfill(status=200,content_type='text/html',body='<!doctype html><html><body></body></html>'));page.goto('http://busch-render.test/')
  page.set_content('<style>body{margin:0;font-family:Arial;background:var(--primary-background-color)}ha-card{display:block;border-radius:16px;border:1px solid var(--divider-color)}ha-form{display:grid;gap:8px}label{display:grid;gap:4px}html{--primary-color:#0879d0;--primary-text-color:#212121;--secondary-text-color:#555;--card-background-color:#fff;--primary-background-color:#fff;--secondary-background-color:#eef5fb;--divider-color:#dbe4ed;--success-color:#16864b;--warning-color:#a76900;--error-color:#db4437}</style>')
  page.add_script_tag(type='module',content=source+'\n'+fixture+'\nwindow.fixtureReady=true;');page.wait_for_function('window.fixtureReady===true');cases=[];dom_contract=[]
  for scenario in ['normal','more','empty']:
@@ -30,7 +32,8 @@ with sync_playwright() as pw:
      findings=page.evaluate('''()=>{const c=document.querySelector('[data-test-card]'),bounds=c.getBoundingClientRect(),issues=[];for(const e of c.shadowRoot.querySelectorAll('*')){const b=e.getBoundingClientRect(),s=getComputedStyle(e);if(!b.width||!b.height||s.display==='none')continue;if(b.left<bounds.left-1||b.right>bounds.right+1)issues.push({overflow:e.className});if(e.tagName==='BUTTON'&&(b.width<44||b.height<44))issues.push({touch:e.textContent});if(e.tagName==='BUTTON'&&!e.getAttribute('aria-label'))issues.push({aria:e.textContent});if([...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())&&!(s.overflow==='hidden'&&s.textOverflow==='ellipsis')&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1))issues.push({text:e.textContent});}return issues}''')
      text=page.evaluate("document.querySelector('[data-test-card]').shadowRoot.querySelector('ha-card').innerText")
      if scenario=='normal' and kind=='fritz-device':assert '42 °C' in text and '1.250,5 kB/s' in text and 'CPU-Auslastung' not in text
-     if scenario=='normal':assert 'Verbindungspunkt: Unbekannt' in text
+     # M30: values sit in a definition list inside each row's <details> (collapsed, so read textContent, not innerText).
+     if scenario=='normal':pairs=page.evaluate("[...document.querySelector('[data-test-card]').shadowRoot.querySelectorAll('dl.client-details>div')].map(d=>d.children[0].textContent+': '+d.children[1].textContent)");assert 'Verbindungspunkt: Unbekannt' in pairs,pairs
      if scenario=='error':assert 'CIDR benötigt' in text
      if scenario=='nicht-admin':
       # M17: admin_actions true and a non-admin viewer: no router, WLAN or internet buttons; WOL stays.
@@ -43,7 +46,29 @@ with sync_playwright() as pw:
        page.once('dialog',lambda d:d.accept());page.get_by_role('button',name='Neu starten',exact=True).click();assert page.evaluate('calls.at(-1)[1]')=='press'
       page.get_by_role('button',name='Aufwecken',exact=True).first.click();assert page.evaluate('calls.at(-1)[0]')=='button'
       before=page.evaluate("document.querySelector('[data-test-card]')._sectionOpen.get('clients')??true");page.get_by_role('button',name='Details',exact=True).last.click();assert page.evaluate("document.querySelector('[data-test-card]')._sectionOpen.get('clients')??true")==before
-     name=f'{kind}-{scenario}-{width}-'+('dark' if dark else 'light')+'.png';page.locator('[data-test-card]').screenshot(path=str(out/name));cases.append({'kind':kind,'scenario':scenario,'width':width,'dark':dark,'findings':findings,'screenshot':name})
+     # M30 measuring check: in its initial state network-many-320-* is at most three screens (viewport height of this script) tall.
+     height=page.evaluate("document.querySelector('[data-test-card]').getBoundingClientRect().height")
+     if kind=='network' and scenario=='many' and width==320:
+      limit=3*page.viewport_size['height'];assert height<=limit,{'network-many-320':height,'limit':limit}
+     name=f'{kind}-{scenario}-{width}-'+('dark' if dark else 'light')+'.png';page.locator('[data-test-card]').screenshot(path=str(out/name));cases.append({'kind':kind,'scenario':scenario,'width':width,'dark':dark,'height':height,'findings':findings,'screenshot':name})
+ # M30: search, presence filter, remembered view (R21), keyboard expand, focus kept while typing, real "N more" button.
+ page.evaluate("()=>{for(const [key,value]of [['--primary-text-color','#212121'],['--secondary-text-color','#555'],['--card-background-color','#fff'],['--primary-background-color','#fff'],['--secondary-background-color','#eef5fb'],['--divider-color','#dbe4ed'],['--success-color','#16864b']])document.documentElement.style.setProperty(key,value);localStorage.clear();}")
+ mount='''count=>{document.querySelectorAll('[data-test-card]').forEach(e=>e.remove());const data=JSON.parse(fixtureBase);states=data.states;entities=data.entities;devices=data.devices;hass={...hass,states,entities,devices};core.seed(hass);const c=document.createElement('busch-network-card');c.dataset.testCard='true';c.style.width='320px';c.setConfig({count});c.hass=hass;document.body.append(c);}'''
+ card="document.querySelector('[data-test-card]')"
+ page.evaluate(mount,20);rows=lambda:page.evaluate(card+".shadowRoot.querySelectorAll('article.client').length")
+ more=page.evaluate("[..."+card+".shadowRoot.querySelectorAll('button')].map(b=>b.getAttribute('aria-label')).filter(l=>/weitere anzeigen$/.test(l||''))")
+ assert rows()==20 and more==['20 weitere anzeigen'],(rows(),more)
+ search=page.locator('[data-test-card] input[data-control=search]');search.click();page.keyboard.type('host-2')
+ assert rows()==11,rows();count=page.locator('[data-test-card] [data-control=count]').inner_text();assert count=='11 von 40 Clients',count
+ page.evaluate(card+"._shellSignature=null");page.evaluate(card+"._render()");page.keyboard.type('5')
+ focused=page.evaluate(card+".shadowRoot.activeElement?.dataset.control");value=search.input_value();assert focused=='search' and value=='host-25' and rows()==1,(focused,value,rows())
+ search.fill('');page.locator('[data-test-card] select[data-control=filter]').select_option('not_home');assert rows()==13,rows()
+ summary=page.locator('[data-test-card] article.client summary.client-head').first;summary.focus();page.keyboard.press('Enter')
+ opened=page.evaluate(card+".shadowRoot.querySelector('article.client details').open");assert opened is True
+ page.locator('[data-test-card]').screenshot(path=str(out/'network-search-320-light.png'))
+ page.keyboard.press('Space');assert page.evaluate(card+".shadowRoot.querySelector('article.client details').open") is False
+ page.evaluate(mount,20);kept=page.evaluate(card+".shadowRoot.querySelector('select[data-control=filter]').value");assert kept=='not_home' and rows()==13,(kept,rows())
+ cases.append({'kind':'network','scenario':'search-filter-keyboard','width':320,'dark':False,'findings':[],'screenshot':'network-search-320-light.png'});page.evaluate("localStorage.clear()")
  for lang in ['de','en']:
   for width in [320,480,960]:
    for dark in [False,True]:
