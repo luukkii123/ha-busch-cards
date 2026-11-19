@@ -106,9 +106,10 @@ const FAELLE = [
   ["network warning badge", NET, ".status-warning", "var(--secondary-background-color)"],
   ["network error badge", NET, ".status-error", "var(--secondary-background-color)"],
   ["network neutral badge", NET, ".status-unknown,.status-unavailable,.status-neutral", "var(--secondary-background-color)"],
-  ["network danger button", NET, ".actions button[data-variant=danger]", "var(--secondary-background-color)"],
-  ["network quiet button", NET, ".actions button[data-variant=quiet]", CARD],
-  ["network primary button", NET, ".actions button[data-variant=primary]", "background"],
+  // Bildprüfung 19.11.: network/FRITZ buttons are the shared .busch-btn (transparent, framed); their colours come from Shared UI.
+  ["network danger button", SHARED, ":where(.busch-btn[data-variant=destructive]),:where(.busch-btn[data-variant=danger])", CARD],
+  ["network secondary button", SHARED, ":where(.busch-btn[data-variant=secondary])", CARD],
+  ["network primary button", SHARED, ":where(.busch-btn[data-variant=primary])", "background"],
   ["smart editor button", SMART, "button", CARD],
   // Run karten-20261119-164604: icons measured in the render harness (its ha-icon draws a glyph).
   ["schedule plus icon", SCHEDULE, ".day .add-block", "background"],

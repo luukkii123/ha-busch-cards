@@ -47,6 +47,18 @@ with sync_playwright() as pw:
      if scenario=='normal':
       head=page.evaluate("(()=>{const h=document.querySelector('[data-test-card]').shadowRoot.querySelector('.header h2');if(!h)return null;const s=getComputedStyle(h);return {size:s.fontSize,weight:s.fontWeight,level:h.dataset.level}})()")
       assert head=={'size':'24px','weight':'500','level':'1'},(kind,head)
+     # Bildprüfung 19.11. (fritz-device-normal-320-dark: frameless buttons, "Details" read as text, title cut to one line):
+     # every router action is a .busch-btn with a visible frame (border >= 1 px, opaque, not the card colour) and >= 44 px;
+     # the title takes at most two lines (E12), exactly two at 320 for the long fixture name, and carries the full name as title.
+     if scenario=='normal' and kind=='fritz-device':
+      shape=page.evaluate("""(()=>{const r=document.querySelector('[data-test-card]').shadowRoot,card=r.querySelector('ha-card'),bg=getComputedStyle(card).backgroundColor,row=[...card.children].find(n=>n.classList.contains('actions'));
+       const buttons=[...(row?.querySelectorAll('button')||[])].map(b=>{const s=getComputedStyle(b),k=b.getBoundingClientRect();return {label:b.getAttribute('aria-label'),btn:b.classList.contains('busch-btn'),border:parseFloat(s.borderTopWidth),color:s.borderTopColor,w:k.width,h:k.height}});
+       const h=r.querySelector('.header h2'),hs=getComputedStyle(h);return {bg,buttons,lines:Math.round(h.getBoundingClientRect().height/parseFloat(hs.lineHeight)),title:h.title,full:devices.router.name}})()""")
+      def framed(b):
+       c=b['color'];return b['btn'] and b['border']>=1 and c!=shape['bg'] and not c.startswith('rgba(0, 0, 0, 0)') and not c.endswith(', 0)') and b['w']>=44 and b['h']>=44
+      labels=[b['label'] for b in shape['buttons']]
+      assert 'Details' in labels and 'Neu starten' in labels and all(framed(b) for b in shape['buttons']),(width,dark,shape)
+      assert shape['lines']<=2 and (width!=320 or shape['lines']==2) and shape['title']==shape['full'],(width,dark,shape)
      # M27: the error replaces the loading line; every error/empty/loading uses the shared state block as a live region.
      if scenario=='error':assert 'werden geladen' not in text,text
      if scenario in ('error','empty','loading'):

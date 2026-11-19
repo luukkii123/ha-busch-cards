@@ -117,3 +117,29 @@ test('Bildprüfung 19.11.: the count names the rows actually shown while "N more
  c._hass={...c._hass,locale:{language:'en'}};c._toolbarLocale=null;c._renderClients();assert.equal(count(),'5 of 9 matches, 13 clients in total');
  for(const Card of [l.BuschNetworkCard,l.BuschFritzDeviceCard])for(const language of ['de','en']){const x=card(l,f,{device_id:'router',count:0},Card);x._hass={...x._hass,locale:{language}};assert.match(x._text().result_count_paged,/\{shown\}.*\{matches\}.*\{total\}/,Card.name+' '+language);x.disconnectedCallback();}
 });
+
+test('Bildprüfung 19.11.: every FRITZ/network button is the shared .busch-btn and the router Details is a framed button',()=>{
+ // fritz-device-normal-320-dark: Neu starten/Aktualisieren were fills without a frame and "Details" (quiet) read as plain text.
+ const l=load(),f=fixture(l);
+ for(const Card of [l.BuschFritzDeviceCard,l.BuschNetworkCard]){const c=card(l,f,{device_id:'router',count:0},Card);
+  const buttons=descend(c.shadowRoot).filter(n=>n.tagName==='BUTTON');assert.ok(buttons.length>0,Card.name);
+  for(const b of buttons)assert.ok(String(b.className).split(/\s+/).includes('busch-btn'),Card.name+' '+b.attributes['aria-label']);
+  if(Card===l.BuschFritzDeviceCard){const actions=descend(c.shadowRoot).find(n=>n.className==='actions');const details=actions.children.find(n=>n.attributes['aria-label']==='Details');
+   assert.ok(details,'router Details in the action row');assert.equal(details.attributes['data-variant'],'secondary');
+   assert.ok(actions.children.every(n=>['secondary','danger','primary'].includes(n.attributes['data-variant'])),'router actions all carry a framed variant');}
+  c.disconnectedCallback();}
+ // The card sheet must not paint its own frameless button over .busch-btn, but keeps 44 px after the *{min-width:0} reset.
+ const {BUSCH_NETWORK_STYLE:css}=require('./laden').ladeKarte(['BUSCH_NETWORK_STYLE']);const reset=css.lastIndexOf('*{box-sizing:border-box;min-width:0}');
+ const rules=[...css.replace(/\/\*[\s\S]*?\*\//g,c=>' '.repeat(c.length)).matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m=>m.index>reset);
+ assert.equal(rules.filter(m=>m[1].split(',').some(s=>/\.actions button\b/.test(s.trim()))).length,0,'no local .actions button skin');
+ assert.ok(rules.some(m=>m[1].split(',').some(s=>s.trim()==='.actions .busch-btn')&&/min-width:\s*var\(--ha-space-11,\s*44px\)/.test(m[2])),'.actions .busch-btn keeps 44 px');
+});
+
+test('Bildprüfung 19.11. (E12): the FRITZ card title wraps to two lines and carries the full name as tooltip',()=>{
+ // fritz-device-normal-320-dark: "Ein Router mit ein…" was cut to one line.
+ const l=load(),f=fixture(l),c=card(l,f,{device_id:'router',count:0},l.BuschFritzDeviceCard);
+ const h=descend(c.shadowRoot).find(n=>n.tagName==='H2');assert.ok(h);assert.equal(h.title,'Example router');c.disconnectedCallback();
+ const {BUSCH_NETWORK_STYLE:css}=require('./laden').ladeKarte(['BUSCH_NETWORK_STYLE']);
+ const rule=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m=>m[1].split(',').some(s=>s.trim().endsWith('.header h2'))).map(m=>m[2]).join(';');
+ for(const want of [/-webkit-line-clamp:\s*2/,/white-space:\s*normal/,/overflow:\s*hidden/,/overflow-wrap:\s*anywhere/,/display:\s*-webkit-box/])assert.match(rule,want);
+});
