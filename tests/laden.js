@@ -28,7 +28,8 @@ function ladeKarte(namen, zusatz, nachlauf) {
   const kontext = {
     console: { info() {}, warn() {}, error() {}, log() {} },
     window: { customCards: [] },
-    customElements: { define() {} },
+    // customElements.get as in every browser: BuschUI.register (M42) asks before defining.
+    customElements: { define() {}, get() { return undefined; } },
     HTMLElement: class {},
     document: {
       createElement() {

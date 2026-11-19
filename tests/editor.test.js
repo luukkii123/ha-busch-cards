@@ -203,7 +203,7 @@ test("die Karte und ihr Editor sind angemeldet", () => {
   const fenster = { customCards: [] };
   ladeKarte(["CARD_VERSION"], {
     window: fenster,
-    customElements: { define(name) { angemeldet.push(name); } },
+    customElements: { define(name) { angemeldet.push(name); }, get() { return undefined; } },
   });
   assert.ok(angemeldet.includes("busch-calendar-card"), "Karte nicht angemeldet");
   assert.ok(

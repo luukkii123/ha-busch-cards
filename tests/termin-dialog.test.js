@@ -406,7 +406,7 @@ test("eine Sonde ohne `_handleEventClick` faellt ebenfalls sauber zurueck", asyn
       customCards: [],
       loadCardHelpers: async () => ({ createCardElement: async () => ({}) }),
     },
-    customElements: { define() {}, whenDefined: async () => {} },
+    customElements: { define() {}, get() { return undefined; }, whenDefined: async () => {} },
   });
   await karte._oeffneTermin({ idx: "0", uid: "gut", entity: "calendar.a", rid: "" });
   assert.strictEqual(ereignisse.length, 1);
@@ -421,7 +421,7 @@ test("werfen die Helfer, bleibt es beim Entitaets-Dialog", async () => {
         throw new Error("kaputt");
       },
     },
-    customElements: { define() {}, whenDefined: async () => {} },
+    customElements: { define() {}, get() { return undefined; }, whenDefined: async () => {} },
   });
   await karte._oeffneTermin({ idx: "0", uid: "gut", entity: "calendar.a", rid: "" });
   assert.strictEqual(ereignisse.length, 1);
@@ -438,7 +438,7 @@ test("der Sondenweg wird nur EINMAL versucht, nicht bei jedem Klick", async () =
         throw new Error("kaputt");
       },
     },
-    customElements: { define() {}, whenDefined: async () => {} },
+    customElements: { define() {}, get() { return undefined; }, whenDefined: async () => {} },
   });
   const zeile = { idx: "0", uid: "gut", entity: "calendar.a", rid: "" };
   await karte._oeffneTermin(zeile);

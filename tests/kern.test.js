@@ -31,7 +31,7 @@ function evaluateTwice(firstText, secondText) {
   const warnings = [];
   const context = {
     console: { info() {}, warn: (...args) => warnings.push(args.join(' ')), error() {}, log() {} },
-    window: { customCards: [] }, customElements: { define() {} }, HTMLElement: class {}, document: { createElement() { return { style: {}, setAttribute() {}, addEventListener() {}, appendChild() {} }; } },
+    window: { customCards: [] }, customElements: { define() {}, get() { return undefined; } }, HTMLElement: class {}, document: { createElement() { return { style: {}, setAttribute() {}, addEventListener() {}, appendChild() {} }; } },
     setTimeout, clearTimeout, queueMicrotask, performance,
   };
   context.globalThis = context; vm.createContext(context);

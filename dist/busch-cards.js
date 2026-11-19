@@ -339,8 +339,8 @@ const BuschUI = (() => {
  * Custom Elements. Das Repo liegt auf einer SMB-Share, auf der kein npm läuft
  * — was hier steht, ist genau das, was ausgeliefert wird.
  *
- * Neue Karte hinzufügen: Klasse schreiben, `customElements.define(...)`,
- * Eintrag in `window.customCards` — alles in dieser Datei.
+ * Neue Karte hinzufügen: Klasse schreiben, `BuschUI.register(tag, Klasse,
+ * Kartenwählereintrag)` (M42, doppelt-ladefest) — alles in dieser Datei.
  *
  * Enthält vier Karten: `busch-schedule-card`, `busch-map-card`,
  * `busch-calendar-card` und seit 0.10.0 `busch-device-card`. Die
@@ -5370,23 +5370,23 @@ class BuschCalendarCardEditor extends BuschEditorBase {
   }
 }
 
-if (!customElements.get?.("busch-schedule-card")) customElements.define("busch-schedule-card", BuschScheduleCard);
-if (!customElements.get?.("busch-schedule-card-editor")) customElements.define("busch-schedule-card-editor", BuschScheduleCardEditor);
-
 /* Der Kartenwaehler liest `name` und `description` beim LADEN der Datei —
  * da gibt es noch keinen `hass`. Die Sprache kommt hier deshalb aus
  * `navigator.language`; `buschTexte` ohne zweites Argument macht genau das
  * (docs/ui-regeln.md, Regel 3). */
 const waehlerZeitplan = buschTexte(TEXTE_BUSCH_SCHEDULE_CARD);
 
-window.customCards = window.customCards || [];
-window.customCards.some(card => card.type === "busch-schedule-card") || window.customCards.push({
+/* M42: BuschUI.register defines an element only without a definition and adds the picker
+ * entry once per type, so a second copy of this module (two resource URLs, a cache
+ * parameter) neither throws NotSupportedError nor duplicates the entry. */
+BuschUI.register("busch-schedule-card", BuschScheduleCard, {
   type: "busch-schedule-card",
   name: waehlerZeitplan.name,
   description: waehlerZeitplan.description,
   preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
+BuschUI.register("busch-schedule-card-editor", BuschScheduleCardEditor);
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -6108,18 +6108,17 @@ class BuschMapCardEditor extends BuschEditorBase {
   }
 }
 
-if (!customElements.get?.("busch-map-card")) customElements.define("busch-map-card", BuschMapCard);
-if (!customElements.get?.("busch-map-card-editor")) customElements.define("busch-map-card-editor", BuschMapCardEditor);
 
 const waehlerLandkarte = buschTexte(TEXTE_BUSCH_MAP_CARD);
 
-window.customCards.some(card => card.type === "busch-map-card") || window.customCards.push({
+BuschUI.register("busch-map-card", BuschMapCard, {
   type: "busch-map-card",
   name: waehlerLandkarte.name,
   description: waehlerLandkarte.description,
   preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
+BuschUI.register("busch-map-card-editor", BuschMapCardEditor);
 
 /* ────────────────────────────────────────────────────────────────────────────
  * busch-device-card — eine Entität, ihr ganzes Gerät
@@ -7887,31 +7886,29 @@ class BuschDeviceCardEditor extends BuschEditorBase {
   }
 }
 
-if (!customElements.get?.("busch-calendar-card")) customElements.define("busch-calendar-card", BuschCalendarCard);
-if (!customElements.get?.("busch-calendar-card-editor")) customElements.define("busch-calendar-card-editor", BuschCalendarCardEditor);
 
 const waehlerKalender = buschTexte(TEXTE_BUSCH_CALENDAR_CARD);
 
-window.customCards.some(card => card.type === "busch-calendar-card") || window.customCards.push({
+BuschUI.register("busch-calendar-card", BuschCalendarCard, {
   type: "busch-calendar-card",
   name: waehlerKalender.name,
   description: waehlerKalender.description,
   preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
+BuschUI.register("busch-calendar-card-editor", BuschCalendarCardEditor);
 
-if (!customElements.get?.("busch-device-card")) customElements.define("busch-device-card", BuschDeviceCard);
-if (!customElements.get?.("busch-device-card-editor")) customElements.define("busch-device-card-editor", BuschDeviceCardEditor);
 
 const waehlerGeraet = buschTexte(TEXTE_BUSCH_DEVICE_CARD);
 
-window.customCards.some(card => card.type === "busch-device-card") || window.customCards.push({
+BuschUI.register("busch-device-card", BuschDeviceCard, {
   type: "busch-device-card",
   name: waehlerGeraet.name,
   description: waehlerGeraet.description,
   preview: false,
   documentationURL: "https://github.com/luukkii123/ha-busch-cards",
 });
+BuschUI.register("busch-device-card-editor", BuschDeviceCardEditor);
 const BUSCH_SMART_RULES = ['domain','state','entity_id','name','group','area','floor','level','device','label','device_manufacturer','device_model','integration','hidden_by','attributes','last_changed','last_updated','last_triggered','entity_category','not','or','and','options','type','sort'];
 const BUSCH_DEVICE_FILTER_RULES=BUSCH_SMART_RULES.filter(key=>!['options','type','sort'].includes(key));
 function buschSmartConfig(config) {
@@ -8128,9 +8125,8 @@ class BuschSmartEntitiesEditor extends BuschEditorBase {
   _showGroup(group){this._activeGroup=group;for(const tab of this.shadowRoot.querySelectorAll('[role=tab]')){const selected=tab.dataset.group===group;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;}for(const panel of this.shadowRoot.querySelectorAll('[role=tabpanel]'))panel.hidden=panel.dataset.panel!==group;if(group==='card'&&this._pendingTarget){const {host,config}=this._pendingTarget;this._pendingTarget=null;this._targetEditor(host,config);}}
   async _targetEditor(host,config){try{const helpers=await BuschUI.ha.cardHelpers(),parameter=this._config.card_param||'entities',preview={...config,[parameter]:config[parameter]||[]};const card=await helpers.createCardElement(preview);if(!host.isConnected||!card.constructor.getConfigElement)return;const editor=await card.constructor.getConfigElement();if(!host.isConnected)return;editor.hass=this._hass;editor.setConfig(preview);editor.addEventListener('config-changed',event=>{event.stopPropagation();const target={...event.detail.config};if(!Object.hasOwn(config,parameter)&&Array.isArray(target[parameter])&&!target[parameter].length)delete target[parameter];this._emit({...this._config,card:target},false);});host.append(editor);}catch(error){/* The typed object editor remains available. */}}
 }
-if (!customElements.get?.("busch-smart-entities")) customElements.define("busch-smart-entities", BuschSmartEntities);
-if (!customElements.get?.("busch-smart-entities-editor")) customElements.define("busch-smart-entities-editor", BuschSmartEntitiesEditor);
-if(!(window.customCards||=[]).some(card=>card.type==='busch-smart-entities'))window.customCards.push({type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+BuschUI.register('busch-smart-entities',BuschSmartEntities,{type:'busch-smart-entities',name:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).name,description:buschTexte(TEXTE_BUSCH_SMART_ENTITIES).description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+BuschUI.register('busch-smart-entities-editor',BuschSmartEntitiesEditor);
 /* Shared media/status helpers (formerly in the Unraid section; buschMedia/buschMediaResolve serve the device card). */
 function buschMediaResolve(config={},metadata={},defaultIcon='mdi:devices'){return BuschUI.resolveMedia(config,metadata,defaultIcon);}
 function buschMedia(config,metadata,defaultIcon,className='card-icon'){return BuschUI.media(config,metadata,defaultIcon,className);}
@@ -10582,9 +10578,7 @@ class BuschNetworkBaseEditor extends BuschEditorBase {
 }
 class BuschNetworkEditor extends BuschNetworkBaseEditor {}
 class BuschFritzDeviceEditor extends BuschNetworkBaseEditor {get _kind(){return 'fritz';}}
-if(!customElements.get?.('busch-network-card'))customElements.define('busch-network-card',BuschNetworkCard);
-if(!customElements.get?.('busch-fritz-device-card'))customElements.define('busch-fritz-device-card',BuschFritzDeviceCard);
-if(!customElements.get?.('busch-network-card-editor'))customElements.define('busch-network-card-editor',BuschNetworkEditor);
-if(!customElements.get?.('busch-fritz-device-card-editor'))customElements.define('busch-fritz-device-card-editor',BuschFritzDeviceEditor);
-if(!window.customCards.some(c=>c.type==='busch-network-card'))window.customCards.push({type:'busch-network-card',name:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).waehler_network,description:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network_description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
-if(!window.customCards.some(c=>c.type==='busch-fritz-device-card'))window.customCards.push({type:'busch-fritz-device-card',name:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).waehler_fritz,description:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz_description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+BuschUI.register('busch-network-card',BuschNetworkCard,{type:'busch-network-card',name:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).waehler_network,description:BuschUI.dictionary(TEXTE_BUSCH_NETWORK_CARD,null).network_description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+BuschUI.register('busch-fritz-device-card',BuschFritzDeviceCard,{type:'busch-fritz-device-card',name:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).waehler_fritz,description:BuschUI.dictionary(TEXTE_BUSCH_FRITZ_DEVICE_CARD,null).fritz_description,preview:false,documentationURL:'https://github.com/luukkii123/ha-busch-cards'});
+BuschUI.register('busch-network-card-editor',BuschNetworkEditor);
+BuschUI.register('busch-fritz-device-card-editor',BuschFritzDeviceEditor);
