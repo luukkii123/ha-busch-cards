@@ -119,7 +119,9 @@ with sync_playwright() as p:
  assert tuesday_add.is_disabled()
  monday_add.click()
  assert page.evaluate("card._els.blockDialog.open && card._els.blockDialog.querySelector('.f-from').value==='23:45' && card._els.blockDialog.querySelector('.f-to').value==='00:00'")
- page.evaluate("card._resolveBlockDialog('ok')")
+ # The native close event fires asynchronously (next rendering step, ~20 ms later) and its listener returns focus
+ # to the opener, the Monday add button. Note when it has run, so the focus check below starts from a settled state.
+ page.evaluate("window.r04OpenerReturned=false;card._els.blockDialog.addEventListener('close',()=>{window.r04OpenerReturned=true},{once:true});card._resolveBlockDialog('ok')")
  assert page.evaluate("card._model.monday.length===2 && card._model.monday[1].start===1425 && card._model.monday[1].end===1440 && window.saves===1")
  page.evaluate("card._model.monday=[{start:420,end:600,data:{kept:'fixture'}}];card._model.tuesday=[{start:420,end:600,data:{kept:'fixture'}}];card._renderDays();window.saves=0")
  # HA schedules declared in YAML are readonly. Keyboard entry is blocked.
@@ -128,6 +130,9 @@ with sync_playwright() as p:
  page.evaluate("card._hass.states['schedule.synthetic'].attributes.editable=true")
  # Refresh/reorder/conflict and config echoes preserve the active editor after
  # the existing R04 keyboard/back matrix has run against the untouched fixture.
+ # Repo-CI flake (v0.29.1, #1321): the pending focus return of the add dialog above landed between this step and its
+ # check and moved focus to the Monday add button for good. Wait until it has run instead of racing it.
+ page.wait_for_function("window.r04OpenerReturned===true",timeout=5000)
  page.evaluate("card._acceptScheduleItem({id:'synthetic',name:'focus-test',monday:[{from:'06:00',to:'06:30'},{from:'07:00',to:'10:00',data:{kept:'fixture'}}]});card._renderDays();window.focusStable=card.shadowRoot.querySelector('.day[data-day=\"monday\"] .block[data-index=\"1\"]');focusStable.focus();window.focusStableKey=focusStable.dataset.key;card._acceptScheduleItem({id:'synthetic',name:'focus-test',monday:[{from:'07:00',to:'10:00',data:{kept:'fixture'}},{from:'11:00',to:'12:00'}]});card._renderDays()")
  assert page.evaluate("card.shadowRoot.activeElement===focusStable && card.shadowRoot.querySelector('.block[data-key=\"'+focusStableKey+'\"]')===focusStable")
  page.evaluate("window.backendItem={id:'synthetic',name:'updated',monday:[{from:'06:00',to:'06:30'},{from:'07:00',to:'10:00',data:{kept:'fixture'}},{from:'11:00',to:'12:00'}]};window.stableAdd=card.shadowRoot.querySelector('.add-block');window.stableRow=stableAdd.parentElement;window.stableBlock=card.shadowRoot.querySelector('.block');window.stableTrack=card.shadowRoot.querySelector('.track');window.stableDays=card.shadowRoot.querySelector('.days');stableDays.style.cssText='max-height:40px;overflow:auto';stableDays.scrollTop=17;delete card._load;card._scheduleId='synthetic';card._hass.callWS=async()=>[window.backendItem];card._openBlockDialog('monday',0);card._els.blockDialog.querySelector('.f-from').value='08:15';const old=card._hass;card.hass={...old,states:{...old.states,'schedule.synthetic':{...old.states['schedule.synthetic'],attributes:{...old.states['schedule.synthetic'].attributes,next_event:'2030-01-01T00:00:00'}}}}")
