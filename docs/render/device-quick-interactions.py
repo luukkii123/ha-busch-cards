@@ -35,7 +35,9 @@ def kt_ok():
  return regeln is None or regeln.bewerte(kt)==0
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
- b=pw.chromium.launch();p=b.new_page();errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
+ b=pw.chromium.launch()
+ if regeln:regeln.ha_icon_attrappe(b)  # M79: real MDI glyphs instead of empty squares
+ p=b.new_page();errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
  p.set_content('<style>body{font-family:Arial}ha-card{display:block}</style>')
  p.add_script_tag(content="""window.calls=[];window.loadCardHelpers=async()=>({createCardElement:()=>document.createElement('ha-card'),createRowElement:()=>document.createElement('div')});window.build=(domain,rows)=>{window.card?.remove();const states={},entities={};for(const [id,state,attributes]of rows){states[id]={entity_id:id,state,attributes};entities[id]={entity_id:id,device_id:'d',platform:'demo'};}window.h={states,entities,devices:{d:{id:'d',name:'Synthetic device'}},areas:{},connection:{},config:{unit_system:{temperature:'°C'}},locale:{language:'en'},callService:(...c)=>calls.push(c),callWS:async m=>m.type.includes('entity_registry')?Object.values(entities):m.type.includes('device_registry')?[{id:'d',name:'Synthetic device'}]:[]};window.card=document.createElement('busch-device-card');card.setConfig({device_id:'d',quick_controls:true});card.hass=h;document.body.append(card)};window.temp=t=>{const s=h.states['climate.test'];h={...h,states:{...h.states,'climate.test':{...s,attributes:{...s.attributes,temperature:t}}}};card.hass=h};""")
  p.add_script_tag(content=source)
@@ -102,8 +104,9 @@ with sync_playwright() as pw:
  p.evaluate("()=>{h={...h,states:{...h.states,'climate.test':{...h.states['climate.test'],state:'cool'}}};card.hass=h}")
  select_held_until_echo=all(v=='cool' for _,v in select_held) and p.evaluate("sel.value==='cool'&&calls.at(-1)[1]==='set_hvac_mode'")
  assert select_held_until_echo,select_held
- result={'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'pendingHeldUntilEcho':pending_held,'keyboardCoalesced':keyboard_coalesced,'heldSamples':held,'busyMs':round(busy_ms,2),'busyMarker':busy_marker,'selectHeldUntilEcho':select_held_until_echo,'selectSamples':select_held,'waitingShots':['wartet-power-320-light.png','wartet-power-960-light.png','wartet-power-320-dark.png','wartet-power-960-dark.png'],'mockServices':p.evaluate('calls.length'),'pageErrors':errors,**kt}
+ result={'ha_icon':regeln.ha_icon_fehlend(p) if regeln else {'kein_urteil':KEIN_URTEIL},'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'pendingHeldUntilEcho':pending_held,'keyboardCoalesced':keyboard_coalesced,'heldSamples':held,'busyMs':round(busy_ms,2),'busyMarker':busy_marker,'selectHeldUntilEcho':select_held_until_echo,'selectSamples':select_held,'waitingShots':['wartet-power-320-light.png','wartet-power-960-light.png','wartet-power-320-dark.png','wartet-power-960-dark.png'],'mockServices':p.evaluate('calls.length'),'pageErrors':errors,**kt}
  # ui-regeln.md (Etappe H): report.json carries kontrast/touch; interactions-report.json keeps its old name.
+ hi=result['ha_icon'];assert 'kein_urteil' in hi or (hi.get('aktiv') is True and not hi.get('fehlend')),('M79 ha-icon stand-in',hi)
  for name in ('interactions-report.json','report.json'):(out/name).write_text(json.dumps(result,indent=2))
  print(json.dumps({k:v for k,v in result.items() if k not in ('kontrast','touch')}|{'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
  assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt));b.close()
