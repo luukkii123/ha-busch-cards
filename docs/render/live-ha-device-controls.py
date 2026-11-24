@@ -5,7 +5,8 @@ import json,pathlib,sys,re
 from playwright.sync_api import sync_playwright
 private=json.loads(pathlib.Path(sys.argv[2]).read_text());base=private['base_url'].rstrip('/')
 auth={'hassUrl':base,'clientId':base+'/','expires':4102444800000,'expires_in':315360000,'refresh_token':'','access_token':private['token']}
-source=pathlib.Path(sys.argv[1]).read_text().replace('busch-','task3-busch-').replace('ensureBuschCore(1)','window.__task3Core')
+# Calls pass the bundle name since core 1.5.1 (M9); both forms are replaced.
+source=re.sub(r'ensureBuschCore\(1(?:, "[^"]*")?\)','window.__task3Core',pathlib.Path(sys.argv[1]).read_text().replace('busch-','task3-busch-'))
 with sync_playwright() as pw:
  b=pw.chromium.launch();context=b.new_context(ignore_https_errors=True,viewport={'width':1000,'height':1200});context.add_init_script('localStorage.setItem("hassTokens",JSON.stringify(%s))'%json.dumps(auth));context.add_init_script("window.__rejections=[];addEventListener('unhandledrejection',e=>__rejections.push({keys:Object.keys(e.reason||{}),code:e.reason?.code}));");p=context.new_page();errors=[];p.on('pageerror',lambda e:errors.append({'type':type(e).__name__,'message':re.sub(r'https?://[^\s]+','[url]',str(e)).replace(private['token'],'[redacted]'),'location':re.findall(r'/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)',e.stack or '')}))
  p.goto(base+'/lovelace/0',wait_until='domcontentloaded');p.wait_for_function("!!document.querySelector('home-assistant')?.hass && !!customElements.get('ha-form')")

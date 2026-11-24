@@ -379,9 +379,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.5.0 sha256:9d35b2364dda1b9591f38143235af431b2c57f8938bb82d6a3f9d7ab282b0d02 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.5.0", sourceHash: "9d35b2364dda" });
-/* Busch Cards Core 1.5.0. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.5.1 sha256:d287deb6312d9f53bb9c952fb681b26b21d1c0216ab803449a202ae4d1b10d24 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.5.1", sourceHash: "d287deb6312d" });
+/* Busch Cards Core 1.5.1. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -615,7 +615,7 @@ class BuschQueryEngine {
 }
 class BuschCardsCore {
   constructor() {
-    this.apiVersion = "1.0"; this.version = BUSCH_CORE_STAMP.version; this.sourceHash = BUSCH_CORE_STAMP.sourceHash; this.index = new BuschEntityIndex(); this.metrics = { stateUpdates: 0, queriesSkipped: 0, queriesRecalculated: 0, resultChanges: 0, domRenders: null, structuralBuilds: 0 };
+    this.apiVersion = "1.0"; this.version = BUSCH_CORE_STAMP.version; this.sourceHash = BUSCH_CORE_STAMP.sourceHash; this.bundle = "unknown"; this.conflicts = []; this.index = new BuschEntityIndex(); this.metrics = { stateUpdates: 0, queriesSkipped: 0, queriesRecalculated: 0, resultChanges: 0, domRenders: null, structuralBuilds: 0 };
     this.registry = new BuschRegistryCache(null, (name, map) => {
       this.index[name === "entity" ? "registry" : name === "device" ? "devices" : name === "area" ? "areas" : name === "floor" ? "floors" : "labels"] = map;
       this.lastErrors.delete(name);
@@ -875,7 +875,7 @@ class BuschCardsCore {
   query(spec) { return this.engine.query(spec); }
   smartQuery(spec, scopeDeviceId) { this.smart ||= new BuschSmartQueries(this); return this.smart.query(spec, scopeDeviceId); }
   subscribe(query, callback) { return this.engine.subscribe(query, callback); }
-  debugSnapshot() { return { version: this.version, sourceHash: this.sourceHash, ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
+  debugSnapshot() { return { version: this.version, sourceHash: this.sourceHash, bundle: this.bundle, conflicts: this.conflicts.map(entry => ({ ...entry })), ...this.metrics, entities: this.entities.size, devices: this.devices.size, registryRequests: { ...this.registry.requests }, errors: [...this.lastErrors.keys()] }; }
   dispose() {
     if (this._releaseTimer) { clearTimeout(this._releaseTimer); this._releaseTimer = null; } this.generation++; for (const unsubscribe of this.unsubscribers.splice(0)) Promise.resolve(unsubscribe()).catch(() => {});
     this._registryLive = false; this.streaming = false; this._entitiesActive = false; this._entitiesFull = false; this.connection = null; this.registry.clear(); this._refreshing = new Map(); this._queuedRefresh = new Set();
@@ -883,15 +883,19 @@ class BuschCardsCore {
   }
 }
 let buschCoreConflictReported = false;
-function ensureBuschCore(requiredApiVersion = 1) {
+// bundleName: the calling bundle (e.g. "busch-cards"); the creating bundle is kept on the core, a conflict names both.
+function ensureBuschCore(requiredApiVersion = 1, bundleName = "unknown") {
   const major = Number(String(requiredApiVersion).split(".")[0]);
   if (major !== 1) throw new Error(`Busch Cards Core API ${major} is incompatible with API 1 / ist mit API 1 nicht kompatibel.`);
-  const core = globalThis[BUSCH_CORE_KEY] || (globalThis[BUSCH_CORE_KEY] = new BuschCardsCore());
+  let core = globalThis[BUSCH_CORE_KEY];
+  if (!core) { core = globalThis[BUSCH_CORE_KEY] = new BuschCardsCore(); core.bundle = String(bundleName); }
   if (Number(String(core.apiVersion).split(".")[0]) !== major) throw new Error("Busch Cards Core API mismatch / inkompatible API-Version.");
   // The first loaded core stays (cards already hold it); a different one is reported once per bundle.
   if (core.sourceHash !== BUSCH_CORE_STAMP.sourceHash && !buschCoreConflictReported) {
     buschCoreConflictReported = true;
-    console.warn(`Busch Core ${BUSCH_CORE_STAMP.version} (${BUSCH_CORE_STAMP.sourceHash}) differs from the loaded core ${core.version} (${core.sourceHash || "unknown"}); keeping the loaded core. Update busch-cards and ha-unraid-cards together.`);
+    // A core before 1.5.1 has no bundle/conflicts fields; the warning still names what is known.
+    if (Array.isArray(core.conflicts)) core.conflicts.push({ bundle: String(bundleName), version: BUSCH_CORE_STAMP.version, sourceHash: BUSCH_CORE_STAMP.sourceHash });
+    console.warn(`Busch Core ${BUSCH_CORE_STAMP.version} (${BUSCH_CORE_STAMP.sourceHash}) from ${bundleName} differs from the loaded core ${core.version} (${core.sourceHash || "unknown"}) from ${core.bundle || "unknown"}; keeping the loaded core. Update busch-cards and ha-unraid-cards together.`);
   }
   return core;
 }
@@ -7633,7 +7637,7 @@ const TEXTE_BUSCH_DEVICE_CARD = {
 
 /** Ein Aufruf je Seite, nicht je Karte. Bei Fehler eine leere Map. */
 function devLabelsLaden(hass) {
-  const core = ensureBuschCore(1);
+  const core = ensureBuschCore(1, "busch-cards");
   core.attach(hass);
   return core.loadLabelRegistry().then(map => map || new Map()).catch(() => new Map());
 }
@@ -7863,7 +7867,7 @@ class BuschDeviceCard extends HTMLElement {
     const vorher = this._hass;
     this._hass = hass;
     if (hass) {
-      this._core = ensureBuschCore(1);
+      this._core = ensureBuschCore(1, "busch-cards");
       if (!this._releaseCore) {
         this._releaseCore = this._core.retain(hass);
         this._unwatchCore = this._core.watch(() => { this._labels = this._core.labels; this._render(); });
@@ -8699,7 +8703,7 @@ class BuschSmartEntities extends HTMLElement {
   disconnectedCallback(){this._generation=(this._generation||0)+1;this._unsubscribe?.();this._unsubscribe=null;this._unwatch?.();this._unwatch=null;this._release?.();this._release=null;}
   _connect(){
     if(!this._hass||!this._config)return;
-    this._core=ensureBuschCore(1);
+    this._core=ensureBuschCore(1, "busch-cards");
     if(!this._release){this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._update(this._query?.result||[]));}else this._core.attach(this._hass);
     if(!this._unsubscribe){this._query=this._core.smartQuery(this._config);this._unsubscribe=this._core.subscribe(this._query,rows=>this._update(rows));}
   }
@@ -11125,7 +11129,7 @@ class BuschNetworkBaseCard extends HTMLElement {
  set hass(hass){this._hass=hass;if(this.isConnected)this._connect();this._core?.attach(hass);this._render();}get hass(){return this._hass;}
  connectedCallback(){this._connect();this._configureQuery();this._render();}
  disconnectedCallback(){this._generation++;this._unsubscribe?.();this._unsubscribeClock?.();this._unsubscribeClock=null;this._clockQuery=null;this._unwatch?.();this._unwatchDevice?.();this._deviceWatchId=null;this._release?.();this._unsubscribe=this._unwatch=this._unwatchDevice=this._release=null;this._query=null;this._shellSignature=null;this._rowNodes.clear();for(const cleanup of this._gestures?.values()||[])cleanup();this._gestures?.clear();}
- _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>{this._configureQuery();this._render();});this._configureQuery();}
+ _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1, "busch-cards");this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>{this._configureQuery();this._render();});this._configureQuery();}
  _scopeConfig(){if(this._kind==='network')return this._config;const m=buschFritzModel(this._core,this._config);return {...this._config,platform:'fritz',config_entry_id:m.config_entry_id||'__no_selected_fritz_entry__'};}
  _configureQuery(){if(!this._core||this._configError)return;try{const spec=this._scopeConfig(),query=new BuschNetworkQueries(this._core).query(spec);this._queryError=null;if(query!==this._query){this._unsubscribe?.();this._query=query;this._rows=query.result;this._unsubscribe=this._core.subscribe(query,rows=>{this._rows=rows;this._renderClients();});}const timed=this._kind==='fritz'&&this._config.show_metrics&&Object.entries(buschFritzModel(this._core,this._config).roles).some(([role,e])=>['uptime','wan_uptime'].includes(role)&&e);if(timed&&!this._unsubscribeClock){this._clockQuery=new BuschNetworkClock(this._core).query();this._unsubscribeClock=this._core.subscribe(this._clockQuery,result=>{this._clockEpoch=result[0];this._render();});}else if(!timed&&this._unsubscribeClock){this._unsubscribeClock();this._unsubscribeClock=null;this._clockQuery=null;}if(this._deviceWatchId!==this._config.device_id){this._unwatchDevice?.();this._deviceWatchId=this._config.device_id;this._unwatchDevice=this._deviceWatchId?this._core.watchDevice(this._deviceWatchId,()=>this._render()):null;}}catch(error){this._queryError=error.message;this._rows=[];}}
  getCardSize(){return 3+Math.min(6,this._rows.length);}getGridOptions(){return {columns:12,min_columns:3};}
@@ -11243,7 +11247,7 @@ class BuschNetworkBaseEditor extends BuschEditorBase {
  setConfig(config){const result=BuschUI.validateConfig(config||{},{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return;}if(!BuschUI.acceptEcho(this._echo,result.value,this._config))return;const previous=this._config;this._acceptConfig(result.value,BuschUI.cloneConfig,{echo:false});this._validationError=null;const structural=!previous||buschCoreKey(previous.filter)!==buschCoreKey(this._config.filter)||buschCoreKey(previous.actions)!==buschCoreKey(this._config.actions)||previous.device_id!==this._config.device_id||previous.config_entry_id!==this._config.config_entry_id;if(structural)this._render();else this._syncForms();}
  set hass(hass){const languageChanged=BuschUI.language(this._hass,{legacy:true})!==BuschUI.language(hass,{legacy:true});this._hass=hass;if(this.isConnected)this._connect();if(!this.shadowRoot||languageChanged)this._render();else this._syncForms(false);}get hass(){return this._hass;}
  connectedCallback(){this._connect();this._render();}disconnectedCallback(){this._unwatch?.();this._release?.();this._unwatch=this._release=null;}
- _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1);this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._syncForms());}
+ _connect(){if(!this._hass||this._release)return;this._core=ensureBuschCore(1, "busch-cards");this._release=this._core.retain(this._hass);this._unwatch=this._core.watch(()=>this._syncForms());}
  _change(patch,structural=false){const next={...this._config,...patch},result=BuschUI.validateConfig(next,{normalize:c=>buschNetworkConfig(c,this._kind)});if(!result.ok){this._validationError=result.error.message;this._showError();return false;}this._validationError=null;BuschUI.queueEcho(this._echo,result.value);this._publishConfig(result.value,{echo:false});if(structural)this._render();else this._syncForms();return true;}
  _showError(){if(this._errorNode){const t=BuschUI.dictionary(BUSCH_NETWORK_TEXT,this._hass,{legacy:true});this._errorNode.textContent=this._validationError?(t[this._validationError]||t.invalid_config):'';this._errorNode.hidden=!this._validationError;}for(const input of this.shadowRoot?.querySelectorAll('input')||[])input.setAttribute('aria-invalid',String(!!this._validationError));}
  _section(key,title,open=false){const body=buschNetworkNode('div',undefined,'body'),section=BuschUI.section({title,content:body,open:this._sectionOpen.get(key)??open});section.dataset.section=key;section.addEventListener('toggle',()=>this._sectionOpen.set(key,section.open));this.shadowRoot.appendChild(section);return body;}

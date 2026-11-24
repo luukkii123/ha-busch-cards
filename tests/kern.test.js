@@ -68,6 +68,29 @@ test('core: the same core loaded twice stays silent', () => {
   assert.equal(warnings.length, 0, warnings.join('\n'));
 });
 
+// M9 (D2 step 2): the conflict warning names both versions and both bundles, and
+// the core records the bundle that created it for debugSnapshot().
+test('core: the conflict warning names the loaded and the later bundle', () => {
+  const text = fs.readFileSync(KARTE, 'utf8'), own = marker(text);
+  const other = text.replace(`sourceHash: "${own.sourceHash}"`, 'sourceHash: "000000000000"');
+  const { warnings, first, second } = evaluateTwice(text, other);
+  const core = first.ensureBuschCore(1, 'first-bundle');
+  second.ensureBuschCore(1, 'second-bundle');
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.match(warnings[0], /second-bundle/, 'warning names the later bundle');
+  assert.match(warnings[0], /first-bundle/, 'warning names the bundle of the loaded core');
+  assert.equal(core.bundle, 'first-bundle');
+  assert.equal(core.debugSnapshot().bundle, 'first-bundle');
+  assert.deepEqual(JSON.parse(JSON.stringify(core.debugSnapshot().conflicts)), [{ bundle: 'second-bundle', version: own.version, sourceHash: '000000000000' }]);
+});
+
+test('core: every ensureBuschCore call outside the core block names this bundle', () => {
+  const outside = quelle().replace(BLOCK, '');
+  const calls = outside.match(/ensureBuschCore\([^)]*\)/g) || [];
+  assert.ok(calls.length > 0, 'bundle calls ensureBuschCore');
+  for (const call of calls) assert.equal(call, 'ensureBuschCore(1, "busch-cards")');
+});
+
 // M43: A failing listener must not be swallowed silently; each failure logs one warning.
 test('core: a throwing device listener logs exactly one warning', async () => {
   const text = fs.readFileSync(KARTE, 'utf8');
