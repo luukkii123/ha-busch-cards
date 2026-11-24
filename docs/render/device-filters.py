@@ -1,21 +1,21 @@
 """Device-local predicate filtering, hidden filter metadata and visual editor."""
 import pathlib,sys,json
 from playwright.sync_api import sync_playwright
-# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+# M26/M79 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
 for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
     if pathlib.Path(_kandidat, 'regeln.py').is_file():
         sys.path.insert(0, _kandidat)
         break
-# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
-# measured (kein_urteil in report.json) and the behaviour asserts still run;
-# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch and the shared
+# ha-icon stand-in are not measured (kein_urteil in report.json), the page keeps its own stand-in and the behaviour asserts
+# still run; where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
 try:
     import regeln  # noqa: E402
 except ImportError:
     if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
         sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
     regeln = None
-    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+    print('Kontrast/Touch und ha-icon: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
 # M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
 # (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
 AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
@@ -26,11 +26,18 @@ def kt_messen(page,selektor,**fall):
  if regeln is None:return
  m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
  for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+# M79: report.json ha_icon {aktiv, fehlend}: the shared stand-in drew every named icon with a real MDI path.
+def ha_icon_bericht(page):
+ return regeln.ha_icon_fehlend(page) if regeln else {'kein_urteil':KEIN_URTEIL}
+def ha_icon_ok(bericht):
+ return 'kein_urteil' in bericht or (bericht.get('aktiv') is True and not bericht.get('fehlend'))
 def kt_ok():
  return regeln is None or regeln.bewerte(kt)==0
 code=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
- b=pw.chromium.launch(args=['--no-sandbox']);p=b.new_page(viewport={'width':320,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
+ b=pw.chromium.launch(args=['--no-sandbox'])
+ if regeln:regeln.ha_icon_attrappe(b)  # M79: the card's ha-icon draws real MDI glyphs
+ p=b.new_page(viewport={'width':320,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
  p.set_content('<style>body{margin:0;font-family:Arial;color:var(--primary-text-color);background:var(--card-background-color)}ha-card,ha-form{display:block}ha-form label{display:grid;margin-block:8px}input{min-width:0;max-width:100%;box-sizing:border-box}</style>')
  p.add_script_tag(content='''customElements.define('ha-form',class extends HTMLElement{set schema(v){this._schema=v;this.render()}get schema(){return this._schema}set data(v){this._data=v;this.render()}get data(){return this._data}render(){this.replaceChildren();for(const f of this._schema||[]){const label=document.createElement('label');label.textContent=this.computeLabel?.(f)||f.name;const input=document.createElement('input');input.value=this._data?.[f.name]??'';label.append(input);this.append(label)}}});
  customElements.define('ha-card',class extends HTMLElement{});customElements.define('test-row',class extends HTMLElement{set hass(h){}});customElements.define('test-tile',class extends HTMLElement{set hass(h){}});window.loadCardHelpers=async()=>({createCardElement:c=>{const el=document.createElement('test-tile');el.textContent=c.entity;return el},createRowElement:c=>{const el=document.createElement('test-row');el.textContent=c.entity;return el}});
@@ -125,6 +132,7 @@ with sync_playwright() as pw:
     kt_messen(p,'busch-device-card-editor',ansicht='editor',lang=lang,breite=width,thema='dark' if dark else 'light')
     overflow=p.evaluate("()=>[...editor._filterRoot.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&(r.right>innerWidth+1||r.left< -1)}).length")
     cases.append({'width':width,'language':lang,'dark':dark,'overflow':overflow})
- result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'m60':m60,'m60Keyboard':keyboard,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True,**kt};(out/'report.json').write_text(json.dumps(result,indent=2))
+ result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'m60':m60,'m60Keyboard':keyboard,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True,'ha_icon':ha_icon_bericht(p),**kt};(out/'report.json').write_text(json.dumps(result,indent=2))
  print(json.dumps({k:v for k,v in result.items() if k not in ('kontrast','touch')}|{'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors and all(c['overflow']==0 for c in cases)
+ assert ha_icon_ok(result['ha_icon']),('M79 ha-icon stand-in not active or icons without a path',result['ha_icon'])
  assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt));b.close()

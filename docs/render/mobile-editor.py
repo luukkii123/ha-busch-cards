@@ -26,9 +26,16 @@ def kt_messen(page,selektor,**fall):
  if regeln is None:return
  m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
  for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+# M79 (#1349): shared ha-icon stand-in with real MDI glyphs; report.json ha_icon {aktiv, fehlend} (kein_urteil without regeln.py).
+def ha_icon_bericht(page):
+ return regeln.ha_icon_fehlend(page) if regeln else {'kein_urteil':KEIN_URTEIL}
+def ha_icon_ok(bericht):
+ return 'kein_urteil' in bericht or (bericht.get('aktiv') is True and not bericht.get('fehlend'))
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
- b=pw.chromium.launch(args=['--no-sandbox']);p=b.new_page(viewport={'width':320,'height':900});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
+ b=pw.chromium.launch(args=['--no-sandbox'])
+ if regeln:regeln.ha_icon_attrappe(b)  # M79
+ p=b.new_page(viewport={'width':320,'height':900});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
  p.set_content('''<style>body{margin:0;font-family:Arial;background:var(--card-background-color);color:var(--primary-text-color)}#cell{height:360px}ha-card{display:block;border:1px solid var(--divider-color);border-radius:12px}ha-form label{display:block;margin:8px 0}input{max-width:100%;box-sizing:border-box}busch-smart-entities-editor{display:block}</style><div id="cell"></div>''')
  p.add_script_tag(content='''customElements.define('ha-card',class extends HTMLElement{});customElements.define('ha-form',class extends HTMLElement{set schema(v){this._schema=v;this.render()}get schema(){return this._schema}set data(v){this._data=v;this.render()}get data(){return this._data}render(){this.replaceChildren();for(const f of this._schema||[]){/* M31: like HA's ha-form: caption above the field, selects show option labels, booleans as a checkbox with the caption to the right. */const label=document.createElement('label'),caption=document.createElement('span'),value=this._data?.[f.name],options=f.selector?.select?.options;caption.textContent=this.computeLabel?.(f)||f.name;let control;if(f.selector?.boolean){control=document.createElement('input');control.type='checkbox';control.checked=!!value;label.style.cssText='display:flex;gap:8px;align-items:center;margin:8px 0;min-height:44px';label.append(control,caption);}else{if(options){control=document.createElement('select');for(const o of options){const option=document.createElement('option');option.value=typeof o==='string'?o:o.value;option.textContent=typeof o==='string'?o:(o.label??o.value);control.append(option);}control.value=String(value??'');}else{control=document.createElement('input');control.value=value??'';}control.style.cssText='width:100%;min-height:44px;box-sizing:border-box';label.style.cssText='display:grid;gap:4px;margin:8px 0';label.append(caption,control);}control.setAttribute('aria-label',f.name);this.append(label)}}});window.loadCardHelpers=async()=>({createCardElement:()=>document.createElement('div')});window.h={locale:{language:'de'},states:{'calendar.example':{state:'off',attributes:{},last_changed:'fixed'}},entities:{},devices:{},callApi:async()=>[]};''')
  p.add_script_tag(content=source)
@@ -58,6 +65,8 @@ with sync_playwright() as pw:
   p.evaluate("()=>{const input=editor.shadowRoot.querySelector('.rule-value input');input.value='zone';input.dispatchEvent(new Event('input',{bubbles:true}))}")
   assert p.evaluate("saved.filter.include[0].integration==='zone'")
   assert p.evaluate("editor.shadowRoot.querySelector('[role=tab][aria-selected=true]').dataset.group==='filters'")
+ ha_icon=ha_icon_bericht(p)
  b.close()
-result={'calendar':initial,'cases':report,'errors':errors,**kt};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not initial['fixedCellOverflow'] and initial['previewBounded'] and nav==3 and not errors and all(not x['overflow'] and not x['layout'] for x in report)
+result={'calendar':initial,'cases':report,'errors':errors,'ha_icon':ha_icon,**kt};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not initial['fixedCellOverflow'] and initial['previewBounded'] and nav==3 and not errors and all(not x['overflow'] and not x['layout'] for x in report)
+assert ha_icon_ok(ha_icon),('M79 ha-icon stand-in not active or icons without a path',ha_icon)
 assert regeln is None or regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))

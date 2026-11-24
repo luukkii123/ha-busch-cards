@@ -1,21 +1,21 @@
 """Synthetic quick-control contracts and theme/width gallery; no real services."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
-# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+# M26/M79 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
 for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
     if pathlib.Path(_kandidat, 'regeln.py').is_file():
         sys.path.insert(0, _kandidat)
         break
-# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
-# measured (kein_urteil in report.json) and the behaviour asserts still run;
-# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch and the shared
+# ha-icon stand-in are not measured (kein_urteil in report.json), the page keeps its own stand-in and the behaviour asserts
+# still run; where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
 try:
     import regeln  # noqa: E402
 except ImportError:
     if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
         sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
     regeln = None
-    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+    print('Kontrast/Touch und ha-icon: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
 # M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
 # (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
 AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
@@ -26,12 +26,19 @@ def kt_messen(page,selektor,**fall):
  if regeln is None:return
  m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
  for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+# M79: report.json ha_icon {aktiv, fehlend}: the shared stand-in drew every named icon with a real MDI path.
+def ha_icon_bericht(page):
+ return regeln.ha_icon_fehlend(page) if regeln else {'kein_urteil':KEIN_URTEIL}
+def ha_icon_ok(bericht):
+ return 'kein_urteil' in bericht or (bericht.get('aktiv') is True and not bericht.get('fehlend'))
 def kt_ok():
  return regeln is None or regeln.bewerte(kt)==0
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
- b=pw.chromium.launch();p=b.new_page(viewport={'width':1000,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
- p.set_content('<style>body{margin:0;font-family:Arial;background:var(--card-background-color)}ha-card{display:block}ha-icon{display:block;width:24px;height:24px}ha-icon:after{content:"◇"}</style>')
+ b=pw.chromium.launch()
+ if regeln:regeln.ha_icon_attrappe(b)  # M79: real MDI glyphs instead of the diamond
+ p=b.new_page(viewport={'width':1000,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
+ p.set_content('<style>body{margin:0;font-family:Arial;background:var(--card-background-color)}ha-card{display:block}ha-icon{display:block;width:24px;height:24px}'+('' if regeln else 'ha-icon:after{content:"◇"}')+'</style>')
  p.add_script_tag(content="""window.calls=[];window.leaks=[];window.loadCardHelpers=async()=>({createCardElement:()=>document.createElement('ha-card'),createRowElement:()=>document.createElement('div')});window.make=(domain,state,attrs={})=>{const id=domain+'.synthetic';return {locale:{language:'de'},config:{unit_system:{temperature:'°C'}},localize:key=>key.endsWith('.auto')?'Automatic HVAC':undefined,states:{[id]:{entity_id:id,state,attributes:attrs}},entities:{[id]:{entity_id:id,device_id:'d',platform:'demo'}},devices:{d:{id:'d',name:'Badezimmer mit sehr langem Gerätenamen',manufacturer:'Hersteller',model:'Modell'}},areas:{},connection:{},callWS:async m=>m.type.includes('device_registry')?[{id:'d',name:'Badezimmer mit sehr langem Gerätenamen',manufacturer:'Hersteller',model:'Modell'}]:m.type.includes('entity_registry')?[{entity_id:id,device_id:'d',platform:'demo'}]:[],callService:(...args)=>calls.push(args)}};""")
  p.add_script_tag(content=source)
  scenarios=[('light','on',{'brightness':128,'supported_color_modes':['brightness']}),('switch','off',{}),('fan','on',{'supported_features':57,'percentage':50,'preset_modes':['auto','quiet'],'preset_mode':'auto'}),('cover','open',{'supported_features':15,'current_position':0}),('lock','locked',{}),('climate','heat',{'supported_features':1,'temperature':21,'min_temp':7,'max_temp':35,'hvac_modes':['off','heat'],'target_temp_step':.5}),('media_player','playing',{'supported_features':261,'volume_level':0}),('button','unknown',{})]
@@ -65,8 +72,9 @@ with sync_playwright() as pw:
  p.evaluate("()=>{card.setConfig({device_id:'d',display_mode:'image',image:'data:image/png;base64,broken',icon:'mdi:star'});card.hass=h}");p.wait_for_function("!!card._icon.querySelector('ha-icon[icon=\"mdi:star\"]')")
  p.evaluate("()=>{card.remove();window.editor=document.createElement('busch-device-card-editor');editor.hass=h;editor.setConfig(Object.freeze({device_id:'d',quick_controls:true,title:'Original',extra:0}));document.body.append(editor);window.saved=[];editor.addEventListener('config-changed',e=>{saved.push(e.detail.config);editor.setConfig(JSON.parse(JSON.stringify(e.detail.config)))});editor._form.dispatchEvent(new CustomEvent('value-changed',{detail:{value:{...editor._form.data,quick_controls:false,image:'',icon:'mdi:star'}},bubbles:true}));}")
  assert p.evaluate("saved.length===1&&saved[0].quick_controls===false&&saved[0].extra===0&&saved[0].title==='Original'&&editor._form.data.quick_controls===false")
- result={'cases':results,'pageErrors':errors,'eventLeaks':p.evaluate('leaks'),'mockServices':p.evaluate('calls.length'),'focusStable':True,'editorRoundTrip':True,**kt}
+ result={'cases':results,'pageErrors':errors,'eventLeaks':p.evaluate('leaks'),'mockServices':p.evaluate('calls.length'),'focusStable':True,'editorRoundTrip':True,'ha_icon':ha_icon_bericht(p),**kt}
  # ui-regeln.md (Etappe H): every render run's report.json carries kontrast/touch; browser-report.json keeps its old name.
  for name in ('browser-report.json','report.json'):(out/name).write_text(json.dumps(result,indent=2))
- print(json.dumps({'cases':len(results),'pageErrors':errors,'mockServices':result['mockServices'],'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+ print(json.dumps({'cases':len(results),'pageErrors':errors,'mockServices':result['mockServices'],'ha_icon':result['ha_icon'],'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+ assert ha_icon_ok(result['ha_icon']),('M79 ha-icon stand-in not active or icons without a path',result['ha_icon'])
  assert kt_ok(),('Kontrast/Touch (M26): browser-report.json kontrast/touch',regeln.zaehle(kt));b.close()

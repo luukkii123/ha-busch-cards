@@ -386,6 +386,8 @@ console, errors = [], []
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch(args=["--no-sandbox"])
+    # M79 (#1349): the shared ha-icon stand-in (real MDI glyphs) replaces the empty HaIcon of PAGE.
+    regeln.ha_icon_attrappe(browser)
     page = browser.new_page(viewport={"width": 640, "height": 900}, locale="de-DE")
     page.on("console", lambda m: console.append((m.type, m.text)) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -724,6 +726,7 @@ with sync_playwright() as pw:
     page.evaluate("() => { document.documentElement.dataset.theme = 'light'; }")
     page.wait_for_timeout(300)
     selbsttest = regeln.selbsttest(page, "#karte-fehler")
+    ha_icon = regeln.ha_icon_fehlend(page)  # M79: stand-in active, names without a path
 
     browser.close()
 
@@ -872,6 +875,8 @@ checks["Regel 1: kein Verstoss bei 320/480/960 in hell und dunkel"] = (
     regeln.bewerte(ui) == 0
 )
 checks["Kontrast und Touchziele ohne Verstoss (M26)"] = regeln.bewerte(kontrast_touch) == 0
+checks["ha-icon-Attrappe aktiv, kein Symbol ohne Pfad (M79)"] = (
+    ha_icon.get("aktiv") is True and not ha_icon.get("fehlend"))
 checks["Gegenprobe schlaegt an (Werkzeug nicht blind)"] = (
     selbsttest["ueberlauf_erkannt"] and selbsttest["ausserhalb_erkannt"]
 )
@@ -898,6 +903,7 @@ report = {
     "ui_regeln_zaehlung": {k: regeln.zaehle(v) for k, v in ui.items()},
     "ui_selbsttest": {k: v for k, v in selbsttest.items() if k != "befund"},
     **kontrast_touch,
+    "ha_icon": ha_icon,
     "console_errors": echte_fehler,
     "kachel_abrufe_fehlgeschlagen": len(console) - len(echte_fehler),
     "page_errors": errors,

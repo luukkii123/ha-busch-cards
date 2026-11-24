@@ -13,7 +13,7 @@ import json,pathlib,sys
 from playwright.sync_api import sync_playwright
 sys.path.insert(0,"/work")
 from regeln import bewerte, lauf_breiten, messe_text, _thema_setzen
-import regeln  # noqa: E402  (M26, #1349; this script needs regeln.py anyway and is not in .github/ci-contracts.txt)
+import regeln  # noqa: E402  (M26/M79, #1349; this script needs regeln.py anyway and is not in .github/ci-contracts.txt)
 # M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) for month view, waiting row, compact month and month
 # picker, in light and dark; exceptions only with a reason in kontrast-ausnahmen.json.
 AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
@@ -25,6 +25,7 @@ source=pathlib.Path(sys.argv[1]).read_text()
 out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True)
+ regeln.ha_icon_attrappe(browser)  # M79: real MDI glyphs; the pages' own empty ha-icon is then ignored
  page=browser.new_page(viewport={"width":480,"height":800})
  errors=[]
  page.on("pageerror",lambda error:errors.append(str(error)))
@@ -177,10 +178,14 @@ with sync_playwright() as p:
  assert not gewaehlt['offen'] and gewaehlt['versatz']==ziel and gewaehlt['fokus'] and not gewaehlt['eintrag'] and gewaehlt['monat'].startswith('August 2026'),gewaehlt
  monatswahl.update({'escape':esc,'zurueck':zurueck,'abbrechen':abbrechen,'gewaehlt':gewaehlt})
  kompakt['monatswahl']=monatswahl
+ # M79: both pages drew their icons (the month picker's close X) with the shared stand-in.
+ symbole=[regeln.ha_icon_fehlend(page),regeln.ha_icon_fehlend(kp)]
+ ha_icon={'aktiv':all(s.get('aktiv') is True for s in symbole),'fehlend':sorted({n for s in symbole for n in s.get('fehlend',[])}),'seiten':symbole}
  kp.close()
- report={'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe']),**kt}
+ report={'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe']),'ha_icon':ha_icon,**kt}
  (out/'report.json').write_text(json.dumps(report,indent=2))
- print(json.dumps({'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors,'kontrast_touch':regeln.zaehle(kt)}))
+ print(json.dumps({'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors,'ha_icon':ha_icon,'kontrast_touch':regeln.zaehle(kt)}))
  assert not bewerte(matrix) and not errors,report
+ assert ha_icon['aktiv'] and not ha_icon['fehlend'],('M79 ha-icon stand-in not active or icons without a path',ha_icon)
  assert bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))
  browser.close()

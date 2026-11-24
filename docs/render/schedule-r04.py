@@ -2,21 +2,21 @@
 import json,pathlib,sys,re
 from playwright.sync_api import sync_playwright
 from readonly_guard import install_readonly_guard
-# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+# M26/M79 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
 for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
     if pathlib.Path(_kandidat, 'regeln.py').is_file():
         sys.path.insert(0, _kandidat)
         break
-# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
-# measured (kein_urteil in report.json) and the behaviour asserts still run;
-# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch and the shared
+# ha-icon stand-in are not measured (kein_urteil in report.json), the page keeps its own stand-in and the behaviour asserts
+# still run; where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
 try:
     import regeln  # noqa: E402
 except ImportError:
     if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
         sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
     regeln = None
-    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+    print('Kontrast/Touch und ha-icon: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
 # M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
 # (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
 AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
@@ -27,13 +27,21 @@ def kt_messen(page,selektor,**fall):
  if regeln is None:return
  m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
  for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+# M79: report.json ha_icon {aktiv, fehlend}: the shared stand-in drew every named icon with a real MDI path.
+def ha_icon_bericht(page):
+ return regeln.ha_icon_fehlend(page) if regeln else {'kein_urteil':KEIN_URTEIL}
+def ha_icon_ok(bericht):
+ return 'kein_urteil' in bericht or (bericht.get('aktiv') is True and not bericht.get('fehlend'))
 def kt_ok():
  return regeln is None or regeln.bewerte(kt)==0
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 native=len(sys.argv)>3;prefix='r04-candidate-busch-' if native else 'busch-'
 if native:source=source.replace('busch-',prefix)
 with sync_playwright() as p:
- browser=p.chromium.launch(headless=True);context=browser.new_context(ignore_https_errors=True,locale='de-DE',viewport={'width':960,'height':1000});page=context.new_page();errors=[]
+ browser=p.chromium.launch(headless=True)
+ # M79: shared ha-icon stand-in on the synthetic page only; the optional HA host keeps HA's own ha-icon.
+ if regeln and not native:regeln.ha_icon_attrappe(browser)
+ context=browser.new_context(ignore_https_errors=True,locale='de-DE',viewport={'width':960,'height':1000});page=context.new_page();errors=[]
  page.on('pageerror',lambda e:errors.append({'type':type(e).__name__,'locations':re.findall(r'/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)',e.stack or '')}))
  if native:
   guard_counts=install_readonly_guard(context)
@@ -213,6 +221,8 @@ with sync_playwright() as p:
    kt_messen(page,'#schedule-r04-probe busch-schedule-card',ansicht='karte',breite=320,thema='dark' if dark else 'light')
    page.locator('#schedule-r04-probe busch-schedule-card').screenshot(path=str(out/f'zeitplan-handy-320-{"dark" if dark else "light"}.png'))
  guard_report={**guard_counts,'websocketWritesBlocked':page.evaluate("(window.__blocked||[]).reduce((counts,type)=>{counts[type]=(counts[type]||0)+1;return counts},{})")} if native else {}
+ ha_icon=ha_icon_bericht(page) if not native else {'kein_urteil':'native HA host: HA draws its own ha-icon'}
  browser.close()
-summary={'guard':guard_report,'native':native,'cases':report,'m24':m24,'pageErrors':errors,'serviceCalls':0,**kt};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0,'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+summary={'guard':guard_report,'native':native,'cases':report,'m24':m24,'pageErrors':errors,'serviceCalls':0,'ha_icon':ha_icon,**kt};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0,'ha_icon':ha_icon,'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+assert ha_icon_ok(ha_icon),('M79 ha-icon stand-in not active or icons without a path',ha_icon)
 assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))

@@ -26,6 +26,11 @@ def kt_messen(page,selektor,**fall):
  if regeln is None:return
  m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
  for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+# M79 (#1349): shared ha-icon stand-in with real MDI glyphs; report.json ha_icon {aktiv, fehlend} (kein_urteil without regeln.py).
+def ha_icon_bericht(page):
+ return regeln.ha_icon_fehlend(page) if regeln else {'kein_urteil':KEIN_URTEIL}
+def ha_icon_ok(bericht):
+ return 'kein_urteil' in bericht or (bericht.get('aktiv') is True and not bericht.get('fehlend'))
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 fixture="""
 customElements.define('ha-card',class extends HTMLElement{});
@@ -44,7 +49,9 @@ window.__config={filter:{include:[{domain:'sensor',attributes:{device_class:'bat
 """
 FORM_CHECK="""()=>{/* M31 measuring check: captions above fields in one column, checkbox caption beside its box, selects show texts, tabs on one line, no raw JSON line. */const issues=[],raw=['attribute','skip','null','true','false','rows','entity_id','device_id','none'];for(const form of editor.shadowRoot.querySelectorAll('ha-form')){if(!form.getBoundingClientRect().height)continue;let left=null;for(const label of form.querySelectorAll('label')){const caption=label.querySelector('span'),control=label.querySelector('input,select'),a=caption.getBoundingClientRect(),b=control.getBoundingClientRect(),l=label.getBoundingClientRect();if(!l.height)continue;if(left===null)left=l.left;if(Math.abs(l.left-left)>1)issues.push({column:caption.textContent});if(control.type==='checkbox'){if(a.left<b.right-1||Math.abs((a.top+a.bottom)/2-(b.top+b.bottom)/2)>6)issues.push({checkbox:caption.textContent});}else if(a.bottom>b.top+1)issues.push({captionNotAbove:caption.textContent});if(control.tagName==='SELECT'&&raw.includes(control.selectedOptions[0]?.textContent))issues.push({rawValue:caption.textContent+'='+control.selectedOptions[0].textContent});}}for(const tab of editor.shadowRoot.querySelectorAll('[role=tab]')){const r=tab.getBoundingClientRect();if(r.height>49||tab.scrollHeight>tab.clientHeight+1)issues.push({tabWraps:tab.textContent});}for(const button of editor.shadowRoot.querySelectorAll('button'))if(/·/.test(button.textContent))issues.push({fragment:button.textContent});for(const select of editor.shadowRoot.querySelectorAll('select'))if(select.value==='true'&&select.selectedOptions[0]?.textContent==='true')issues.push({rawBoolean:true});if(/^\s*\{/.test(document.body.innerText))issues.push({rawJson:document.body.innerText.slice(0,40)});return issues}"""
 with sync_playwright() as pw:
- browser=pw.chromium.launch(args=['--no-sandbox','--enable-precise-memory-info']);page=browser.new_page(viewport={'width':960,'height':1200});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+ browser=pw.chromium.launch(args=['--no-sandbox','--enable-precise-memory-info'])
+ if regeln:regeln.ha_icon_attrappe(browser)  # M79
+ page=browser.new_page(viewport={'width':960,'height':1200});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
  page.set_content('<style>body{margin:0;font-family:Arial}ha-card{display:block;padding:16px}test-target{display:block;overflow-wrap:anywhere}ha-form label{display:grid;margin:8px}input{max-width:100%;min-width:0}html{--primary-color:#03a9f4;--primary-text-color:#222;--secondary-text-color:#555;--card-background-color:#fff;--secondary-background-color:#eee;--divider-color:#bbb}</style>')
  page.add_script_tag(content=fixture);page.add_script_tag(content=source)
  page.evaluate("()=>{window.card=document.createElement('busch-smart-entities');card.setConfig(__config);card.hass=__h;document.body.append(card)}")
@@ -93,7 +100,9 @@ with sync_playwright() as pw:
  # Never duplicated either way.
  assert len(stats['registryRequests'])==len(set(stats['registryRequests'])) and len(stats['registryRequests']) in (0,5)
  assert stats['registryRequests']==[], 'grace period expected: no registry refetch within 30 s'
+ ha_icon=ha_icon_bericht(page)
  browser.close()
-(out/'report.json').write_text(json.dumps({'cases':report,'errors':errors,'performance':stats,**kt,'behavior':'include/change/sort/empty/else/device-value/unique/unrelated-no-target-update/editor-change'},indent=2))
-print(json.dumps({'cases':len(report),'failures':sum(len(r['failures'])for r in report),'errors':errors}));assert not errors and not any(r['failures']for r in report)
+(out/'report.json').write_text(json.dumps({'cases':report,'errors':errors,'performance':stats,'ha_icon':ha_icon,**kt,'behavior':'include/change/sort/empty/else/device-value/unique/unrelated-no-target-update/editor-change'},indent=2))
+print(json.dumps({'cases':len(report),'failures':sum(len(r['failures'])for r in report),'errors':errors,'ha_icon':ha_icon}));assert not errors and not any(r['failures']for r in report)
+assert ha_icon_ok(ha_icon),('M79 ha-icon stand-in not active or icons without a path',ha_icon)
 assert regeln is None or regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))
