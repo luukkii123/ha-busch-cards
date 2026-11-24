@@ -216,6 +216,11 @@ test("#1349: the calendar's waiting row keeps full text contrast; its busy frame
   assert.equal(wert(block, "opacity"), null, "no opacity on the waiting row");
   const m = block.match(/outline:\s*2px dashed ([^;]+);/);
   assert.ok(m, "dashed busy frame");
+  // Bildprüfung karten-20261124-124054: the time sat directly on the frame. Inner space on both sides, cancelled by an
+  // equal negative margin, so the text does not jump when the row starts waiting.
+  const pad = wert(block, "padding-inline"), marg = wert(block, "margin-inline");
+  assert.ok(pad && /--ha-space-/.test(pad), "inner space between frame and text");
+  assert.equal(marg, `calc(-1 * ${pad})`, "negative margin equal to the inner space");
   const lines = [];
   for (const [name, t] of Object.entries(THEMA)) {
     const card = hex(t["card-background-color"]);
