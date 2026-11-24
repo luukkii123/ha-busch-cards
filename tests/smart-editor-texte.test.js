@@ -62,3 +62,13 @@ test('M31: a typed value caption sits on its own line above the controls',async(
  const {BUSCH_SMART_EDITOR_CSS}=kit.loadScript(BUNDLE,{globals:kit.createEnvironment(),expose:['BUSCH_SMART_EDITOR_CSS']}).exposed;
  assert.match(BUSCH_SMART_EDITOR_CSS,/\.row>\.field-caption\{[^}]*flex-basis:100%/);
 });
+
+test('J (#1326, M26): nested editor summaries such as "Erweiterte Kartenkonfiguration" are 44 px touch targets',async()=>{
+ // Render run karten-20261124-093700: details > summary inside a section measured 34 px (padding 8 px + one text line).
+ const {all}=await open('de',CONFIG);
+ assert.ok(all().some(n=>n.tagName==='SUMMARY'&&n.textContent==='Erweiterte Kartenkonfiguration'),'nested summary rendered');
+ const {BUSCH_SMART_EDITOR_CSS}=kit.loadScript(BUNDLE,{globals:kit.createEnvironment(),expose:['BUSCH_SMART_EDITOR_CSS']}).exposed;
+ const rules=[...BUSCH_SMART_EDITOR_CSS.matchAll(/(?:^|\})\s*summary\{([^}]*)\}/g)].map(m=>m[1]);
+ assert.ok(rules.length>=1,'summary rule present');
+ for(const rule of rules)assert.match(rule,/min-height:var\(--ha-space-11,44px\)/,'summary rule: '+rule);
+});
