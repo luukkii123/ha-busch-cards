@@ -2348,7 +2348,7 @@ class BuschScheduleCard extends HTMLElement {
         .head .sub {
           font-size: var(--ha-font-size-s, 12px);
           color: var(--secondary-text-color);
-          margin-top: 2px;
+          margin-top: calc(var(--ha-space-1, 4px) / 2);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -2370,7 +2370,7 @@ class BuschScheduleCard extends HTMLElement {
           align-items: end;
           gap: 0 var(--ha-space-2, 8px);
           height: 16px;
-          margin-bottom: 2px;
+          margin-bottom: calc(var(--ha-space-1, 4px) / 2);
         }
         /* overflow: hidden ist Pflicht, weil die Beschriftungen darin
            ABSOLUT sitzen (Regel 1): der Container muss schneiden können, und
@@ -4299,7 +4299,8 @@ const CAL_STIL = `
   /* Consecutive empty days of one kind share one line; each day is a small chip. */
   .cal-lauf { display:flex; flex-wrap:wrap; gap:var(--ha-space-1, 4px) var(--ha-space-2, 8px); padding:var(--ha-space-1, 4px) 0;
     border-bottom:1px solid var(--divider-color); }
-  .cal-lauf .cal-tag { display:flex; padding:2px var(--ha-space-2, 8px); border-bottom:none; border-radius:var(--busch-radius-inner, var(--ha-border-radius-md, 8px)); }
+  .cal-lauf .cal-tag { display:flex; padding:calc(var(--ha-space-1, 4px) / 2) var(--ha-space-2, 8px); border-bottom:none;
+    border-radius:var(--busch-radius-inner, var(--ha-border-radius-md, 8px)); }
   .cal-liste > :last-child { border-bottom:none; }
   /* Weekend: surface plus a rim, so it also reads in a dark theme. */
   .cal-wochenende { background:var(--secondary-background-color);
@@ -4315,7 +4316,7 @@ const CAL_STIL = `
     min-width:0; }
   .cal-nr { font-weight:var(--ha-font-weight-bold, 600); color:var(--primary-text-color); }
   .cal-inhalt { flex:1; min-width:0; }
-  .cal-termin { display:flex; gap:var(--ha-space-2, 8px); align-items:center; min-height:44px; padding:2px 0;
+  .cal-termin { display:flex; gap:var(--ha-space-2, 8px); align-items:center; min-height:44px; padding:calc(var(--ha-space-1, 4px) / 2) 0;
     cursor:pointer; -webkit-user-select:none; user-select:none; }
   /* Die leeren Tage tragen \`cursor: default\` und sind nicht klickbar — die
      Regel darueber gilt trotzdem auch fuer sie, und zwar bewusst: ihr Inhalt
@@ -5837,7 +5838,7 @@ class BuschCalendarCardEditor extends BuschEditorBase {
       this.appendChild(this._form);
 
       this._farbFeld = document.createElement("div");
-      this._farbFeld.style.padding = "8px 0 0";
+      this._farbFeld.style.padding = "var(--ha-space-2, 8px) 0 0";
       this.appendChild(this._farbFeld);
     }
     // M48: schema and label functions once per language, data once per config; a foreign update only passes hass.
@@ -5878,7 +5879,7 @@ class BuschCalendarCardEditor extends BuschEditorBase {
     }
     const farbenTitel = (this._texte || TEXTE_BUSCH_CALENDAR_CARD.de.texte).farben;
     this._farbFeld.innerHTML =
-      `<div style="font-weight:600;margin:8px 0 4px">${calEscape(farbenTitel)}</div>` +
+      `<div style="font-weight:var(--ha-font-weight-bold, 600);margin:var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px)">${calEscape(farbenTitel)}</div>` +
       normal.entities
         .map((e) => {
           const name =
@@ -5886,7 +5887,7 @@ class BuschCalendarCardEditor extends BuschEditorBase {
               this._hass.states[e.entity].attributes.friendly_name) ||
             e.entity;
           return (
-            `<label style="display:flex;align-items:center;gap:10px;padding:4px 0">` +
+            `<label style="display:flex;align-items:center;gap:var(--ha-space-2, 8px);padding:var(--ha-space-1, 4px) 0">` +
             `<input type="color" data-entity="${calEscape(e.entity)}" value="${calEscape(e.color)}">` +
             `<span>${calEscape(name)}</span></label>`
           );
@@ -7706,7 +7707,7 @@ const DEV_STIL = `
     background:color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
     /* M26 (E6): HA blue on the media surface is 2.1:1; mixed toward the text colour. */
     color:color-mix(in srgb, var(--primary-color) 50%, var(--primary-text-color)); --mdc-icon-size:24px; }
-  .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .dev-titel { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:calc(var(--ha-space-1, 4px) / 2); }
   /* M60/E12: a card title may wrap to two lines, then it is cut; the full name is the tooltip. */
   /* M61: size and weight from BuschUI.header level 1; white-space resets its one-line rule for E12. */
   .dev-name { line-height:1.2; color:var(--primary-text-color); white-space:normal; text-overflow:clip;

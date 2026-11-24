@@ -55,3 +55,38 @@ test("M63: calendar spacing and radii on tokens", () => {
   const radii = [...CAL_STIL.matchAll(/border-radius:\s*([^;]+);/g)].map((m) => m[1]);
   assert.deepEqual(radii.filter((value) => /^\d+px$/.test(value.trim())), [], "no bare px radius");
 });
+
+/** Spacing (margin, padding, gap) with a bare px value outside var() fallbacks, as CSS declaration or
+ *  as a JS style assignment (`style.padding = "8px 0 0"`). Returns `<property>: <value>` strings. */
+function fixedSpacing(text) {
+  const found = [];
+  const stripVar = (value) => {
+    let before;
+    do { before = value; value = value.replace(/var\([^()]*(?:\([^()]*\)[^()]*)*\)/g, ""); } while (value !== before);
+    return value;
+  };
+  const property = "(?:margin|padding)(?:-(?:top|bottom|left|right|inline|block)(?:-(?:start|end))?)?|gap|row-gap|column-gap";
+  const css = new RegExp(`(?<![\\w-])(${property})\\s*:\\s*([^;}"'\`\\n]+)`, "g");
+  const js = /\.style\.(margin\w*|padding\w*|gap|rowGap|columnGap)\s*=\s*(["'`])([^"'`]*)\2/g;
+  for (const m of text.matchAll(css)) if (/(?<![\w.-])[1-9]\d*(?:\.\d+)?px\b/.test(stripVar(m[2]))) found.push(`${m[1]}: ${m[2].trim()}`);
+  for (const m of text.matchAll(js)) if (/(?<![\w.-])[1-9]\d*(?:\.\d+)?px\b/.test(stripVar(m[3]))) found.push(`${m[1]}: ${m[3].trim()}`);
+  return found;
+}
+
+test("M63 (#1349): no fixed px spacing in the card code; steps below 4 px derive from --ha-space-1", () => {
+  // The calendar editor's colour field (inline styles), the schedule and calendar rows and the device title
+  // were the last fixed values (margin:8px 0 4px, gap:10px, padding:4px 0, 2px steps).
+  assert.deepEqual(fixedSpacing(CARDS), []);
+  const field = slice("this._farbFeld.innerHTML =", ".join(\"\")");
+  assert.match(field, /margin:var\(--ha-space-2, 8px\) 0 var\(--ha-space-1, 4px\)/);
+  assert.match(field, /gap:var\(--ha-space-2, 8px\);padding:var\(--ha-space-1, 4px\) 0/);
+  assert.match(SOURCE, /this\._farbFeld\.style\.padding = "var\(--ha-space-2, 8px\) 0 0";/);
+  assert.match(CAL_STIL, /\.cal-termin \{[^}]*padding:calc\(var\(--ha-space-1, 4px\) \/ 2\) 0;/);
+});
+
+test("M63 (#1349): the spacing scan finds fixed values (counter-check of the scanner)", () => {
+  assert.deepEqual(fixedSpacing("a{margin:8px 0 4px;gap:var(--ha-space-2, 8px);padding:calc(var(--ha-space-1, 4px) / 2) 0}"), ["margin: 8px 0 4px"]);
+  assert.deepEqual(fixedSpacing('<div style="gap:10px;padding:0">'), ["gap: 10px"]);
+  assert.deepEqual(fixedSpacing('el.style.padding = "8px 0 0";'), ["padding: 8px 0 0"]);
+  assert.deepEqual(fixedSpacing("b{margin-top:0;border:1px solid red;width:44px}"), []);
+});
