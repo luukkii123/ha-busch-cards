@@ -380,7 +380,7 @@ Gemeinsame Schlüssel (N = Netzwerkkarte, F = FRITZ!-Karte):
 | `display_mode` | `auto` \| `image` \| `icon` | `auto` | N F | Bild oder Symbol |
 | `image`, `icon` | Text | — | N F | eigenes Bild / `mdi:`-Symbol |
 | `layout` | `compact` \| `detailed` | `detailed` | N F | Ansicht |
-| `count` | Ganzzahl ≥ 0 | `20` | N F | anfangs sichtbare Clients |
+| `count` | Ganzzahl ≥ 0 | `12` | N F | anfangs sichtbare Clients; darunter „N weitere anzeigen“, `0` zeigt alle |
 | `columns` | 1–3 | `1` | N F | Spalten der Clientliste |
 | `show_header`, `show_status`, `show_details`, `show_controls`, `show_empty` | ja/nein | `true` | N F | Bereiche ein-/ausblenden |
 | `start_expanded` | ja/nein | `true` | N F | Clientliste aufgeklappt |

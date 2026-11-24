@@ -645,7 +645,8 @@ begrenzt zusätzlich auf die eigene berichtende Instanz und Integration.
 Die Query teilt Registrycaches, Ereignisverarbeitung und Zeitscheduler des
 Cores. Eine einzelne Trackeränderung bewertet nur diesen Client; Änderungen
 an fremden Sensoren bewerten die Clientfilter nicht erneut. Der Renderer
-behält unveränderte Clientnodes und begrenzt die Anfangsliste auf 20 Einträge.
+behält unveränderte Clientnodes und begrenzt die Anfangsliste ohne `count` auf 12 Einträge
+plus „N weitere anzeigen“ (Nutzerentscheid 20.11.2026, M30).
 
 Alle Einstellungen sind im visuellen DE/EN-Editor verfügbar. Allgemein,
 Datenquelle, Anzeige, Interaktion, Filter/Sortierung, manuelle Rollen und eigene

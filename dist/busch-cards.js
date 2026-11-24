@@ -8575,7 +8575,7 @@ class BuschNetworkClock {
  changed(){this.core.metrics.queriesSkipped++;}
  calculate(query){const now=Date.now(),minute=Math.floor(now/60000);query.metrics.calculations++;query.nextDeadline=(minute+1)*60000;if(query.result[0]!==minute){query.result=Object.freeze([minute]);for(const callback of query.subscribers){try{callback(query.result);}catch(error){console.warn('Busch Network clock subscriber failed',error?.name);}}}}
 }
-const BUSCH_NETWORK_DEFAULTS={display_mode:'auto',layout:'detailed',show_header:true,show_status:true,show_details:true,show_clients:true,start_expanded:true,show_controls:true,show_wlan:true,show_reboot:true,show_reconnect:true,show_update:true,show_metrics:true,show_empty:true,include_unavailable:true,source_type:'router',show_ip:true,show_mac:true,show_hostname:true,show_network_device:true,show_last_changed:true,show_last_time_reachable:true,time_fallback:false,show_internet:true,show_wol:true,show_rename:false,show_labels:false,label_ids:[],confirm_reboot:true,confirm_reconnect:true,confirm_internet:true,confirm_wlan:false,admin_actions:false,count:20,columns:1,filter:{include:[],exclude:[]},sort:{method:'name',reverse:false},actions:[],roles:{},debug:false};
+const BUSCH_NETWORK_DEFAULTS={display_mode:'auto',layout:'detailed',show_header:true,show_status:true,show_details:true,show_clients:true,start_expanded:true,show_controls:true,show_wlan:true,show_reboot:true,show_reconnect:true,show_update:true,show_metrics:true,show_empty:true,include_unavailable:true,source_type:'router',show_ip:true,show_mac:true,show_hostname:true,show_network_device:true,show_last_changed:true,show_last_time_reachable:true,time_fallback:false,show_internet:true,show_wol:true,show_rename:false,show_labels:false,label_ids:[],confirm_reboot:true,confirm_reconnect:true,confirm_internet:true,confirm_wlan:false,admin_actions:false,count:12,columns:1,filter:{include:[],exclude:[]},sort:{method:'name',reverse:false},actions:[],roles:{},debug:false};
 function buschNetworkConfig(config={},kind='network'){
  const result=BuschUI.validateConfig(config,{normalize:copy=>({...BUSCH_NETWORK_DEFAULTS,...copy,filter:{include:[],exclude:[],...copy.filter},sort:{method:'name',reverse:false,...copy.sort},roles:{...copy.roles}})});if(!result.ok)throw result.error;const value=result.value;
  if(!['auto','image','icon'].includes(value.display_mode)||!['compact','detailed'].includes(value.layout)||!Number.isInteger(value.count)||value.count<0||![1,2,3].includes(value.columns))throw new Error('invalid_config');
@@ -8809,7 +8809,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
    icon: "Optionales MDI-Icon. Vorgabe: Router oder Netzwerk.",
    display_mode: "Automatisch nutzt vorhandenes Bild, eigenes Bild, Icon. Vorgabe automatisch.",
    layout: "Kompakt reduziert sekundäre Angaben. Vorgabe detailliert.",
-   count: "Begrenzt die anfängliche Liste. 0 zeigt alle. Vorgabe 20.",
+   count: "Ohne Angabe zeigt die Karte 12 Clients und darunter den Knopf „N weitere anzeigen“. 0 zeigt alle. Vorgabe 12.",
    columns: "Zeigt 1 bis 3 Spalten bei ausreichender Breite. Mobil eine. Vorgabe 1.",
    time_fallback: "Fehlendes Erreichbar-Datum darf explizit als Zustandsänderung erscheinen. Vorgabe aus.",
    label_ids: "Vorhandene HA-Labels für die Clientaktion. Vorgabe keine; nur Administratoren.",
@@ -9132,7 +9132,7 @@ const TEXTE_BUSCH_NETWORK_CARD={
    icon: "Optional MDI icon. Default: router or network.",
    display_mode: "Automatic uses available image, custom image, icon. Default automatic.",
    layout: "Compact reduces secondary information. Default detailed.",
-   count: "Limits the initial list. 0 shows all. Default 20.",
+   count: "Without a value the card shows 12 clients and a \"Show N more\" button below them. 0 shows all. Default 12.",
    columns: "Shows 1 to 3 columns when space permits. One on mobile. Default 1.",
    time_fallback: "Missing reachable time may appear explicitly as state change. Default off.",
    label_ids: "Existing HA labels for client actions. Default none; administrators only.",
@@ -9457,7 +9457,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    icon: "Optionales MDI-Icon. Vorgabe: Router oder Netzwerk.",
    display_mode: "Automatisch nutzt vorhandenes Bild, eigenes Bild, Icon. Vorgabe automatisch.",
    layout: "Kompakt reduziert sekundäre Angaben. Vorgabe detailliert.",
-   count: "Begrenzt die anfängliche Liste. 0 zeigt alle. Vorgabe 20.",
+   count: "Ohne Angabe zeigt die Karte 12 Clients und darunter den Knopf „N weitere anzeigen“. 0 zeigt alle. Vorgabe 12.",
    columns: "Zeigt 1 bis 3 Spalten bei ausreichender Breite. Mobil eine. Vorgabe 1.",
    time_fallback: "Fehlendes Erreichbar-Datum darf explizit als Zustandsänderung erscheinen. Vorgabe aus.",
    label_ids: "Vorhandene HA-Labels für die Clientaktion. Vorgabe keine; nur Administratoren.",
@@ -9780,7 +9780,7 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
    icon: "Optional MDI icon. Default: router or network.",
    display_mode: "Automatic uses available image, custom image, icon. Default automatic.",
    layout: "Compact reduces secondary information. Default detailed.",
-   count: "Limits the initial list. 0 shows all. Default 20.",
+   count: "Without a value the card shows 12 clients and a \"Show N more\" button below them. 0 shows all. Default 12.",
    columns: "Shows 1 to 3 columns when space permits. One on mobile. Default 1.",
    time_fallback: "Missing reachable time may appear explicitly as state change. Default off.",
    label_ids: "Existing HA labels for client actions. Default none; administrators only.",

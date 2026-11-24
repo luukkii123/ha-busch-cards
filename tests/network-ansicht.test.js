@@ -143,3 +143,14 @@ test('Bildprüfung 19.11. (E12): the FRITZ card title wraps to two lines and car
  const rule=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m=>m[1].split(',').some(s=>s.trim().endsWith('.header h2'))).map(m=>m[2]).join(';');
  for(const want of [/-webkit-line-clamp:\s*2/,/white-space:\s*normal/,/overflow:\s*hidden/,/overflow-wrap:\s*anywhere/,/display:\s*-webkit-box/])assert.match(rule,want);
 });
+
+test('M30 (Nutzerentscheid 20.11.): without count the card shows 12 clients plus "N more"; the editor helper says so',()=>{
+ const l=load(),f=many(l,40);for(const Card of [l.BuschNetworkCard,l.BuschFritzDeviceCard]){const c=card(l,f,{device_id:'router'},Card);
+  const more=()=>descend(c._clientBody).find(n=>n.tagName==='BUTTON'&&/weitere anzeigen$/.test(n.attributes['aria-label']||''));
+  assert.equal(l.BUSCH_NETWORK_DEFAULTS.count,12);assert.equal(articles(c).length,12,Card.name);assert.equal(more().attributes['aria-label'],'12 weitere anzeigen',Card.name);
+  more().listeners.click({stopPropagation(){}});assert.equal(articles(c).length,24,Card.name);c.disconnectedCallback();}
+ const fritz=card(l,f,{device_id:'router'},l.BuschFritzDeviceCard),de=fritz._text();fritz._hass={...fritz._hass,locale:{language:'en'}};const en=fritz._text();fritz.disconnectedCallback();
+ for(const texte of [l.BUSCH_NETWORK_TEXT,{de,en}]){
+  assert.match(texte.de.helpers.count,/12 Clients/);assert.match(texte.de.helpers.count,/weitere anzeigen/);assert.match(texte.de.helpers.count,/Vorgabe 12\.$/);
+  assert.match(texte.en.helpers.count,/12 clients/);assert.match(texte.en.helpers.count,/Show N more/);assert.match(texte.en.helpers.count,/Default 12\.$/);}
+});
