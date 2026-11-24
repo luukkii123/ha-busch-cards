@@ -8607,6 +8607,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
   choose: "Wähle ein FRITZ! Gerät im Editor.",
   failed: "Aktion fehlgeschlagen. Prüfe Zustand und Berechtigungen.",
   invalid_config: "Die Konfiguration ist ungültig.",
+  config_error_title: "Die Clients können nicht angezeigt werden.",
+  config_error_hint: "Karte bearbeiten und die Einstellung im Editor korrigieren.",
   invalid_cidr: "CIDR benötigt eine gültige IPv4-Adresse und ein Präfix von 0 bis 32.",
   invalid_range: "Der IPv4-Bereich benötigt gültige Grenzen: Anfang muss kleiner oder gleich Ende sein.",
   invalid_rule: "Die Filterregel ist ungültig oder enthält ein unbekanntes Feld.",
@@ -8930,6 +8932,8 @@ const TEXTE_BUSCH_NETWORK_CARD={
   choose: "Select a FRITZ! device in the editor.",
   failed: "Action failed. Check state and permissions.",
   invalid_config: "The configuration is invalid.",
+  config_error_title: "The clients cannot be shown.",
+  config_error_hint: "Edit the card and correct the setting in the editor.",
   invalid_cidr: "CIDR requires a valid IPv4 address and a prefix from 0 to 32.",
   invalid_range: "The IPv4 range needs valid boundaries: start must be less than or equal to end.",
   invalid_rule: "The filter rule is invalid or contains an unsupported field.",
@@ -9255,6 +9259,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   choose: "Wähle ein FRITZ! Gerät im Editor.",
   failed: "Aktion fehlgeschlagen. Prüfe Zustand und Berechtigungen.",
   invalid_config: "Die Konfiguration ist ungültig.",
+  config_error_title: "Das FRITZ! Gerät kann nicht angezeigt werden.",
+  config_error_hint: "Karte bearbeiten und die Einstellung im Editor korrigieren.",
   invalid_cidr: "CIDR benötigt eine gültige IPv4-Adresse und ein Präfix von 0 bis 32.",
   invalid_range: "Der IPv4-Bereich benötigt gültige Grenzen: Anfang muss kleiner oder gleich Ende sein.",
   invalid_rule: "Die Filterregel ist ungültig oder enthält ein unbekanntes Feld.",
@@ -9578,6 +9584,8 @@ const TEXTE_BUSCH_FRITZ_DEVICE_CARD={
   choose: "Select a FRITZ! device in the editor.",
   failed: "Action failed. Check state and permissions.",
   invalid_config: "The configuration is invalid.",
+  config_error_title: "The FRITZ! device cannot be shown.",
+  config_error_hint: "Edit the card and correct the setting in the editor.",
   invalid_cidr: "CIDR requires a valid IPv4 address and a prefix from 0 to 32.",
   invalid_range: "The IPv4 range needs valid boundaries: start must be less than or equal to end.",
   invalid_rule: "The filter rule is invalid or contains an unsupported field.",
@@ -10845,7 +10853,10 @@ class BuschNetworkBaseCard extends HTMLElement {
   if(c.show_header){const header=buschNetworkNode('div',undefined,'header'),main=buschNetworkNode('div',undefined,'main'),title=buschNetworkNode('h2',name);title.title=name;header.appendChild(BuschUI.media(c,model?.device||{},this._kind==='fritz'?'mdi:router-wireless':'mdi:lan','card-icon'));main.appendChild(title);if(model?.device?.model)main.appendChild(buschNetworkNode('p',model.device.model,'detail'));header.appendChild(main);if(c.show_status&&model?.roles.connection){const state=model.roles.connection.state,label=state==='on'?t.connected:state==='off'?t.disconnected:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'connected':state==='off'?'offline':state,label);badge.className+=' header-status';header.appendChild(badge);}if(c.show_status&&model?.roles.link){const state=model.roles.link.state,label=state==='on'?t.link_on:state==='off'?t.link_off:t[state]||t.unknown,badge=BuschUI.statusBadge(state==='on'?'online':state==='off'?'offline':state,t.link+': '+label);badge.className+=' header-status';header.appendChild(badge);}BuschUI.header({node:header,titleNode:title,level:1});card.appendChild(header);}
   /* M27: one live region per card; an error replaces the loading line instead of standing next to it. */
   const error=this._configError||this._queryError||this._error;this._stateNode||=buschZustandsRegion(buschNetworkNode('div'),'card-state');
-  buschZustand(this._stateNode,error?{kind:'error',title:t[error]||t.invalid_config}:!this._core?{kind:'loading',title:t.loading}:this._kind==='fritz'&&!this._configError&&!model?.device?{kind:'empty',icon:'mdi:router-wireless',title:t.choose}:null);card.appendChild(this._stateNode);
+  /* M27 (Abschlusstor 20.11.): a configuration error reads like the Unraid/Arrstack blocks: the title names the effect, the hint the concrete
+   * problem and the next step. No retry button: the same configuration fails again, the fix is in the editor. Action failures keep their text. */
+  const configProblem=!!(this._configError||this._queryError);
+  buschZustand(this._stateNode,error?configProblem?{kind:'error',title:t.config_error_title,hint:(t[error]||t.invalid_config)+' '+t.config_error_hint}:{kind:'error',title:t[error]||t.failed}:!this._core?{kind:'loading',title:t.loading}:this._kind==='fritz'&&!this._configError&&!model?.device?{kind:'empty',icon:'mdi:router-wireless',title:t.choose}:null);card.appendChild(this._stateNode);
   if(this._core?.lastErrors?.size)card.appendChild(buschZustand(buschNetworkNode('div',undefined,'registry-state'),{kind:'error',icon:'mdi:database-alert-outline',title:t.registry_error}));
   if(this._kind==='fritz'&&!this._configError){
    if(this._core&&model?.device){if(model.ambiguous.length)card.appendChild(buschNetworkNotice(t.ambiguous,'warning'));const metrics=buschNetworkNode('div',undefined,'metrics');if(c.show_metrics)for(const [role,e]of Object.entries(model.roles)){if(!e||['reboot','reconnect','update','connection','link','cpu'].includes(role))continue;let value;if(!buschNetworkAvailable(e)||['unknown',''].includes(e.state))value=t.unavailable;else if(['uptime','wan_uptime'].includes(role))value=buschNetworkDuration(e.state,t);else if(['external_ip','external_ipv6'].includes(role))value=e.state;else{const number=Number(e.state);value=Number.isFinite(number)&&e.state.trim()?BuschUI.formatNumber(number,BuschUI.language(this._hass),{maximumFractionDigits:1})+(e.attributes.unit_of_measurement?' '+e.attributes.unit_of_measurement:''):t.unknown;}metrics.appendChild(BuschUI.metric(t[role],value));}if(model.roles.update)metrics.appendChild(BuschUI.metric(t.firmware,model.roles.update.attributes.installed_version||t.unknown));if(metrics.children.length)card.appendChild(metrics);

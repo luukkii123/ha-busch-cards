@@ -203,3 +203,23 @@ test("M27: smart entities show errors as the shared alert block", () => {
   assert.equal(error.attributes.role, "alert");
   assert.match(text(error), /Broken filter/);
 });
+
+test("M27 (Abschlusstor): a network/FRITZ configuration error is a state block with title, hint and next step", () => {
+  const cls = (node, name) => walk(node).find((n) => String(n.className || "").split(/\s+/).includes(name));
+  for (const kind of ["BuschNetworkCard", "BuschFritzDeviceCard"]) for (const language of ["de", "en"]) {
+    const l = load(), f = fixture(l), card = new l[kind]();
+    card._core = f.core;
+    card.setConfig({ device_id: "router", filter: { include: [{ cidr: "bad/99" }] } });
+    card._hass = { ...f.hass, locale: { language } };
+    card._render();
+    const t = card._text(), error = stateOf(card.shadowRoot, "error");
+    assert.ok(error, kind + " " + language + " error block");
+    for (const key of ["config_error_title", "config_error_hint"]) assert.equal(typeof t[key], "string", kind + " " + language + " " + key);
+    assert.equal(text(cls(error, "busch-state-title")), t.config_error_title, "title names the effect, not the raw validation text");
+    const hint = text(cls(error, "busch-state-hint"));
+    assert.ok(hint.includes(t.invalid_cidr), "hint names the concrete problem");
+    assert.ok(hint.includes(t.config_error_hint), "hint names the next step in the editor");
+    assert.equal(walk(error).find((n) => n.tagName === "BUTTON"), undefined, "a configuration error has no retry: the fix is in the editor");
+    card.disconnectedCallback();
+  }
+});

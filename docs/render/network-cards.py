@@ -75,6 +75,12 @@ with sync_playwright() as pw:
       assert shape['lines']<=2 and (width!=320 or shape['lines']==2) and shape['title']==shape['full'],(width,dark,shape)
      # M27: the error replaces the loading line; every error/empty/loading uses the shared state block as a live region.
      if scenario=='error':assert 'werden geladen' not in text,text
+     # M27 (Abschlusstor 20.11.): network-error-* is a state block like Unraid/Arrstack: the title names the effect, the hint the
+     # concrete problem plus the next step in the editor; no retry button for a configuration error.
+     if scenario=='error':
+      block=page.evaluate("(()=>{const e=document.querySelector('[data-test-card]').shadowRoot.querySelector('.busch-state[data-kind=error]');return e&&{title:e.querySelector('.busch-state-title')?.textContent,hint:e.querySelector('.busch-state-hint')?.textContent,buttons:e.querySelectorAll('button').length}})()")
+      want_title='Die Clients können nicht angezeigt werden.' if kind=='network' else 'Das FRITZ! Gerät kann nicht angezeigt werden.'
+      assert block and block['title']==want_title and 'CIDR benötigt' in block['hint'] and 'Karte bearbeiten' in block['hint'] and block['buttons']==0,(kind,width,dark,block)
      if scenario in ('error','empty','loading'):
       state=page.evaluate("(()=>{const r=document.querySelector('[data-test-card]').shadowRoot;return [...r.querySelectorAll('.busch-state')].map(e=>({kind:e.dataset.kind,role:e.getAttribute('role'),live:e.getAttribute('aria-live')}))})()")
       want=scenario
