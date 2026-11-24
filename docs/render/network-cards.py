@@ -134,12 +134,17 @@ with sync_playwright() as pw:
  page.keyboard.press('Space');assert page.evaluate(card+".shadowRoot.querySelector('article.client details').open") is False
  page.evaluate(mount,20);kept=page.evaluate(card+".shadowRoot.querySelector('select[data-control=filter]').value");assert kept=='not_home' and rows()==13,(kept,rows())
  cases.append({'kind':'network','scenario':'search-filter-keyboard','width':320,'dark':False,'findings':[],'screenshot':'network-search-320-light.png'});page.evaluate("localStorage.clear()")
+ # M76 (#1349): the editors also at the phone widths 360/390; there Regel 1 is measured in full (messe_text, every text
+ # inside the editor, overflow/outside/overlap). Regel 2 does not apply: the network/FRITZ editors open no popup.
  for lang in ['de','en']:
-  for width in [320,480,960]:
+  for width in [320,360,390,480,960]:
    for dark in [False,True]:
     for kind in ['network','fritz-device']:
      page.evaluate("""({lang,width,dark,kind})=>{document.querySelectorAll('[data-test-card]').forEach(e=>e.remove());document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#212121');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');document.documentElement.style.setProperty('--secondary-background-color',dark?'#303b47':'#eef5fb');document.documentElement.style.setProperty('--secondary-text-color',dark?'#bbb':'#555');/* M26: the page behind the editor follows the theme too (dark editors drew #eee on the white page). */document.documentElement.style.setProperty('--primary-background-color',dark?'#171717':'#fff');document.documentElement.style.setProperty('--divider-color',dark?'#46505b':'#dbe4ed');const e=document.createElement('busch-'+kind+'-card-editor');e.dataset.testCard='true';e.style.width=width+'px';e._core=core;e.hass={...hass,locale:{language:lang}};e.setConfig({device_id:'router',title:'Editor example',filter:{include:[{cidr:'192.0.2.0/24',and:[{ip_range:{from:'192.0.2.1',to:'192.0.2.100'}}]}],exclude:[{hostname:'guest-*'}]},actions:[{name:'Example',variant:'secondary',tap_action:{action:'more-info'}}]});e._connect=()=>{};document.body.append(e);for(const d of e.shadowRoot.querySelectorAll('details'))d.open=true;}""",{'lang':lang,'width':width,'dark':dark,'kind':kind})
      findings=page.evaluate("""()=>{const e=document.querySelector('[data-test-card]');return e.scrollWidth>e.clientWidth+1?[{editorOverflow:true}]:[];}""")
+     if width in (360,390):
+      regel1=regeln.messe_text(page,'[data-test-card]')
+      findings+=[{'regel1':art,**({'befund':eintrag} if isinstance(eintrag,dict) else {'befund':str(eintrag)})} for art in ('ueberlauf','ausserhalb','ueberlappung') for eintrag in regel1.get(art,[])]
      kt_messen(page,'[data-test-card]',kind=kind+'-editor',lang=lang,breite=width,thema='dark' if dark else 'light')
      file=f'editor-{kind}-{lang}-{width}-'+('dark' if dark else 'light')+'.png';page.locator('[data-test-card]').screenshot(path=str(out/file));cases.append({'kind':kind+'-editor','lang':lang,'width':width,'dark':dark,'findings':findings,'screenshot':file})
  ha_icon={**regeln.ha_icon_fehlend(page),'glyphen':glyphen};assert ha_icon['aktiv'] and glyphen>0 and not ha_icon['fehlend'],ha_icon

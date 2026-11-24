@@ -95,11 +95,16 @@ with sync_playwright() as p:
    assert page.evaluate("card.shadowRoot.activeElement?.classList.contains('block') || card.shadowRoot.activeElement?.classList.contains('track')")
    page.evaluate('card._model.monday[0].start=420;card._renderDays()')
    open_dialog()
-   if width in [390,960]:page.locator('#schedule-r04-probe').locator('.block-dialog').screenshot(path=str(out/f'editor-{width}-{dark}.png'))
-   # M26: contrast/touch of card and open dialog at every width, light and dark.
+   # M76 (#1349): the block editor also as an image at 360 (390 and 960 as before); Regel 1 measured on the open dialog at
+   # 360/390 (Regel 2 – Escape, Back, Cancel, scrim, focus – runs above at every width of this loop). M26: contrast/touch
+   # of card and open dialog at every width, light and dark.
+   if width in [360,390,960]:page.locator('#schedule-r04-probe').locator('.block-dialog').screenshot(path=str(out/f'editor-{width}-{dark}.png'))
+   regel1=None
+   if regeln and not native and width in [360,390]:
+    regel1=regeln.messe_text(page,'.block-dialog');assert not any(regel1.get(art) for art in ('ueberlauf','ausserhalb','ueberlappung')),('Regel 1 block dialog',width,dark,regel1)
    if not native:kt_messen(page,'#schedule-r04-probe busch-schedule-card',ansicht='block-dialog',breite=width,thema='dark' if dark else 'light')
    page.keyboard.press('Escape');page.wait_for_timeout(350)
-   report.append({'width':width,'dark':dark,'cleanScrim':scrim,'dirtyBack':'protected','dirtyEscape':'protected','focusTrap':True,'focusReturn':True,'saveDataKept':True,'urlKept':page.url==original_url})
+   report.append({'width':width,'dark':dark,'regel1':regel1,'cleanScrim':scrim,'dirtyBack':'protected','dirtyEscape':'protected','focusTrap':True,'focusReturn':True,'saveDataKept':True,'urlKept':page.url==original_url})
  # M28: one dialog anatomy. X left of the title in the head; in the foot Delete on the left, then Cancel
  # before Save on the right, all on one line at 960 px; the labels are in sentence case.
  page.set_viewport_size({'width':960,'height':1000})
@@ -223,6 +228,6 @@ with sync_playwright() as p:
  guard_report={**guard_counts,'websocketWritesBlocked':page.evaluate("(window.__blocked||[]).reduce((counts,type)=>{counts[type]=(counts[type]||0)+1;return counts},{})")} if native else {}
  ha_icon=ha_icon_bericht(page) if not native else {'kein_urteil':'native HA host: HA draws its own ha-icon'}
  browser.close()
-summary={'guard':guard_report,'native':native,'cases':report,'m24':m24,'pageErrors':errors,'serviceCalls':0,'ha_icon':ha_icon,**kt};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0,'ha_icon':ha_icon,'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+summary={'guard':guard_report,'native':native,'cases':report,'dialogBreiten':sorted({c['width'] for c in report}),'m24':m24,'pageErrors':errors,'serviceCalls':0,'ha_icon':ha_icon,**kt};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'dialogBreiten':summary['dialogBreiten'],'pageErrors':errors,'serviceCalls':0,'ha_icon':ha_icon,'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
 assert ha_icon_ok(ha_icon),('M79 ha-icon stand-in not active or icons without a path',ha_icon)
 assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))

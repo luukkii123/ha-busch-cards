@@ -514,6 +514,22 @@ try:
                     path=str(OUT / ("kalender-%s-%d-%s.png"
                                     % (kennung[1:], lauf["breite"], lauf["thema"]))))
 
+        # M76 (#1349): the editor's colour field (the card's own HTML) at the phone widths 320/360/390, light and dark:
+        # Regel 1 (messe_text, the editor host is the frame) and M26 contrast/touch; a violation counts in `schlecht`
+        # through ui. Regel 2 does not apply: the field opens the browser's native colour picker, no popup of the card.
+        farbfeld = "busch-calendar-card-editor"
+        ui["editor-farbfeld"] = regeln.lauf_breiten(
+            page, breiten=(320, 360, 390), messung=lambda p: regeln.messe_text(p, farbfeld))
+        ui["editor-farbfeld"].update(regeln.messe_kontrast_touch(
+            page, farbfeld, breiten=(320, 360, 390),
+            ausnahmen=pathlib.Path(__file__).resolve().parent / "kontrast-ausnahmen.json"))
+        for lauf in ui["editor-farbfeld"]["laeufe"]:
+            page.set_viewport_size({"width": lauf["breite"], "height": 1400})
+            page.evaluate("(t) => { document.documentElement.dataset.theme = t; }", lauf["thema"])
+            page.wait_for_timeout(250)
+            page.locator("busch-calendar-card-editor > div").screenshot(
+                path=str(OUT / ("kalender-editor-farbfeld-%d-%s.png" % (lauf["breite"], lauf["thema"]))))
+
         # Mobile Bedienung: Monatswechsel und belegte Termine brauchen auch
         # bei 320 px eine ausreichend grosse Trefferflaeche.
         page.set_viewport_size({"width": 320, "height": 1400})
