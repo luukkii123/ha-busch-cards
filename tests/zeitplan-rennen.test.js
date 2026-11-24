@@ -150,3 +150,49 @@ test("M12/P19: three cards, return to the tab: one schedule/list and no loading 
   assert.ok(!statuses.includes(loading), `no loading status on return: ${JSON.stringify(statuses)}`);
   for (const card of cards) assert.ok(card._model, "every card still shows its schedule");
 });
+
+// N3 step 5 race "two quick edits, the first fails" (#1349, M12). The second edit was made on top of the
+// first one, so `_model` holds both; N1 forbids resending the rejected block. The queue therefore drops the
+// queued edit together with the rejected one, falls back to the confirmed plan and reads once.
+for (const subscribe of [false, true]) test(`M12: two quick edits, the first fails: no parallel update, confirmed state, one _load(false)${subscribe ? " (subscribed)" : ""}`, async () => {
+  const w = world(["heating"], { subscribe });
+  const { card, events } = await mount(w);
+  const confirmed = plain(w.server.get("heating"));
+  const loads = [];
+  const load = card._load;
+  // Records the model when the reload starts: the fallback must not wait for the server read.
+  const atLoad = [];
+  card._load = function (showSpinner) {
+    loads.push(showSpinner);
+    atLoad.push([...ranges(this._model, "tuesday"), ...ranges(this._model, "wednesday")]);
+    return load.call(this, showSpinner);
+  };
+  w.ha.behave("schedule/update", { delay: 300 });
+  w.ha.behaveOnce("schedule/update", { delay: 300, reject: new Error("update rejected") });
+  w.ha.resetStats();
+  drag(card, "tuesday", 420, 480);
+  await w.clock.advance(10);
+  drag(card, "wednesday", 600, 660);
+  await w.clock.advance(2000);
+  const updates = w.ha.log.filter((entry) => entry.type === "schedule/update");
+  assert.equal(updates.length, 1, `no second update while or after the first failed, got ${updates.length}`);
+  assert.deepEqual(plain(w.server.get("heating")), confirmed, "HA keeps its plan");
+  for (const day of DAYS) {
+    assert.deepEqual(ranges(card._model, day), day === "monday" ? [[480, 540]] : [], `_model on the confirmed state (${day})`);
+  }
+  assert.deepEqual(loads, [false], `exactly one _load(false) after the queue, got ${JSON.stringify(loads)}`);
+  assert.deepEqual(atLoad, [[]], "already on the confirmed state before the reload");
+  assert.equal(events.length, 1, "one notification");
+  assert.ok(events[0].includes("update rejected"), `the save error is shown: ${events[0]}`);
+  assert.equal(card._saving, false);
+  assert.equal(card._saveQueued, false, "the dropped edit does not stay queued");
+  // The next edit is saved alone, without either dropped block.
+  w.ha.resetStats();
+  drag(card, "friday", 720, 780);
+  await w.clock.advance(2000);
+  const next = w.ha.log.filter((entry) => entry.type === "schedule/update");
+  assert.equal(next.length, 1);
+  assert.deepEqual(plain(next[0].message.tuesday), []);
+  assert.deepEqual(plain(next[0].message.wednesday), []);
+  assert.deepEqual(plain(next[0].message.friday), [{ from: "12:00:00", to: "13:00:00" }]);
+});
