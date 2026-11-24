@@ -17,6 +17,10 @@
     {
       "selektor": "stub-row",
       "grund": "Attrappe ≠ echtes Element: stub-row/stub-toggle ist in render-geraet.py die Attrappe der HA-Entitätszeile aus loadCardHelpers().createRowElement; die Gerätekarte bettet HAs Zeile nur ein und stylt deren Schalter nicht."
+    },
+    {
+      "selektor": "busch-device-card-editor > ha-form > label",
+      "grund": "Attrappe ≠ echtes Element: in device-filters.py ist ha-form eine Seitenattrappe, die je Schemafeld ein nacktes <label><input> in Light-DOM legt (39 bzw. 21 px hoch); im Betrieb zeichnet HAs ha-form die Felder in seinem Shadow-Root mit eigenen Selektoren. Die Gerätekarte erzeugt und stylt dort nichts (Lauf karten-20261124-120007: alle 320 touch_verstoesse genau dieser Pfad). Die eigenen Filterbedienelemente des Editors (_filterHost, Geschwister von ha-form) bleiben gemessen."
     }
   ]
 }
