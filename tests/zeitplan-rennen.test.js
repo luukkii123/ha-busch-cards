@@ -8,6 +8,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const kit = require("./_testkit.cjs");
+const { installSubscriptions, unknownCommand } = require("./abo-attrappe.js");
 
 const BUNDLE = path.join(__dirname, "..", "dist", "busch-cards.js");
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -19,8 +20,9 @@ function plan(id, monday) {
   return item;
 }
 
-/** A kit world with schedules on the server; `schedule/update` replaces the stored item like HA does. */
-function world(ids = ["heating"]) {
+/** A kit world with schedules on the server; `schedule/update` replaces the stored item like HA does.
+ *  `subscribe: false` is an HA without `schedule/subscribe` (#1326): the card reads `schedule/list` on state changes. */
+function world(ids = ["heating"], { subscribe = false } = {}) {
   const clock = kit.createClock();
   const env = kit.createEnvironment({ clock });
   kit.loadScript(BUNDLE, { globals: env });
@@ -35,6 +37,8 @@ function world(ids = ["heating"]) {
     server.set(id, next);
     return next;
   });
+  if (subscribe) installSubscriptions(ha, { schedule: () => [...server.values()] });
+  else unknownCommand(ha, "schedule/subscribe");
   return { clock, env, ha, server };
 }
 
@@ -70,8 +74,8 @@ function drag(card, day, start, end) {
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const ranges = (model, day) => plain((model[day] || []).map((block) => [block.start, block.end]));
 
-test("M12: two quick edits send exactly two schedule/update, one after the other, newest wins", async () => {
-  const w = world();
+for (const subscribe of [false, true]) test(`M12: two quick edits send exactly two schedule/update, one after the other, newest wins${subscribe ? " (subscribed)" : ""}`, async () => {
+  const w = world(["heating"], { subscribe });
   const { card } = await mount(w);
   w.ha.behave("schedule/update", { delay: 300 });
   w.ha.resetStats();
@@ -108,8 +112,8 @@ test("M12: an older _load does not overwrite the saved state, and a read skipped
   assert.ok(later.length >= 1, "a read after the save syncs the card");
 });
 
-test("M12: a change made elsewhere between load and save shows the conflict and is not overwritten", async () => {
-  const w = world();
+for (const subscribe of [false, true]) test(`M12: a change made elsewhere between load and save shows the conflict and is not overwritten${subscribe ? " (subscribed)" : ""}`, async () => {
+  const w = world(["heating"], { subscribe });
   const { card, events } = await mount(w);
   // Another tab adds a Friday block; this card does not see it yet.
   const foreign = JSON.parse(JSON.stringify(w.server.get("heating")));

@@ -164,6 +164,20 @@ PAGE = """<!doctype html>
     },
     callService() { return Promise.resolve(); },
     formatEntityAttributeValue: (s, a) => '18:30',
+    // #1326 (M12): HA's `schedule/subscribe`. The first event lists every
+    // stored plan as `added` (helpers/collection.py); the card loads from it
+    // and reads `schedule/list` only for the conflict check before a save.
+    connection: {
+      subscribeMessage(callback, msg) {
+        window.__wsCalls.push(msg);
+        if (msg.type !== 'schedule/subscribe') return Promise.reject({ code: 'unknown_command' });
+        Promise.resolve().then(() => callback([{ change_type: 'added', schedule_id: item.id,
+                                                 item: JSON.parse(JSON.stringify(item)) }]));
+        return Promise.resolve(() => Promise.resolve());
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    },
   };
 </script>
 <script src="/busch-cards.js"></script>
@@ -774,6 +788,11 @@ schlecht = (regeln.bewerte(ui) or regeln.bewerte(popup)
             or regeln.bewerte(popup_tag) or regeln.bewerte(formular)
             or regeln.bewerte(dialog_ui) or regeln.bewerte(theme_haken)
             or regeln.bewerte(heute_nurlesen) or regeln.bewerte(leerflaeche))
+# #1326 (M12): loaded through `schedule/subscribe`, without a `schedule/list` before the first edit.
+erste_ws = probe["wsCalls"]
+if "schedule/subscribe" not in erste_ws or "schedule/list" in erste_ws:
+    print("FEHLER: Der Zeitplan lädt nicht über schedule/subscribe (M12):", erste_ws)
+    schlecht = 1
 if any({360, 390} - set(b) for b in report["ui_dialog_breiten"].values()):
     print("FEHLER: ein Dialog ohne 360/390 px (M76).")
     schlecht = 1

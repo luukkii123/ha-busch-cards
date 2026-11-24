@@ -1698,15 +1698,116 @@ function gapAt(blocks, minute) {
   return min >= MINUTES_PER_DAY ? null : { min, max: MINUTES_PER_DAY };
 }
 
-/* M12 (#1283): one `schedule/list` per connection for a second. Three cards
- * returning to the tab, or mounting together, share one read. The write path
- * never uses it: the check before `schedule/update` always reads fresh, and a
- * write drops the entry so the follow-up read sees the new plan.
+/* M12 (#1283, #1326): where the card reads its plan.
  *
- * `schedule/subscribe`: nothing in this repo (code, docs, render scripts)
- * shows that HA offers a subscription for the schedule storage collection,
- * and the HA core source is not at hand here. So the card stays with
- * `schedule/list` on state changes; an unproven command is not guessed. */
+ * `schedule/subscribe` (HA core 2026.11.1: schedule/__init__.py sets up a
+ * DictStorageCollectionWebsocket, helpers/collection.py `_ws_subscribe`):
+ * the first event lists every stored plan as `added`, later events carry
+ * `added`/`updated`/`removed` with `schedule_id` and `item`. Not admin-only.
+ * One subscription per connection, shared by all schedule cards, ended with
+ * the last card. The socket library must not resubscribe it on its own
+ * (`resubscribe: false`): on `ready` the feed subscribes anew, and the new
+ * first event replaces the whole list, so plans removed while offline go too.
+ *
+ * `schedule/list` stays for what the subscription does not cover: YAML plans
+ * (neither place lists them), a plan missing from the feed, an HA without the
+ * command, and a feed whose first event does not come within 5 s. It is read
+ * once per connection for a second: three cards returning to the tab, or
+ * mounting together, share one read. The write path never uses that share:
+ * the check before `schedule/update` always reads fresh, and a write drops
+ * the entry so a follow-up read sees the new plan. */
+const SCHEDULE_FEED_WAIT_MS = 5000;
+const scheduleFeeds = new WeakMap();
+
+class BuschScheduleFeed {
+  constructor(connection) {
+    this.connection = connection;
+    this.listeners = new Set();
+    this.generation = 0;
+    this._onReady = () => this._start();
+    connection.addEventListener?.("ready", this._onReady);
+    this._start();
+  }
+
+  _start() {
+    const generation = ++this.generation;
+    this._end();
+    this.items = null;
+    this.failed = false;
+    this.ready = new Promise((resolve) => { this._resolve = resolve; });
+    Promise.resolve()
+      .then(() => this.connection.subscribeMessage((changes) => {
+        if (generation === this.generation) this._apply(changes);
+      }, { type: "schedule/subscribe" }, { resubscribe: false }))
+      .then((unsubscribe) => {
+        if (generation === this.generation) this._unsubscribe = unsubscribe;
+        else Promise.resolve().then(unsubscribe).catch(() => {});
+      }, () => {
+        // Older HA (`unknown_command`) or no right: the cards read `schedule/list`.
+        if (generation !== this.generation) return;
+        this.failed = true;
+        this._resolve(null);
+      });
+  }
+
+  _end() {
+    const unsubscribe = this._unsubscribe;
+    this._unsubscribe = null;
+    if (unsubscribe) Promise.resolve().then(unsubscribe).catch(() => {});
+  }
+
+  _apply(changes) {
+    if (!Array.isArray(changes)) return;
+    const full = !this.items;
+    const items = full ? new Map() : this.items;
+    for (const change of changes) {
+      const id = change?.schedule_id ?? change?.item?.id;
+      if (id === undefined || id === null) continue;
+      if (change.change_type === "removed") items.delete(String(id));
+      else if (change.item && typeof change.item === "object") items.set(String(id), change.item);
+    }
+    this.items = items;
+    if (full) this._resolve(items);
+    const ids = new Set(changes.map((change) => String(change?.schedule_id ?? change?.item?.id)));
+    for (const listener of [...this.listeners]) {
+      try { listener(full, ids); } catch (error) { console.warn("busch-schedule-card: feed listener failed", error?.name); }
+    }
+  }
+
+  /** The plans once the first event is there; null without a subscription. Waits at most `ms`. */
+  snapshot(ms = SCHEDULE_FEED_WAIT_MS) {
+    if (this.items) return Promise.resolve(this.items);
+    if (this.failed) return Promise.resolve(null);
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+    return Promise.race([this.ready, late]).finally(() => clearTimeout(timer));
+  }
+
+  /** After an own `schedule/update`: the written plan, until HA pushes it. */
+  put(item) {
+    if (this.items && item && item.id !== undefined) this.items.set(String(item.id), item);
+  }
+
+  leave(listener) {
+    this.listeners.delete(listener);
+    if (this.listeners.size) return;
+    this.generation++;
+    this._end();
+    this.connection.removeEventListener?.("ready", this._onReady);
+    if (scheduleFeeds.get(this.connection) === this) scheduleFeeds.delete(this.connection);
+  }
+}
+
+/** The shared feed of this connection, joined with `listener(full, ids)`; null without subscribeMessage. */
+function scheduleFeedJoin(hass, listener) {
+  const connection = hass?.connection;
+  if (!connection || typeof connection !== "object" || typeof connection.subscribeMessage !== "function") return null;
+  let feed = scheduleFeeds.get(connection);
+  if (!feed) scheduleFeeds.set(connection, feed = new BuschScheduleFeed(connection));
+  feed.listeners.add(listener);
+  return feed;
+}
+
 const SCHEDULE_LIST_SHARE_MS = 1000;
 const scheduleListShared = new WeakMap();
 
@@ -1823,7 +1924,9 @@ class BuschScheduleCard extends HTMLElement {
     // Beim Zeitplan ändert sich dabei praktisch immer `next_event`.
     const before = previous.states?.[this._config.entity];
     const now = hass.states?.[this._config.entity];
-    if (before !== now && !this._drag && !this._saving) this._load(false);
+    // With the subscription live the change comes as its own event; a state
+    // change alone reads only without one (older HA, YAML plan, no first event).
+    if (before !== now && !this._drag && !this._saving && !this._feedLive()) this._load(false);
     // #641: nur bei eigener Änderung, Sprache oder Zeitzone; die Minute zieht `_nowTimer` nach.
     if (before !== now || buschSprache(previous) !== buschSprache(hass) || previous.config?.time_zone !== hass.config?.time_zone) this._renderHeader();
   }
@@ -1836,18 +1939,27 @@ class BuschScheduleCard extends HTMLElement {
     // Auch die Kopfzeile: aus "morgen 06:00" wird um Mitternacht "06:00".
     this._nowTimer = setInterval(() => { this._renderNow(); this._renderHeader(); }, 60000);
     if (this._hass && this._config && !this._model) this._load(true);
+    // Back in the DOM (view switch): the feed was left on removal; join it again and read from it.
+    else if (this._hass && this._config && !this._feed) this._load(false);
   }
 
   disconnectedCallback() {
     document.removeEventListener("visibilitychange", this._onVisibility);
     clearInterval(this._nowTimer);
     this._nowTimer = null;
+    this._leaveFeed();
     // Ein Dialog, dessen Karte aus dem Dokument fliegt, darf keinen
     // popstate-Lauscher zurücklassen — der hielte die Karte am Leben und
     // reagierte auf jede spätere Navigation.
     for (const dialog of [this._els?.blockDialog, this._els?.dayDialog]) {
       if (dialog?._buschVerlauf || dialog?._buschFalle) this._dialogSchliessen(dialog);
     }
+  }
+
+  /** The shared subscription delivers this card's plan. */
+  _feedLive() {
+    return Boolean(this._feed && this._feedConnection === this._hass?.connection &&
+      this._feed.items?.has(String(this._scheduleId)));
   }
 
   getCardSize() {
@@ -1920,11 +2032,10 @@ class BuschScheduleCard extends HTMLElement {
         if (generation !== this._loadGeneration) return;
         this._scheduleId = scheduleId;
       }
-      const items = await scheduleListRead(hass);
+      const item = await this._readScheduleItem(hass);
       if (generation !== this._loadGeneration) return;
-      // The list is shared between cards: `_item` is never edited in place,
-      // a save replaces it with a new object.
-      const item = items.find((entry) => entry.id === this._scheduleId);
+      // Feed and list are shared between cards: `_item` is never edited in
+      // place, a save replaces it with a new object.
       if (!item) {
         if (this._els?.blockDialog?.open && this._dialogTarget) {
           this._dialogSchliessen(this._els.blockDialog);
@@ -1952,6 +2063,38 @@ class BuschScheduleCard extends HTMLElement {
         this._renderAll();
       }
     }
+  }
+
+  /** The plan from the shared subscription; `schedule/list` when the feed has none (YAML, older HA, no first event). */
+  async _readScheduleItem(hass) {
+    const feed = this._joinFeed(hass);
+    const items = feed ? await feed.snapshot() : null;
+    const live = items?.get(String(this._scheduleId));
+    if (live) return live;
+    const list = await scheduleListRead(hass);
+    return (list || []).find((entry) => entry.id === this._scheduleId);
+  }
+
+  _joinFeed(hass = this._hass) {
+    if (this._feed && this._feedConnection === hass?.connection) return this._feed;
+    this._leaveFeed();
+    if (!this._feedListener) {
+      this._feedListener = (full, ids) => {
+        if (!full && !ids.has(String(this._scheduleId))) return;
+        // While dragging or saving the card does not read; the save reads when it is done, a drag on release.
+        if (this._drag || this._saving) { this._feedLate = true; return; }
+        this._load(false);
+      };
+    }
+    this._feed = scheduleFeedJoin(hass, this._feedListener);
+    this._feedConnection = this._feed ? hass.connection : null;
+    return this._feed;
+  }
+
+  _leaveFeed() {
+    this._feed?.leave(this._feedListener);
+    this._feed = null;
+    this._feedConnection = null;
   }
 
   _acceptScheduleItem(item) {
@@ -2108,6 +2251,8 @@ class BuschScheduleCard extends HTMLElement {
       const saved = { ...this._item };
       for (const day of SCHEDULE_DAYS) saved[day] = payload[day];
       this._item = saved;
+      // The read after the queue must not bring back the old plan before HA pushes the new one.
+      if (this._feedConnection === hass.connection) this._feed?.put(saved);
       this._error = null;
       this._renderStatus("");
       return "ok";
@@ -3263,6 +3408,11 @@ class BuschScheduleCard extends HTMLElement {
     const drag = this._drag;
     this._drag = null;
     if (!drag) return;
+    if (this._feedLate) {
+      // A feed change came while dragging. A save started below reads when it is done.
+      this._feedLate = false;
+      Promise.resolve().then(() => { if (!this._saving && !this._drag) this._load(false); });
+    }
 
     if (this._readonly) {
       drag.element?.remove();
