@@ -379,9 +379,9 @@ const BuschUI = (() => {
  * runtime via Symbol.for("busch.cards.core"); the first bundle to load owns it.
  * Source: hacs/shared-core/busch-core.js. Never edit inside the markers; change the
  * source and run hacs/scripts/sync-shared-ui.py --write. Public API major: 1. */
-/* BEGIN BUSCH SHARED CORE 1.5.1 sha256:d287deb6312d9f53bb9c952fb681b26b21d1c0216ab803449a202ae4d1b10d24 */
-const BUSCH_CORE_STAMP = Object.freeze({ version: "1.5.1", sourceHash: "d287deb6312d" });
-/* Busch Cards Core 1.5.1. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
+/* BEGIN BUSCH SHARED CORE 1.5.2 sha256:ad2fbb71978c97904f6900fdf8148f0a3e7f71c141e3a40648bac09d73ac06f2 */
+const BUSCH_CORE_STAMP = Object.freeze({ version: "1.5.2", sourceHash: "ad2fbb71978c" });
+/* Busch Cards Core 1.5.2. Raise this version whenever the core content changes; the sync stamps it with the source hash. */
 const BUSCH_CORE_KEY = Symbol.for("busch.cards.core");
 const BUSCH_REGISTRY_IDS = { entity: "entity_id", device: "id", area: "area_id", floor: "floor_id", label: "label_id" };
 function buschCoreMap(rows, key) {
@@ -1179,7 +1179,8 @@ class BuschSmartQueries {
     }
     if (!ids) query.deadlines.clear();
     // Plan every possible age boundary, including excluded and currently absent matches.
-    const timed=[...query.include,...query.extraPlans].filter(p=>p.times.length);
+    // include/extraPlans are fixed when the query is created (M50: no per-event allocation).
+    const timed=query.timed||=[...query.include,...query.extraPlans].filter(p=>p.times.length);
     for(const id of ids || new Set([...touched,...[...(query.spec.entities||[]),...query.templateRows].map(e=>typeof e==='string'?e.trim():e.entity)])) {
       let deadline=Infinity;const info=this.core.getEntity(id);
       for(const plan of timed) if(plan.guard(info)) for(const time of plan.times) {
@@ -1192,8 +1193,8 @@ class BuschSmartQueries {
     query.metrics.candidates=touched.size;
     // M50: no match before and after, and no static or template row: the projection cannot change, skip it.
     if(members&&!ids.some(id=>members.has(id)||query.matched.some(set=>set.has(id)))){
-      const statics=new Set([...(query.spec.entities||[]),...query.templateRows].map(row=>typeof row==='string'?row.trim():row?.entity));
-      if(!ids.some(id=>statics.has(id))){query.metrics.projectionsSkipped++;query.metrics.executionMs=performance.now()-start;if(query.subscribers.size)this.startTemplate(query);return;}
+      const isStatic=id=>(query.spec.entities||[]).some(row=>(typeof row==='string'?row.trim():row?.entity)===id)||query.templateRows.some(row=>(typeof row==='string'?row.trim():row?.entity)===id);
+      if(!ids.some(isStatic)){query.metrics.projectionsSkipped++;query.metrics.executionMs=performance.now()-start;if(query.subscribers.size)this.startTemplate(query);return;}
     }
     try {
       const result=buschSmartResult(this.core,query.spec,query.templateRows,query.matched.map(set=>[...set].sort((a,b)=>this.core.index.order.get(a)-this.core.index.order.get(b))));
