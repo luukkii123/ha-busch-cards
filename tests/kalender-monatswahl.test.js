@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const fs = require("node:fs");
 const kit = require("./_testkit.cjs");
+const { unknownCommand } = require("./abo-attrappe.js");
 
 const BUNDLE = path.join(__dirname, "..", "dist", "busch-cards.js");
 const SOURCE = fs.readFileSync(BUNDLE, "utf8");
@@ -39,6 +40,8 @@ function world(language = "de") {
   kit.loadScript(BUNDLE, { globals: env });
   const ha = kit.createHass({ clock, language, states: { "calendar.a": { state: "off", attributes: { friendly_name: "A" } } } });
   ha.respond("call_api", () => []);
+  // The fetch counts below are REST (older HA, #1326); the subscription path is in kalender-abo.test.js.
+  unknownCommand(ha, "calendar/event/subscribe");
   return { clock, env, ha };
 }
 

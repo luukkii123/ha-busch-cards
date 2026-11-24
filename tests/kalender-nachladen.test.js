@@ -1,12 +1,15 @@
 "use strict";
 
 // Calendar reloads and the module-wide month cache with a fake clock (#1283, M39; netcode N14, performance P17).
+// Since #1326 these reloads are the REST fallback: the HA stand-ins here have no `calendar/event/subscribe`
+// (older HA). The subscription path is in kalender-abo.test.js.
 // Two cards with the same two calendars run fully on the kit DOM. Every
 // `GET calendars/...` is one call_api in the kit counters.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const kit = require("./_testkit.cjs");
+const { unknownCommand } = require("./abo-attrappe.js");
 
 const BUNDLE = path.join(__dirname, "..", "dist", "busch-cards.js");
 const MIN = 60 * 1000;
@@ -20,6 +23,7 @@ function world(start) {
     states: { "calendar.a": { state: "off", attributes: { friendly_name: "A" } }, "calendar.b": { state: "off", attributes: { friendly_name: "B" } } },
   });
   ha.respond("call_api", () => []);
+  unknownCommand(ha, "calendar/event/subscribe");
   return { clock, env, ha };
 }
 
@@ -125,6 +129,7 @@ test("M39: the month cache belongs to one connection; another HA connection fetc
   const w = world(new Date(2027, 2, 10, 12, 0, 0).getTime());
   const other = kit.createHass({ clock: w.clock, states: { "calendar.a": { state: "off", attributes: { friendly_name: "A" } } } });
   other.respond("call_api", () => []);
+  unknownCommand(other, "calendar/event/subscribe");
   const cards = [w.ha.hass, other.hass].map((hass) => {
     const card = w.env.document.createElement("busch-calendar-card");
     card.setConfig({ entities: ["calendar.a"] });

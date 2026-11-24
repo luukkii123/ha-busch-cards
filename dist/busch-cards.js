@@ -4713,22 +4713,171 @@ function calStufenFolge(stufe) {
   return i < 0 ? [CAL_STUFE_ENTITAET] : CAL_STUFEN.slice(i);
 }
 
-/* M39 (#1283): when the calendar card reloads, and one module-wide cache for
- * all its instances.
+/* M39 (#1283, #1326): where the calendar card gets its events, and one
+ * module-wide share for all its instances.
  *
- * Reloads: on becoming visible, every 15 minutes while visible, at local
- * midnight (new day, maybe new month) and after an own edit through HA's
- * dialog. A hidden tab fetches nothing; becoming visible catches up.
+ * Subscription: `calendar/event/subscribe` with `entity_id`, `start`, `end`
+ * (HA core 2026.11.1, calendar/__init__.py `handle_calendar_event_subscribe`;
+ * read right on the entity). The first event `{ events }` goes to the new
+ * subscriber at once; later ones follow each state write of the calendar,
+ * debounced by HA (calendar/entity.py). `events: null` means HA could not
+ * read the calendar. One subscription per connection, calendar and shown
+ * month, shared by all cards showing that month; a month change or the last
+ * card leaving ends it. The socket library does not resubscribe it
+ * (`resubscribe: false`); on `ready` every subscription starts anew and its
+ * first event is the full month again.
  *
- * Cache: `(entity, start, end)` -> `{ stamp, at, promise }`. `stamp` is the
- * calendar's `last_changed`; a different one is a miss. A load asks for an
- * entry no older than `maxAlter`, so two cards share one fetch: a running
- * fetch is shared as its promise, a finished one as its result.
+ * REST (`calendars/<entity>`) is the fallback: an HA without the command, an
+ * error, `events: null`, or no first event within 15 s. For a calendar on
+ * REST the old reloads stay: on becoming visible, every 15 minutes while
+ * visible, at local midnight and after an own edit through HA's dialog. A
+ * hidden tab fetches nothing; becoming visible catches up. A subscribed
+ * calendar polls nothing; midnight and becoming visible only re-read the
+ * subscription, or move it when the month changed.
  *
- * A calendar subscription (`calendar/event/subscribe` or similar): nothing
- * in this repo (code, docs, render scripts) shows that HA offers one, and the
- * HA core source is not at hand here. So the card polls as above; an
- * unproven command is not guessed. */
+ * REST cache: `(entity, start, end)` -> `{ stamp, at, promise }`. `stamp` is
+ * the calendar's `last_changed`; a different one is a miss. A load asks for
+ * an entry no older than `maxAlter`, so two cards share one fetch: a running
+ * fetch is shared as its promise, a finished one as its result. */
+const CAL_ABO_WARTEN_MS = 15000;
+const calAboRegister = new WeakMap();
+// Connections whose HA answered `unknown_command`; cleared on `ready` (HA may have been updated).
+const calOhneAbo = new WeakSet();
+
+function calOhneAboMerken(verbindung) {
+  if (calOhneAbo.has(verbindung)) return;
+  calOhneAbo.add(verbindung);
+  const beiBereit = () => {
+    calOhneAbo.delete(verbindung);
+    verbindung.removeEventListener?.("ready", beiBereit);
+  };
+  verbindung.addEventListener?.("ready", beiBereit);
+}
+
+/** One event of `CalendarEvent.as_dict()` (plain start/end strings, `all_day`) in the REST form the card reads. */
+function calAusAbo(termin) {
+  if (!termin || typeof termin !== "object") return termin;
+  const ganzerTag = termin.all_day === true ||
+    (termin.all_day === undefined && typeof termin.start === "string" && termin.start.length === 10);
+  const form = (wert) => (typeof wert === "string" ? (ganzerTag ? { date: wert } : { dateTime: wert }) : wert);
+  const { all_day: _ganz, ...rest } = termin;
+  return { ...rest, start: form(termin.start), end: form(termin.end) };
+}
+
+class BuschCalendarFeed {
+  constructor(register, entity, start, ende, schluessel) {
+    this.register = register;
+    this.entity = entity;
+    this.start = start;
+    this.ende = ende;
+    this.schluessel = schluessel;
+    this.hoerer = new Set();
+    this.generation = 0;
+    this.starten();
+  }
+
+  starten() {
+    const generation = ++this.generation;
+    this.beenden();
+    this.termine = null;
+    this.fehlgeschlagen = false;
+    this.geliefert = false;
+    this.verspaetet = false;
+    // After a reconnect no load waits: the cards re-read when the new first event is there.
+    this.neuGestartet = generation > 1;
+    this.bereit = new Promise((resolve) => { this._bereit = resolve; });
+    const verbindung = this.register.verbindung;
+    Promise.resolve()
+      .then(() => verbindung.subscribeMessage((nachricht) => {
+        if (generation === this.generation) this.annehmen(nachricht);
+      }, {
+        type: "calendar/event/subscribe",
+        entity_id: this.entity,
+        start: this.start.toISOString(),
+        end: this.ende.toISOString(),
+      }, { resubscribe: false }))
+      .then((abmelden) => {
+        if (generation === this.generation) this._abmelden = abmelden;
+        else Promise.resolve().then(abmelden).catch(() => {});
+      }, (fehler) => {
+        if (generation !== this.generation) return;
+        // Older HA: later months and calendars go to REST at once (until the next `ready`).
+        if (fehler?.code === "unknown_command") calOhneAboMerken(verbindung);
+        this.fehlgeschlagen = true;
+        this._bereit(null);
+        // Waiting loads take REST themselves; only cards that saw events before re-read.
+        if (this.geliefert || this.verspaetet || this.neuGestartet) this.melden();
+      });
+  }
+
+  beenden() {
+    const abmelden = this._abmelden;
+    this._abmelden = null;
+    if (abmelden) Promise.resolve().then(abmelden).catch(() => {});
+  }
+
+  annehmen(nachricht) {
+    const roh = nachricht?.events;
+    const erstes = !this.geliefert;
+    this.termine = Array.isArray(roh) ? roh.map(calAusAbo) : null;
+    this.fehlgeschlagen = !this.termine;
+    this.geliefert = true;
+    this._bereit(this.termine);
+    // The first event serves the waiting loads; a card re-reads for later pushes, or when it gave up waiting.
+    if (!erstes || this.verspaetet || this.neuGestartet) this.melden();
+  }
+
+  melden() {
+    for (const hoerer of [...this.hoerer]) {
+      try { hoerer(this); } catch (error) { console.warn("busch-calendar-card: feed listener failed", error?.name); }
+    }
+  }
+
+  /** The events once there; null for REST (error, `events: null`, older HA, no first event within `ms`). */
+  holen(ms = CAL_ABO_WARTEN_MS) {
+    if (this.termine) return Promise.resolve(this.termine);
+    if (this.fehlgeschlagen) return Promise.resolve(null);
+    let zeitgeber;
+    const spaet = new Promise((resolve) => {
+      zeitgeber = setTimeout(() => { this.verspaetet = true; resolve(null); }, ms);
+    });
+    return Promise.race([this.bereit, spaet]).finally(() => clearTimeout(zeitgeber));
+  }
+
+  verlassen(hoerer) {
+    this.hoerer.delete(hoerer);
+    if (this.hoerer.size) return;
+    this.generation++;
+    this.beenden();
+    this.register.feeds.delete(this.schluessel);
+    if (!this.register.feeds.size) {
+      this.register.verbindung.removeEventListener?.("ready", this.register.beiBereit);
+      calAboRegister.delete(this.register.verbindung);
+    }
+  }
+}
+
+/** The shared subscription for one calendar and window, joined with `hoerer(feed)`; null without one. */
+function calAboBeitreten(hass, entity, start, ende, hoerer) {
+  const verbindung = hass?.connection;
+  if (!verbindung || typeof verbindung !== "object" || typeof verbindung.subscribeMessage !== "function") return null;
+  if (calOhneAbo.has(verbindung)) return null;
+  let register = calAboRegister.get(verbindung);
+  if (!register) {
+    register = { verbindung, feeds: new Map() };
+    register.beiBereit = () => {
+      for (const feed of register.feeds.values()) feed.starten();
+    };
+    verbindung.addEventListener?.("ready", register.beiBereit);
+    calAboRegister.set(verbindung, register);
+  }
+  const schluessel = `${entity}|${start.toISOString()}|${ende.toISOString()}`;
+  let feed = register.feeds.get(schluessel);
+  if (!feed) register.feeds.set(schluessel, feed = new BuschCalendarFeed(register, entity, start, ende, schluessel));
+  feed.hoerer.add(hoerer);
+  return feed;
+}
+
 const CAL_TAKT_MS = 15 * 60 * 1000;
 const CAL_TEILEN_MS = 2000;
 const CAL_CACHE_MAX = 100;
@@ -4838,7 +4987,8 @@ class BuschCalendarCard extends HTMLElement {
     document.addEventListener("visibilitychange", this._beiSichtbarkeit);
     clearInterval(this._takt);
     this._takt = setInterval(() => {
-      if (!calVerborgen()) this._lade(CAL_TAKT_MS);
+      // Only calendars on REST are polled; a subscribed one gets its changes pushed.
+      if (!calVerborgen() && this._brauchtTakt()) this._lade(CAL_TAKT_MS);
     }, CAL_TAKT_MS);
     this._mitternachtStellen();
     // Back in the DOM (view switch): from the cache when fresh, else fetched.
@@ -4851,6 +5001,7 @@ class BuschCalendarCard extends HTMLElement {
     clearTimeout(this._mitternacht);
     this._takt = null;
     this._mitternacht = null;
+    this._abosVerlassen(new Set());
     // Leaving the page with the picker open: hide it and drop the listener. dialogHistory only
     // spends its own entry when it is on top, so this never leaves the dashboard.
     if (this._wahl && !this._wahl.el.hidden) this._wahlSchliessen();
@@ -4862,6 +5013,41 @@ class BuschCalendarCard extends HTMLElement {
       this._mitternachtStellen();
       if (!calVerborgen()) this._lade(CAL_TEILEN_MS);
     }, calBisMitternacht(new Date()));
+  }
+
+  /** A calendar of the shown month without a live subscription (REST fallback). */
+  _brauchtTakt() {
+    if (!this._config || !this._config.entities.length) return false;
+    const abos = this._abos || new Map();
+    return this._config.entities.some((e) => {
+      const feed = [...abos.values()].find((kandidat) => kandidat.entity === e.entity);
+      return !feed || !feed.termine;
+    });
+  }
+
+  /** Ends the subscriptions this card holds outside `behalten` (keys). */
+  _abosVerlassen(behalten) {
+    if (!this._abos) return;
+    for (const [schluessel, feed] of this._abos) {
+      if (behalten.has(schluessel) && feed.register.verbindung === this._hass?.connection) continue;
+      feed.verlassen(this._aboHoerer);
+      this._abos.delete(schluessel);
+    }
+  }
+
+  /** The subscription of one calendar for the shown window; null for REST. */
+  _abo(entity, start, ende) {
+    if (!this._abos) this._abos = new Map();
+    if (!this._aboHoerer) {
+      // A push or a failed subscription re-reads: subscribed calendars from memory, the others by REST.
+      this._aboHoerer = () => { if (this.isConnected !== false) this._lade(CAL_TEILEN_MS); };
+    }
+    const schluessel = `${entity}|${start.toISOString()}|${ende.toISOString()}`;
+    const vorhanden = this._abos.get(schluessel);
+    if (vorhanden) return vorhanden;
+    const feed = calAboBeitreten(this._hass, entity, start, ende, this._aboHoerer);
+    if (feed) this._abos.set(schluessel, feed);
+    return feed;
   }
 
   /** After an edit through HA's dialog: past the cache, the result then serves the other cards too. */
@@ -4928,6 +5114,7 @@ class BuschCalendarCard extends HTMLElement {
     const meineLadung = this._ladeZaehler;
 
     if (this._config.entities.length === 0) {
+      this._abosVerlassen(new Set());
       this._tage = [];
       this._alleTermine = [];
       this._fehler = [];
@@ -4936,10 +5123,16 @@ class BuschCalendarCard extends HTMLElement {
       return;
     }
 
+    // Month change: the subscriptions of the old window end here, before the new ones start.
+    this._abosVerlassen(new Set(this._config.entities.map((e) =>
+      `${e.entity}|${start.toISOString()}|${ende.toISOString()}`)));
+    const hass = this._hass;
     const anfragen = this._config.entities.map((e) => {
-      const zustand = this._hass.states && this._hass.states[e.entity];
+      const zustand = hass.states && hass.states[e.entity];
       const stempel = zustand ? String(zustand.last_changed) : "fehlt";
-      return calTermineHolen(this._hass, e.entity, start, ende, stempel, maxAlter);
+      const rest = () => calTermineHolen(hass, e.entity, start, ende, stempel, maxAlter);
+      const feed = this._abo(e.entity, start, ende);
+      return feed ? feed.holen().then((termine) => termine || rest()) : rest();
     });
     const ergebnisse = await Promise.allSettled(anfragen);
     // Eine neuere Ladung ist gestartet — diese Antwort ist ueberholt.

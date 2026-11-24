@@ -34,6 +34,18 @@ with sync_playwright() as p:
  page.wait_for_timeout(50)
  result=page.evaluate("({focus:document.activeElement===card.querySelector('.cal-pfeil[data-schritt=\"1\"]'),scrollTop:card.querySelector('.cal-liste')?.scrollTop,monthOffset:card._versatzLaufend,calls})")
  assert result['focus'] and result['scrollTop']==30 and result['monthOffset']==1,result
+ # #1326 (M39): the same retention when the change arrives as a calendar/event/subscribe push instead of a REST fetch.
+ # The stand-in answers like HA 2026.11.1: first event at once, events in CalendarEvent.as_dict() form.
+ page.evaluate("""()=>{window.abos=[];window.aboRest=0;window.aboEvents=(start)=>{const events=[];for(let day=5;day<17;day++){const begins=new Date(start.getFullYear(),start.getMonth(),day,9),ends=new Date(start.getFullYear(),start.getMonth(),day,10);events.push({uid:`push-${start.getMonth()}-${day}`,summary:`Pushed appointment ${day}`,start:begins.toISOString(),end:ends.toISOString(),all_day:false})}return events};window.ahass={locale:{language:'en'},states:{'calendar.synthetic':{last_changed:'one'}},callApi:async()=>{aboRest++;return []},connection:{subscribeMessage(cb,msg){abos.push({cb,msg});Promise.resolve().then(()=>cb({events:aboEvents(new Date(msg.start))}));return Promise.resolve(()=>Promise.resolve())},addEventListener(){},removeEventListener(){}}};window.acard=document.createElement('busch-calendar-card');acard.setConfig({entities:['calendar.synthetic'],month_offset:0,show_empty_days:true,title:'Calendar push retention'});acard.hass=ahass;document.body.append(acard)}""")
+ page.wait_for_function("!!acard.querySelector('.cal-liste .cal-termin[data-uid]')")
+ page.evaluate("acard._blaettern(1)")
+ page.wait_for_function("abos.length>=2 && !!acard.querySelector('.cal-liste .cal-termin[data-uid]')")
+ page.evaluate("""()=>{window.anext=acard.querySelector('.cal-pfeil[data-schritt="1"]');anext.focus();window.alist=acard.querySelector('.cal-liste');alist.style.cssText='height:60px!important;flex:none!important;overflow:auto!important';alist.scrollTop=30;const sub=abos.at(-1),start=new Date(sub.msg.start),extra=new Date(start.getFullYear(),start.getMonth(),20,9);sub.cb({events:[...aboEvents(start),{uid:'pushed-new',summary:'New by push',start:extra.toISOString(),end:new Date(extra.getTime()+3600e3).toISOString(),all_day:false}]})}""")
+ page.wait_for_function("!!acard.querySelector('[data-uid=\"pushed-new\"]')")
+ page.wait_for_timeout(50)
+ pushed=page.evaluate("({focus:document.activeElement===acard.querySelector('.cal-pfeil[data-schritt=\"1\"]'),scrollTop:acard.querySelector('.cal-liste')?.scrollTop,monthOffset:acard._versatzLaufend,rest:aboRest,abos:abos.length})")
+ assert pushed['focus'] and pushed['scrollTop']==30 and pushed['monthOffset']==1 and pushed['rest']==0 and pushed['abos']==2,pushed
+ page.evaluate("acard.remove()")
  page.evaluate("list.style.cssText='';list.scrollTop=0")
  matrix=lauf_breiten(page,breiten=(320,390,480,960),themen=('light','dark'),messung=lambda current:messe_text(current,'busch-calendar-card'),hoehe=1900)
  totals={key:sum(len(case['messung'].get(key,[])) for case in matrix['laeufe']) for key in ('ueberlauf','ausserhalb','ueberlappung')}
@@ -153,8 +165,8 @@ with sync_playwright() as p:
  monatswahl.update({'escape':esc,'zurueck':zurueck,'abbrechen':abbrechen,'gewaehlt':gewaehlt})
  kompakt['monatswahl']=monatswahl
  kp.close()
- report={'retention':result,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe'])}
+ report={'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe'])}
  (out/'report.json').write_text(json.dumps(report,indent=2))
- print(json.dumps({'retention':result,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
+ print(json.dumps({'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
  assert not bewerte(matrix) and not errors,report
  browser.close()

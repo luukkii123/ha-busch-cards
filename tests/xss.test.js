@@ -7,6 +7,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const kit = require("./_testkit.cjs");
+const { installSubscriptions } = require("./abo-attrappe.js");
 
 const BUNDLE = path.join(__dirname, "..", "dist", "busch-cards.js");
 const escape = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -48,6 +49,11 @@ for (const [i, payload] of kit.XSS_PAYLOADS.entries()) {
         { ...termin, uid: payload + "2", start: { date: "2027-01-20" }, end: { date: "2027-01-21" } },
       ];
     });
+    // #1326: calendar.a through the subscription, calendar.b answers `events: null` and fails by REST too.
+    installSubscriptions(w.ha, { calendar: (entity) => (entity === "calendar.a" ? [
+      { ...termin, start: { dateTime: "2027-01-12T08:00:00Z" }, end: { dateTime: "2027-01-12T10:00:00Z" } },
+      { ...termin, uid: payload + "2", start: { date: "2027-01-20" }, end: { date: "2027-01-21" } },
+    ] : null) });
     const card = await mount(w, "busch-calendar-card", { title: payload, show_total: true, entities: [{ entity: "calendar.a", color: payload }, "calendar.b"] });
     assert.deepEqual([...kit.activeMarkup(card)], []);
     const html = text(card);

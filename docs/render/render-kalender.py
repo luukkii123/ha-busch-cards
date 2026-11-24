@@ -115,6 +115,7 @@ PAGE = """<!doctype html>
   ];
 
   window.__apiCalls = [];
+  window.__abos = [];
   const hass = {
     locale: { language: "de-DE" },
     states: {
@@ -133,6 +134,26 @@ PAGE = """<!doctype html>
       window.__apiCalls.push(methode + " " + pfad);
       if (!pfad.startsWith("calendars/")) return [];
       return TERMINE;
+    },
+    // #1326 (M39): HA's `calendar/event/subscribe`. The first event goes to
+    // the new subscriber at once, in `CalendarEvent.as_dict()` form (plain
+    // start/end strings, `all_day`); REST above is only the fallback.
+    connection: {
+      subscribeMessage(callback, msg) {
+        window.__abos.push(msg.type + " " + msg.entity_id);
+        if (msg.type !== "calendar/event/subscribe") return Promise.reject({ code: "unknown_command" });
+        const events = TERMINE.map((t) => ({
+          summary: t.summary, uid: t.uid,
+          ...(t.description ? { description: t.description } : {}),
+          ...(t.location ? { location: t.location } : {}),
+          start: t.start.dateTime || t.start.date, end: t.end.dateTime || t.end.date,
+          all_day: !t.start.dateTime,
+        }));
+        Promise.resolve().then(() => callback({ events }));
+        return Promise.resolve(() => Promise.resolve());
+      },
+      addEventListener() {},
+      removeEventListener() {},
     },
   };
   window.__hass = hass;
@@ -223,6 +244,7 @@ UMGEBUNG = """() => ({
     uhrIso: new Date().toISOString(),
     zeitzone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     apiCalls: window.__apiCalls,
+    abos: window.__abos,
     registriert: ['busch-calendar-card','busch-calendar-card-editor',
                   'busch-schedule-card','busch-map-card']
                   .map(t => t + '=' + Boolean(customElements.get(t))),
@@ -595,6 +617,13 @@ print("Selbsttest:", json.dumps({k: v for k, v in selbsttest.items() if k != "be
 # in BEIDE Richtungen stimmen: die fehlerhafte Sonde wird gemeldet, die
 # gewollte Kuerzung NICHT.
 schlecht = regeln.bewerte(ui)
+# #1326 (M39): both pages load through calendar/event/subscribe, no REST fetch.
+for name, umg in (("laufend", umgebung), ("vormonat", umgebung2)):
+    rest = [c for c in umg.get("apiCalls", []) if " calendars/" in c]
+    if not umg.get("abos") or rest:
+        print(f"FEHLER: Kalender ({name}) laedt nicht ueber calendar/event/subscribe (M39):",
+              umg.get("abos"), rest)
+        schlecht = 1
 if not all(touch_targets.values()) or any(
         height < 44 for targets in touch_targets.values() for height in targets):
     print("FEHLER: Monatswechsel oder Termin ist auf 320 px kleiner als 44 px.")

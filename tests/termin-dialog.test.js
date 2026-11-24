@@ -483,6 +483,7 @@ test("die Beschriftung im Editor spricht vom Termin, nicht vom Kalender", () => 
 
 const pfad = require("node:path");
 const kit = require("./_testkit.cjs");
+const { installSubscriptions } = require("./abo-attrappe.js");
 const BUNDLE = pfad.join(__dirname, "..", "dist", "busch-cards.js");
 
 async function m23Karte({ idle = true, termine = true, konfig = {} } = {}) {
@@ -497,7 +498,9 @@ async function m23Karte({ idle = true, termine = true, konfig = {} } = {}) {
   kit.loadScript(BUNDLE, { globals: env });
   const ha = kit.createHass({ clock, states: { "calendar.a": { state: "off", attributes: { friendly_name: "A", supported_features: 7 } } } });
   const von = new Date(2027, 2, 12, 10, 0, 0), bis = new Date(2027, 2, 12, 11, 0, 0);
-  ha.respond("call_api", () => (termine ? [{ uid: "gut", summary: "Zahnarzt", start: { dateTime: von.toISOString() }, end: { dateTime: bis.toISOString() } }] : []));
+  const liste = () => (termine ? [{ uid: "gut", summary: "Zahnarzt", start: { dateTime: von.toISOString() }, end: { dateTime: bis.toISOString() } }] : []);
+  ha.respond("call_api", liste);
+  installSubscriptions(ha, { calendar: liste });
   const karte = env.document.createElement("busch-calendar-card");
   karte.setConfig({ entities: ["calendar.a"], ...konfig });
   env.document.body.appendChild(karte);
