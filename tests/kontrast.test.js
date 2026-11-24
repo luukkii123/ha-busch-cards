@@ -207,3 +207,12 @@ test("M26 (Abschlusstor): free inputs and selects of the smart/network editors a
     assert.ok(hit, tag + " carries min-height 44 px for every editor using BUSCH_SMART_EDITOR_CSS");
   }
 });
+
+// Run karten-20261124-120007 (kalender, editor-farbfeld): the colour field label (the touch area of its input) was
+// 35 px high at 320-390 px (R06/WCAG 2.5.5).
+test("#1349: the calendar editor's colour field is a 44 px touch target", () => {
+  const feld = SOURCE.slice(SOURCE.indexOf("this._farbFeld.innerHTML ="), SOURCE.indexOf('.join("")', SOURCE.indexOf("this._farbFeld.innerHTML =")));
+  const label = feld.match(/<label style="([^"]*)">/);
+  assert.ok(label, "colour field label");
+  assert.match(label[1], /(?:^|;)min-height:44px(?:;|$)/);
+});

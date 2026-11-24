@@ -5887,7 +5887,7 @@ class BuschCalendarCardEditor extends BuschEditorBase {
               this._hass.states[e.entity].attributes.friendly_name) ||
             e.entity;
           return (
-            `<label style="display:flex;align-items:center;gap:var(--ha-space-2, 8px);padding:var(--ha-space-1, 4px) 0">` +
+            `<label style="display:flex;align-items:center;gap:var(--ha-space-2, 8px);padding:var(--ha-space-1, 4px) 0;min-height:44px">` +
             `<input type="color" data-entity="${calEscape(e.entity)}" value="${calEscape(e.color)}">` +
             `<span>${calEscape(name)}</span></label>`
           );
