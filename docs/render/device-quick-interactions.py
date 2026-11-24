@@ -6,6 +6,33 @@ M14 rest findings (#1300): the busy button carries a ring and a progress mark (n
 holds the chosen option until its echo."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
+# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
+# measured (kein_urteil in report.json) and the behaviour asserts still run;
+# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+try:
+    import regeln  # noqa: E402
+except ImportError:
+    if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
+        sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+    regeln = None
+    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
+# (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+KEIN_URTEIL='regeln.py nicht gefunden - nicht gemessen (Repo-CI ohne /work)'
+kt=({'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}} if regeln else
+    {'kontrast':{'kein_urteil':KEIN_URTEIL},'touch':{'kein_urteil':KEIN_URTEIL}})
+def kt_messen(page,selektor,**fall):
+ if regeln is None:return
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+def kt_ok():
+ return regeln is None or regeln.bewerte(kt)==0
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch();p=b.new_page();errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
@@ -61,6 +88,7 @@ with sync_playwright() as pw:
   for width in [320,960]:
    p.evaluate("width=>card.style.width=width+'px'",width);p.wait_for_timeout(20)
    assert p.evaluate("!!card.querySelector('.dev-quick button[aria-busy=\"true\"]')")
+   kt_messen(p,'busch-device-card',zustand='wartet-power',breite=width,thema='dark' if dark else 'light')
    p.locator('busch-device-card').screenshot(path=str(out/f"wartet-power-{width}-{'dark' if dark else 'light'}.png"))
  p.evaluate("()=>{h={...h,states:{...h.states,'switch.a':{...h.states['switch.a'],state:'on'}}};card.hass=h}")
  assert p.evaluate("!card.querySelector('[aria-busy=\"true\"]')&&card.querySelector('.dev-quick button').textContent==='Turn off'")
@@ -74,4 +102,8 @@ with sync_playwright() as pw:
  p.evaluate("()=>{h={...h,states:{...h.states,'climate.test':{...h.states['climate.test'],state:'cool'}}};card.hass=h}")
  select_held_until_echo=all(v=='cool' for _,v in select_held) and p.evaluate("sel.value==='cool'&&calls.at(-1)[1]==='set_hvac_mode'")
  assert select_held_until_echo,select_held
- result={'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'pendingHeldUntilEcho':pending_held,'keyboardCoalesced':keyboard_coalesced,'heldSamples':held,'busyMs':round(busy_ms,2),'busyMarker':busy_marker,'selectHeldUntilEcho':select_held_until_echo,'selectSamples':select_held,'waitingShots':['wartet-power-320-light.png','wartet-power-960-light.png','wartet-power-320-dark.png','wartet-power-960-dark.png'],'mockServices':p.evaluate('calls.length'),'pageErrors':errors};(out/'interactions-report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors;b.close()
+ result={'entityIdentity':True,'staleChangeRejected':True,'returnGenerationRejected':True,'noDraftTransfer':True,'focusWithoutDraftSync':True,'keyboardNextValue':23.5,'activeDraftProtected':True,'commitEchoSync':True,'blurEscapePointerCancelSync':True,'pendingHeldUntilEcho':pending_held,'keyboardCoalesced':keyboard_coalesced,'heldSamples':held,'busyMs':round(busy_ms,2),'busyMarker':busy_marker,'selectHeldUntilEcho':select_held_until_echo,'selectSamples':select_held,'waitingShots':['wartet-power-320-light.png','wartet-power-960-light.png','wartet-power-320-dark.png','wartet-power-960-dark.png'],'mockServices':p.evaluate('calls.length'),'pageErrors':errors,**kt}
+ # ui-regeln.md (Etappe H): report.json carries kontrast/touch; interactions-report.json keeps its old name.
+ for name in ('interactions-report.json','report.json'):(out/name).write_text(json.dumps(result,indent=2))
+ print(json.dumps({k:v for k,v in result.items() if k not in ('kontrast','touch')}|{'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+ assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt));b.close()

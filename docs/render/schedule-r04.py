@@ -2,6 +2,33 @@
 import json,pathlib,sys,re
 from playwright.sync_api import sync_playwright
 from readonly_guard import install_readonly_guard
+# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
+# measured (kein_urteil in report.json) and the behaviour asserts still run;
+# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+try:
+    import regeln  # noqa: E402
+except ImportError:
+    if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
+        sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+    regeln = None
+    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
+# (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+KEIN_URTEIL='regeln.py nicht gefunden - nicht gemessen (Repo-CI ohne /work)'
+kt=({'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}} if regeln else
+    {'kontrast':{'kein_urteil':KEIN_URTEIL},'touch':{'kein_urteil':KEIN_URTEIL}})
+def kt_messen(page,selektor,**fall):
+ if regeln is None:return
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+def kt_ok():
+ return regeln is None or regeln.bewerte(kt)==0
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 native=len(sys.argv)>3;prefix='r04-candidate-busch-' if native else 'busch-'
 if native:source=source.replace('busch-',prefix)
@@ -61,6 +88,8 @@ with sync_playwright() as p:
    page.evaluate('card._model.monday[0].start=420;card._renderDays()')
    open_dialog()
    if width in [390,960]:page.locator('#schedule-r04-probe').locator('.block-dialog').screenshot(path=str(out/f'editor-{width}-{dark}.png'))
+   # M26: contrast/touch of card and open dialog at every width, light and dark.
+   if not native:kt_messen(page,'#schedule-r04-probe busch-schedule-card',ansicht='block-dialog',breite=width,thema='dark' if dark else 'light')
    page.keyboard.press('Escape');page.wait_for_timeout(350)
    report.append({'width':width,'dark':dark,'cleanScrim':scrim,'dirtyBack':'protected','dirtyEscape':'protected','focusTrap':True,'focusReturn':True,'saveDataKept':True,'urlKept':page.url==original_url})
  # M28: one dialog anatomy. X left of the title in the head; in the foot Delete on the left, then Cancel
@@ -181,7 +210,9 @@ with sync_playwright() as p:
    assert geo['minTrack']>=44,geo
    assert len(geo['grips'])==4 and all(g['visibleWidth']>=24 and g['reached'] for g in geo['grips']),geo
    assert geo['labels']==['Donnerstag: 10:00–10:20','Freitag: 00:00–01:00'],geo
+   kt_messen(page,'#schedule-r04-probe busch-schedule-card',ansicht='karte',breite=320,thema='dark' if dark else 'light')
    page.locator('#schedule-r04-probe busch-schedule-card').screenshot(path=str(out/f'zeitplan-handy-320-{"dark" if dark else "light"}.png'))
  guard_report={**guard_counts,'websocketWritesBlocked':page.evaluate("(window.__blocked||[]).reduce((counts,type)=>{counts[type]=(counts[type]||0)+1;return counts},{})")} if native else {}
  browser.close()
-summary={'guard':guard_report,'native':native,'cases':report,'m24':m24,'pageErrors':errors,'serviceCalls':0};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0}));assert not errors
+summary={'guard':guard_report,'native':native,'cases':report,'m24':m24,'pageErrors':errors,'serviceCalls':0,**kt};(out/'report.json').write_text(json.dumps(summary,indent=2));print(json.dumps({'native':native,'cases':len(report),'pageErrors':errors,'serviceCalls':0,'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))

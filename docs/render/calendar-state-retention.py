@@ -13,6 +13,14 @@ import json,pathlib,sys
 from playwright.sync_api import sync_playwright
 sys.path.insert(0,"/work")
 from regeln import bewerte, lauf_breiten, messe_text, _thema_setzen
+import regeln  # noqa: E402  (M26, #1349; this script needs regeln.py anyway and is not in .github/ci-contracts.txt)
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) for month view, waiting row, compact month and month
+# picker, in light and dark; exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+kt={'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}}
+def kt_messen(page,selektor,**fall):
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
 source=pathlib.Path(sys.argv[1]).read_text()
 out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
@@ -49,6 +57,8 @@ with sync_playwright() as p:
  page.evaluate("list.style.cssText='';list.scrollTop=0")
  matrix=lauf_breiten(page,breiten=(320,390,480,960),themen=('light','dark'),messung=lambda current:messe_text(current,'busch-calendar-card'),hoehe=1900)
  totals={key:sum(len(case['messung'].get(key,[])) for case in matrix['laeufe']) for key in ('ueberlauf','ausserhalb','ueberlappung')}
+ monat=regeln.messe_kontrast_touch(page,'busch-calendar-card',ausnahmen=AUSNAHMEN,breiten=(320,390,480,960),hoehe=1900)
+ for bereich in kt:kt[bereich]['laeufe']+=[{'ansicht':'monat',**lauf} for lauf in monat[bereich]['laeufe']]
  for theme in ('light','dark'):
   page.set_viewport_size({'width':390,'height':1900})
   _thema_setzen(page,theme)
@@ -66,6 +76,7 @@ with sync_playwright() as p:
    _thema_setzen(page,theme)
    page.wait_for_timeout(400)
    assert page.evaluate("()=>!!card.querySelector('.cal-termin-wartet[aria-busy=\"true\"]')")
+   kt_messen(page,'busch-calendar-card',ansicht='wartet',breite=width,thema=theme)
    page.locator('busch-calendar-card').screenshot(path=str(out/f'calendar-waiting-{width}-{theme}.png'))
  # M25: compact month, measured. Same fixture and page frame as render-kalender.py card A
  # (four events in August 2026, title, footer, body padding 16 px, Europe/Berlin). The month is
@@ -101,6 +112,7 @@ with sync_playwright() as p:
    # the button's scroll width) is not shortened, sits in the card and the controls do not cover it.
    assert geo['monat']['text'].startswith('August 2026') and geo['monat']['scrollW']<=geo['monat']['clientW'] and geo['monat']['innen'] and not geo['monat']['navUeberlappt'],geo
    if width==480: assert geo['hoehe']<=GRENZE_480,geo
+   kt_messen(kp,'#karte-a',ansicht='kompakt',breite=width,thema=theme)
    kp.locator('#karte-a').screenshot(path=str(out/f'kalender-kompakt-{width}-{theme}.png'))
  # Today button: page back with the keyboard, then Today; the month returns and focus stays on it.
  kp.evaluate("()=>{kcard.querySelector('.cal-pfeil[data-schritt=\"-1\"]').focus()}")
@@ -129,6 +141,7 @@ with sync_playwright() as p:
    monatswahl['faelle'].append({'breite':width,'thema':theme,**geo})
    # Inside the card rectangle, every target at least 44 x 44 px, the centre hits the picker.
    assert geo['dlgInnen'] and not geo['aussen'] and not geo['klein'] and geo['monate']==12 and geo['knoepfe']==16 and geo['mitteImDialog'],geo
+   kt_messen(kp,'#karte-a',ansicht='monatswahl',breite=width,thema=theme)
    kp.locator('#karte-a').screenshot(path=str(out/f'kalender-monatswahl-{width}-{theme}.png'))
  # Escape closes without a change; focus returns to the month name; no own history entry left.
  vorher=kp.evaluate(WAHL_ZUSTAND)
@@ -165,8 +178,9 @@ with sync_playwright() as p:
  monatswahl.update({'escape':esc,'zurueck':zurueck,'abbrechen':abbrechen,'gewaehlt':gewaehlt})
  kompakt['monatswahl']=monatswahl
  kp.close()
- report={'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe'])}
+ report={'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':kompakt,'responsive':matrix,'violation_totals':totals,'pageErrors':errors,'responsive_cases':len(matrix['laeufe']),**kt}
  (out/'report.json').write_text(json.dumps(report,indent=2))
- print(json.dumps({'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors}))
+ print(json.dumps({'retention':result,'pushRetention':pushed,'waiting':waiting,'kompakt':{k:v for k,v in kompakt.items() if k not in ('faelle','monatswahl')},'monatswahl':{k:v for k,v in kompakt['monatswahl'].items() if k!='faelle'},'kompaktHoehen':[(c['breite'],c['thema'],c['hoehe']) for c in kompakt['faelle']],'responsive_cases':len(matrix['laeufe']),'violations':totals,'pageErrors':errors,'kontrast_touch':regeln.zaehle(kt)}))
  assert not bewerte(matrix) and not errors,report
+ assert bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))
  browser.close()

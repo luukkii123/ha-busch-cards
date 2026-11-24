@@ -1,6 +1,33 @@
 """Device-local predicate filtering, hidden filter metadata and visual editor."""
 import pathlib,sys,json
 from playwright.sync_api import sync_playwright
+# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
+# measured (kein_urteil in report.json) and the behaviour asserts still run;
+# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+try:
+    import regeln  # noqa: E402
+except ImportError:
+    if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
+        sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+    regeln = None
+    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
+# (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+KEIN_URTEIL='regeln.py nicht gefunden - nicht gemessen (Repo-CI ohne /work)'
+kt=({'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}} if regeln else
+    {'kontrast':{'kein_urteil':KEIN_URTEIL},'touch':{'kein_urteil':KEIN_URTEIL}})
+def kt_messen(page,selektor,**fall):
+ if regeln is None:return
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+def kt_ok():
+ return regeln is None or regeln.bewerte(kt)==0
 code=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(args=['--no-sandbox']);p=b.new_page(viewport={'width':320,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
@@ -28,6 +55,7 @@ with sync_playwright() as pw:
   p.evaluate("dark=>{for(const [k,v]of Object.entries({'--primary-text-color':dark?'#eee':'#222','--secondary-text-color':dark?'#bbb':'#555','--card-background-color':dark?'#222':'#fff','--divider-color':dark?'#555':'#ddd','--primary-color':'#03a9f4'}))document.documentElement.style.setProperty(k,v)}",dark)
   for width in [320,480,960]:
    p.set_viewport_size({'width':width,'height':1000})
+   kt_messen(p,'busch-device-card',ansicht='karte',breite=width,thema='dark' if dark else 'light')
    p.locator('busch-device-card').screenshot(path=str(out/f'device-card-{width}-{dark}.png'))
    overflow=p.evaluate("""()=>{const card=document.querySelector('busch-device-card'),bounds=card.getBoundingClientRect();return [...card.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).flatMap(e=>{const rect=e.getBoundingClientRect(),style=getComputedStyle(e);if(!rect.width||style.display==='none')return [];const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis';return rect.left<bounds.left-1||rect.right>bounds.right+1||(!clipped&&e.scrollWidth>e.clientWidth+1)?[e.className||e.tagName]:[]})}""")
    card_cases.append({'width':width,'dark':dark,'overflow':overflow})
@@ -73,6 +101,7 @@ with sync_playwright() as pw:
   # Both subtitle cases really occurred: empty first, then filled and rendered (not config-hidden).
   assert [c['filled'] for c in geo['subtitle']]==[False,True] and geo['subtitle'][1]['shown'] and not geo['subtitle'][1]['configHidden'],geo
   assert all(h['h']>=44 and h['arrow']==[24,24] and h['transform']=='none' and h['spacing'] in ('normal','0px') for h in geo['heads']),geo
+  kt_messen(p,'busch-device-card',ansicht='titel-gruppen',breite=320,thema='dark' if dark else 'light')
   p.locator('busch-device-card').screenshot(path=str(out/f'device-titel-320-{"dark" if dark else "light"}.png'))
  head=p.locator('busch-device-card .dev-gruppe-kopf').first
  before=head.get_attribute('aria-expanded')
@@ -93,6 +122,9 @@ with sync_playwright() as pw:
    p.evaluate("dark=>{for(const [k,v]of Object.entries({'--primary-text-color':dark?'#eee':'#222','--secondary-text-color':dark?'#bbb':'#555','--card-background-color':dark?'#222':'#fff','--divider-color':dark?'#555':'#ddd','--primary-color':'#03a9f4'}))document.documentElement.style.setProperty(k,v)}",dark)
    for width in [320,360,390,480,960]:  # M76: phone widths 360/390
     p.set_viewport_size({'width':width,'height':1000});p.screenshot(path=str(out/f'filters-{lang}-{width}-{dark}.png'),full_page=True)
+    kt_messen(p,'busch-device-card-editor',ansicht='editor',lang=lang,breite=width,thema='dark' if dark else 'light')
     overflow=p.evaluate("()=>[...editor._filterRoot.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&(r.right>innerWidth+1||r.left< -1)}).length")
     cases.append({'width':width,'language':lang,'dark':dark,'overflow':overflow})
- result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'m60':m60,'m60Keyboard':keyboard,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(c['overflow']==0 for c in cases);b.close()
+ result={'cases':cases,'card_cases':card_cases,'collapsed_cases':collapsed_cases,'m60':m60,'m60Keyboard':keyboard,'errors':errors,'stateUpdates':True,'deviceScope':True,'noChips':True,'editorRoundTrip':True,**kt};(out/'report.json').write_text(json.dumps(result,indent=2))
+ print(json.dumps({k:v for k,v in result.items() if k not in ('kontrast','touch')}|{'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors and all(c['overflow']==0 for c in cases)
+ assert kt_ok(),('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt));b.close()

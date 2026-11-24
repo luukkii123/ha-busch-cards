@@ -1,6 +1,33 @@
 """Synthetic quick-control contracts and theme/width gallery; no real services."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
+# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch are not
+# measured (kein_urteil in report.json) and the behaviour asserts still run;
+# where /work exists (runner container) regeln.py stays mandatory. Same pattern as smart-entities.py.
+try:
+    import regeln  # noqa: E402
+except ImportError:
+    if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
+        sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+    regeln = None
+    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
+# (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+KEIN_URTEIL='regeln.py nicht gefunden - nicht gemessen (Repo-CI ohne /work)'
+kt=({'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}} if regeln else
+    {'kontrast':{'kein_urteil':KEIN_URTEIL},'touch':{'kein_urteil':KEIN_URTEIL}})
+def kt_messen(page,selektor,**fall):
+ if regeln is None:return
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
+def kt_ok():
+ return regeln is None or regeln.bewerte(kt)==0
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch();p=b.new_page(viewport={'width':1000,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(type(e).__name__))
@@ -22,6 +49,7 @@ with sync_playwright() as pw:
    for width in [320,480,960]:
     p.evaluate("width=>card.style.width=width+'px'",width);p.wait_for_timeout(20)
     geometry=p.evaluate("""()=>{const r=card.getBoundingClientRect();return {overflow:card.scrollWidth>card.clientWidth+1||[...card._quick.querySelectorAll('*')].some(e=>e.getBoundingClientRect().right>r.right+1),sizes:[...card._quick.querySelectorAll('button,input,select')].map(e=>({tag:e.tagName,w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})),touch:[...card._quick.querySelectorAll('button,input,select')].every(e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44})}}""")
+    kt_messen(p,'busch-device-card',domain=domain,breite=width,thema='dark' if dark else 'light')  # M26: contrast next to the touch check
     p.locator('busch-device-card').screenshot(path=str(out/f'{domain}-{width}-{dark}.png'));results.append({'domain':domain,'width':width,'dark':dark,**geometry});assert not geometry['overflow'] and geometry['touch'],results[-1]
   # Physical keyboard and pointer actions must remain in controls.
   el=p.locator('.dev-quick button').first
@@ -37,4 +65,8 @@ with sync_playwright() as pw:
  p.evaluate("()=>{card.setConfig({device_id:'d',display_mode:'image',image:'data:image/png;base64,broken',icon:'mdi:star'});card.hass=h}");p.wait_for_function("!!card._icon.querySelector('ha-icon[icon=\"mdi:star\"]')")
  p.evaluate("()=>{card.remove();window.editor=document.createElement('busch-device-card-editor');editor.hass=h;editor.setConfig(Object.freeze({device_id:'d',quick_controls:true,title:'Original',extra:0}));document.body.append(editor);window.saved=[];editor.addEventListener('config-changed',e=>{saved.push(e.detail.config);editor.setConfig(JSON.parse(JSON.stringify(e.detail.config)))});editor._form.dispatchEvent(new CustomEvent('value-changed',{detail:{value:{...editor._form.data,quick_controls:false,image:'',icon:'mdi:star'}},bubbles:true}));}")
  assert p.evaluate("saved.length===1&&saved[0].quick_controls===false&&saved[0].extra===0&&saved[0].title==='Original'&&editor._form.data.quick_controls===false")
- result={'cases':results,'pageErrors':errors,'eventLeaks':p.evaluate('leaks'),'mockServices':p.evaluate('calls.length'),'focusStable':True,'editorRoundTrip':True};(out/'browser-report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'cases':len(results),'pageErrors':errors,'mockServices':result['mockServices']}));assert not errors;b.close()
+ result={'cases':results,'pageErrors':errors,'eventLeaks':p.evaluate('leaks'),'mockServices':p.evaluate('calls.length'),'focusStable':True,'editorRoundTrip':True,**kt}
+ # ui-regeln.md (Etappe H): every render run's report.json carries kontrast/touch; browser-report.json keeps its old name.
+ for name in ('browser-report.json','report.json'):(out/name).write_text(json.dumps(result,indent=2))
+ print(json.dumps({'cases':len(results),'pageErrors':errors,'mockServices':result['mockServices'],'kontrast_touch':regeln.zaehle(kt) if regeln else KEIN_URTEIL}));assert not errors
+ assert kt_ok(),('Kontrast/Touch (M26): browser-report.json kontrast/touch',regeln.zaehle(kt));b.close()

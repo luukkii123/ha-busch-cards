@@ -12,9 +12,19 @@ Fuss, 436 px Leerraum). Diese Probe misst genau diesen Fall.
 
 Aufbau von render-kalender.py uebernommen, auf das Noetige gekuerzt.
 """
-import pathlib, shutil, subprocess, sys, time
+import json, pathlib, shutil, subprocess, sys, time
 from datetime import datetime
 from playwright.sync_api import sync_playwright
+# M26 (#1349): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+# This script is a runner step only (not in .github/ci-contracts.txt), so regeln.py is mandatory here.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+else:
+    sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+import regeln  # noqa: E402
+AUSNAHMEN = pathlib.Path(__file__).resolve().parent / "kontrast-ausnahmen.json"
 
 JS = pathlib.Path(sys.argv[1]); OUT = pathlib.Path(sys.argv[2]); OUT.mkdir(parents=True, exist_ok=True)
 SERVE = OUT / "serve"; SERVE.mkdir(exist_ok=True); shutil.copy(JS, SERVE / "busch-cards.js")
@@ -22,9 +32,9 @@ SERVE = OUT / "serve"; SERVE.mkdir(exist_ok=True); shutil.copy(JS, SERVE / "busc
 PAGE = """<!doctype html><meta charset="utf-8"><title>fuss</title>
 <style>:root{--primary-color:#03a9f4;--primary-text-color:#212121;--secondary-text-color:#727272;
 --divider-color:#e0e0e0;--error-color:#db4437;--ha-card-background:#fff;--secondary-background-color:#e5e5e5;}
-body{margin:0;padding:16px;background:#f2f4f7;font-family:Roboto,sans-serif;}
+body{margin:0;padding:16px;background:var(--primary-background-color,#f2f4f7);color:var(--primary-text-color);font-family:Roboto,sans-serif;}
 #wrap{max-width:560px;margin:0 auto}
-ha-card{display:block;background:#fff;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
+ha-card{display:block;background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
 busch-calendar-card{display:block;margin-bottom:20px}</style>
 <div id="wrap"></div>
 <script>
@@ -70,6 +80,14 @@ try:
               "fussHoehe:Math.round(k.querySelector('.cal-fuss').getBoundingClientRect().height)}))"))
         for i,name in enumerate(("fuss-zwei-werte","fuss-drei-werte")):
             p.locator("busch-calendar-card").nth(i).screenshot(path=str(OUT/f"{name}.png"))
+        # M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) of both footers' cards, light and dark,
+        # at phone, middle and this page's width; after the images, so they stay as before. Violation = exit 1.
+        kt = regeln.messe_kontrast_touch(
+            p, {"zwei-werte": "busch-calendar-card:nth-of-type(1)", "drei-werte": "busch-calendar-card:nth-of-type(2)"},
+            ausnahmen=AUSNAHMEN, breiten=(320, 480, 620), hoehe=900)
+        (OUT / "report.json").write_text(json.dumps(kt, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(json.dumps({"kontrast_touch": regeln.zaehle(kt)}))
         b.close()
+        assert regeln.bewerte(kt) == 0, ("Kontrast/Touch (M26): report.json kontrast/touch", regeln.zaehle(kt))
 finally:
     srv.terminate()
