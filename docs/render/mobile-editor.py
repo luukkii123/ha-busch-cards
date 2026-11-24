@@ -6,14 +6,24 @@ for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'do
     if pathlib.Path(_kandidat, 'regeln.py').is_file():
         sys.path.insert(0, _kandidat)
         break
-else:
-    sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
-import regeln  # noqa: E402
+# M45: the repo CI job `contracts` (.github/ci-contracts.txt) has no regeln.py. Without it contrast/touch is not
+# measured (kein_urteil in report.json) and the behaviour asserts still run; where /work exists (runner container)
+# regeln.py stays mandatory. Same pattern as ha-unraid-cards/docs/render/unraid-cards.py.
+try:
+    import regeln  # noqa: E402
+except ImportError:
+    if pathlib.Path('/work').is_symlink() or pathlib.Path('/work').exists():
+        sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+    regeln = None
+    print('Kontrast/Touch: NICHT gemessen - regeln.py fehlt (Repo-CI ohne /work)')
 # M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
 # (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
 AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
-kt={'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}}
+KEIN_URTEIL='regeln.py nicht gefunden - Kontrast/Touch nicht gemessen (Repo-CI ohne /work)'
+kt=({'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}} if regeln else
+    {'kontrast':{'kein_urteil':KEIN_URTEIL},'touch':{'kein_urteil':KEIN_URTEIL}})
 def kt_messen(page,selektor,**fall):
+ if regeln is None:return
  m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
  for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
@@ -50,4 +60,4 @@ with sync_playwright() as pw:
   assert p.evaluate("editor.shadowRoot.querySelector('[role=tab][aria-selected=true]').dataset.group==='filters'")
  b.close()
 result={'calendar':initial,'cases':report,'errors':errors,**kt};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not initial['fixedCellOverflow'] and initial['previewBounded'] and nav==3 and not errors and all(not x['overflow'] and not x['layout'] for x in report)
-assert regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))
+assert regeln is None or regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))
