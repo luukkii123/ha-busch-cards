@@ -208,6 +208,26 @@ test("M26 (Abschlusstor): free inputs and selects of the smart/network editors a
   }
 });
 
+// Run karten-20261124-120007 (calendar-state-retention, calendar-waiting-*): the waiting row was dimmed with opacity .55,
+// so its time and title fell to 2.28-3.45:1 on the weekend surface. The busy state now keeps the full text colours and
+// shows a dashed frame (not colour alone, R17) that reaches 3:1 on the card, the weekend surface and today's tint.
+test("#1349: the calendar's waiting row keeps full text contrast; its busy frame reaches 3:1", () => {
+  const block = regel(CAL, ".cal-termin-wartet");
+  assert.equal(wert(block, "opacity"), null, "no opacity on the waiting row");
+  const m = block.match(/outline:\s*2px dashed ([^;]+);/);
+  assert.ok(m, "dashed busy frame");
+  const lines = [];
+  for (const [name, t] of Object.entries(THEMA)) {
+    const card = hex(t["card-background-color"]);
+    for (const [flaeche, grund] of [["card", CARD], ["weekend", "var(--secondary-background-color)"],
+      ["today", "color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color))"]]) {
+      const bg = farbe(grund, t, CAL, card), q = quote(farbe(m[1].trim(), t, CAL, bg), bg);
+      if (q < 3) lines.push(`${flaeche} ${name}: ${q.toFixed(2)}:1`);
+    }
+  }
+  assert.deepEqual(lines, []);
+});
+
 // Run karten-20261124-120007 (kalender, editor-farbfeld): the colour field label (the touch area of its input) was
 // 35 px high at 320-390 px (R06/WCAG 2.5.5).
 test("#1349: the calendar editor's colour field is a 44 px touch target", () => {

@@ -4325,8 +4325,10 @@ const CAL_STIL = `
      Ausnahme (\`user-select: text\`) waere eine zweite Stelle, die dasselbe
      regelt, ohne etwas zu bewirken — und die eines Tages auseinanderlaeuft. */
   .cal-leer { cursor:default; }
-  /* M23: tapped row while HA's dialog loads (dimmed, not only a colour change). */
-  .cal-termin-wartet { opacity:.55; cursor:progress; }
+  /* M23: tapped row while HA's dialog loads. A dashed frame, not only a colour change (R17); no opacity, so time
+     and title keep 4.5:1 (run karten-20261124-120007: dimmed to 2.28:1 on the weekend surface). */
+  .cal-termin-wartet { cursor:progress; outline:2px dashed color-mix(in srgb, var(--primary-color) 60%, var(--primary-text-color));
+    outline-offset:-2px; border-radius:var(--busch-radius-inner, var(--ha-border-radius-md, 8px)); }
   /* #1320 (WCAG 1.4.11): the dot carries the calendar's colour (any colour, also from the config); a ring in
      the secondary text colour keeps it 3:1 on the card (palette orange/green were 2.6/2.9:1 on white). */
   .cal-punkt { width:8px; height:8px; border-radius:50%; flex:none;
