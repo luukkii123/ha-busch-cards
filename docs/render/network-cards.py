@@ -9,6 +9,13 @@ for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'do
 else:
     sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
 import regeln  # noqa: E402
+# M26 (Abschlusstor 20.11.): contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own
+# width/theme loops (regeln.messe_kontrast_touch_hier, pattern of mapcard.py); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+kt={'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}}
+def kt_messen(page,selektor,**fall):
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 fixture='''
 customElements.define('ha-icon',class extends HTMLElement{connectedCallback(){this.textContent='◇';}});
@@ -105,6 +112,7 @@ with sync_playwright() as pw:
      height=page.evaluate("document.querySelector('[data-test-card]').getBoundingClientRect().height")
      if kind=='network' and scenario=='many' and width==320:
       limit=3*844;assert height<=limit,{'network-many-320':height,'limit':limit}
+     kt_messen(page,'[data-test-card]',kind=kind,scenario=scenario,breite=width,thema='dark' if dark else 'light')
      name=f'{kind}-{scenario}-{width}-'+('dark' if dark else 'light')+'.png';page.locator('[data-test-card]').screenshot(path=str(out/name));cases.append({'kind':kind,'scenario':scenario,'width':width,'dark':dark,'height':height,'findings':findings,'screenshot':name})
  # M30: search, presence filter, remembered view (R21), keyboard expand, focus kept while typing, real "N more" button.
  page.evaluate("()=>{for(const [key,value]of [['--primary-text-color','#212121'],['--secondary-text-color','#555'],['--card-background-color','#fff'],['--primary-background-color','#fff'],['--secondary-background-color','#eef5fb'],['--divider-color','#dbe4ed'],['--success-color','#16864b']])document.documentElement.style.setProperty(key,value);localStorage.clear();}")
@@ -122,6 +130,7 @@ with sync_playwright() as pw:
  opened=page.evaluate(card+".shadowRoot.querySelector('article.client details').open");assert opened is True
  cut=page.evaluate(WORTE_UND_AUSWAHL);assert not cut,cut
  page.locator('[data-test-card]').screenshot(path=str(out/'network-search-320-light.png'))
+ kt_messen(page,'[data-test-card]',kind='network',scenario='search-filter-keyboard',breite=320,thema='light')
  page.keyboard.press('Space');assert page.evaluate(card+".shadowRoot.querySelector('article.client details').open") is False
  page.evaluate(mount,20);kept=page.evaluate(card+".shadowRoot.querySelector('select[data-control=filter]').value");assert kept=='not_home' and rows()==13,(kept,rows())
  cases.append({'kind':'network','scenario':'search-filter-keyboard','width':320,'dark':False,'findings':[],'screenshot':'network-search-320-light.png'});page.evaluate("localStorage.clear()")
@@ -129,8 +138,9 @@ with sync_playwright() as pw:
   for width in [320,480,960]:
    for dark in [False,True]:
     for kind in ['network','fritz-device']:
-     page.evaluate("""({lang,width,dark,kind})=>{document.querySelectorAll('[data-test-card]').forEach(e=>e.remove());document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#212121');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');document.documentElement.style.setProperty('--secondary-background-color',dark?'#303b47':'#eef5fb');document.documentElement.style.setProperty('--secondary-text-color',dark?'#bbb':'#555');const e=document.createElement('busch-'+kind+'-card-editor');e.dataset.testCard='true';e.style.width=width+'px';e._core=core;e.hass={...hass,locale:{language:lang}};e.setConfig({device_id:'router',title:'Editor example',filter:{include:[{cidr:'192.0.2.0/24',and:[{ip_range:{from:'192.0.2.1',to:'192.0.2.100'}}]}],exclude:[{hostname:'guest-*'}]},actions:[{name:'Example',variant:'secondary',tap_action:{action:'more-info'}}]});e._connect=()=>{};document.body.append(e);for(const d of e.shadowRoot.querySelectorAll('details'))d.open=true;}""",{'lang':lang,'width':width,'dark':dark,'kind':kind})
+     page.evaluate("""({lang,width,dark,kind})=>{document.querySelectorAll('[data-test-card]').forEach(e=>e.remove());document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#212121');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');document.documentElement.style.setProperty('--secondary-background-color',dark?'#303b47':'#eef5fb');document.documentElement.style.setProperty('--secondary-text-color',dark?'#bbb':'#555');/* M26: the page behind the editor follows the theme too (dark editors drew #eee on the white page). */document.documentElement.style.setProperty('--primary-background-color',dark?'#171717':'#fff');document.documentElement.style.setProperty('--divider-color',dark?'#46505b':'#dbe4ed');const e=document.createElement('busch-'+kind+'-card-editor');e.dataset.testCard='true';e.style.width=width+'px';e._core=core;e.hass={...hass,locale:{language:lang}};e.setConfig({device_id:'router',title:'Editor example',filter:{include:[{cidr:'192.0.2.0/24',and:[{ip_range:{from:'192.0.2.1',to:'192.0.2.100'}}]}],exclude:[{hostname:'guest-*'}]},actions:[{name:'Example',variant:'secondary',tap_action:{action:'more-info'}}]});e._connect=()=>{};document.body.append(e);for(const d of e.shadowRoot.querySelectorAll('details'))d.open=true;}""",{'lang':lang,'width':width,'dark':dark,'kind':kind})
      findings=page.evaluate("""()=>{const e=document.querySelector('[data-test-card]');return e.scrollWidth>e.clientWidth+1?[{editorOverflow:true}]:[];}""")
+     kt_messen(page,'[data-test-card]',kind=kind+'-editor',lang=lang,breite=width,thema='dark' if dark else 'light')
      file=f'editor-{kind}-{lang}-{width}-'+('dark' if dark else 'light')+'.png';page.locator('[data-test-card]').screenshot(path=str(out/file));cases.append({'kind':kind+'-editor','lang':lang,'width':width,'dark':dark,'findings':findings,'screenshot':file})
  ha_icon={**regeln.ha_icon_fehlend(page),'glyphen':glyphen};assert ha_icon['aktiv'] and glyphen>0 and not ha_icon['fehlend'],ha_icon
- result={'cases':cases,'pageErrors':errors,'domContract':dom_contract,'haIcon':ha_icon};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'cases':len(cases),'findings':sum(len(c['findings'])for c in cases),'errors':errors}));assert not errors and not any(c['findings']for c in cases);browser.close()
+ result={'cases':cases,'pageErrors':errors,'domContract':dom_contract,'haIcon':ha_icon,**kt};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'cases':len(cases),'findings':sum(len(c['findings'])for c in cases),'errors':errors,'kontrast_touch':regeln.zaehle(kt)}));assert not errors and not any(c['findings']for c in cases);assert regeln.bewerte(kt)==0,'Kontrast/Touch (M26): report.json kontrast/touch';browser.close()

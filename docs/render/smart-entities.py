@@ -1,6 +1,21 @@
 """Synthetic Smart Entities browser behavior and six viewport/theme cases."""
 import json,pathlib,sys
 from playwright.sync_api import sync_playwright
+# M26 (Abschlusstor 20.11.): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+else:
+    sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+import regeln  # noqa: E402
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
+# (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+kt={'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}}
+def kt_messen(page,selektor,**fall):
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
 source=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 fixture="""
 customElements.define('ha-card',class extends HTMLElement{});
@@ -17,7 +32,7 @@ window.__config={filter:{include:[{domain:'sensor',attributes:{device_class:'bat
 FORM_CHECK="""()=>{/* M31 measuring check: captions above fields in one column, checkbox caption beside its box, selects show texts, tabs on one line, no raw JSON line. */const issues=[],raw=['attribute','skip','null','true','false','rows','entity_id','device_id','none'];for(const form of editor.shadowRoot.querySelectorAll('ha-form')){if(!form.getBoundingClientRect().height)continue;let left=null;for(const label of form.querySelectorAll('label')){const caption=label.querySelector('span'),control=label.querySelector('input,select'),a=caption.getBoundingClientRect(),b=control.getBoundingClientRect(),l=label.getBoundingClientRect();if(!l.height)continue;if(left===null)left=l.left;if(Math.abs(l.left-left)>1)issues.push({column:caption.textContent});if(control.type==='checkbox'){if(a.left<b.right-1||Math.abs((a.top+a.bottom)/2-(b.top+b.bottom)/2)>6)issues.push({checkbox:caption.textContent});}else if(a.bottom>b.top+1)issues.push({captionNotAbove:caption.textContent});if(control.tagName==='SELECT'&&raw.includes(control.selectedOptions[0]?.textContent))issues.push({rawValue:caption.textContent+'='+control.selectedOptions[0].textContent});}}for(const tab of editor.shadowRoot.querySelectorAll('[role=tab]')){const r=tab.getBoundingClientRect();if(r.height>49||tab.scrollHeight>tab.clientHeight+1)issues.push({tabWraps:tab.textContent});}for(const button of editor.shadowRoot.querySelectorAll('button'))if(/·/.test(button.textContent))issues.push({fragment:button.textContent});for(const select of editor.shadowRoot.querySelectorAll('select'))if(select.value==='true'&&select.selectedOptions[0]?.textContent==='true')issues.push({rawBoolean:true});if(/^\s*\{/.test(document.body.innerText))issues.push({rawJson:document.body.innerText.slice(0,40)});return issues}"""
 with sync_playwright() as pw:
  browser=pw.chromium.launch(args=['--no-sandbox','--enable-precise-memory-info']);page=browser.new_page(viewport={'width':960,'height':1200});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
- page.set_content('<style>body{margin:0;font-family:Arial}ha-card{display:block;padding:16px}test-target{display:block;overflow-wrap:anywhere}ha-form label{display:grid;margin:8px}input{max-width:100%;min-width:0}html{--primary-color:#03a9f4;--primary-text-color:#222;--secondary-text-color:#555;--card-background-color:#fff;--divider-color:#bbb}</style>')
+ page.set_content('<style>body{margin:0;font-family:Arial}ha-card{display:block;padding:16px}test-target{display:block;overflow-wrap:anywhere}ha-form label{display:grid;margin:8px}input{max-width:100%;min-width:0}html{--primary-color:#03a9f4;--primary-text-color:#222;--secondary-text-color:#555;--card-background-color:#fff;--secondary-background-color:#eee;--divider-color:#bbb}</style>')
  page.add_script_tag(content=fixture);page.add_script_tag(content=source)
  page.evaluate("()=>{window.card=document.createElement('busch-smart-entities');card.setConfig(__config);card.hass=__h;document.body.append(card)}")
  page.wait_for_function("card.shadowRoot?.querySelector('test-target')?.config.entities?.length===1")
@@ -40,7 +55,7 @@ with sync_playwright() as pw:
  assert page.evaluate('!!saved')
  report=[]
  for dark in [False,True]:
-  page.evaluate("dark=>{document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#222');document.documentElement.style.setProperty('--secondary-text-color',dark?'#ccc':'#555');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');document.body.style.background=dark?'#222':'#fff'}",dark)
+  page.evaluate("dark=>{document.documentElement.style.setProperty('--primary-text-color',dark?'#eee':'#222');document.documentElement.style.setProperty('--secondary-text-color',dark?'#ccc':'#555');document.documentElement.style.setProperty('--card-background-color',dark?'#222':'#fff');/* M26: HA always defines these; without them dark buttons/tabs fell back to #eee under #eee text. */document.documentElement.style.setProperty('--secondary-background-color',dark?'#333':'#eee');document.documentElement.style.setProperty('--divider-color',dark?'#555':'#bbb');document.body.style.background=dark?'#222':'#fff'}",dark)
   for width in [320,480,960]:
    page.set_viewport_size({'width':width,'height':1200})
    page.evaluate("()=>{editor._showGroup('more');editor.shadowRoot.querySelectorAll('details').forEach(d=>d.open=false);const output=[...editor.shadowRoot.querySelectorAll('details')].find(d=>d.firstChild.textContent==='Ergebnisausgabe');output.open=true}")
@@ -50,8 +65,11 @@ with sync_playwright() as pw:
    # which the images of this script do not show; the image stays on the options tab.
    page.evaluate("()=>{editor._showGroup('card');editor.shadowRoot.querySelectorAll('details').forEach(d=>d.open=d.dataset.group==='card')}")
    failures+=[{'tab':'card',**f} for f in page.evaluate(FORM_CHECK)]
+   kt_messen(page,'busch-smart-entities-editor',karte='editor-card-tab',breite=width,thema='dark' if dark else 'light')
    page.evaluate("()=>{editor._showGroup('more');editor.shadowRoot.querySelectorAll('details').forEach(d=>d.open=false);const output=[...editor.shadowRoot.querySelectorAll('details')].find(d=>d.firstChild.textContent==='Ergebnisausgabe');output.open=true}")
    page.screenshot(path=str(out/('smart-'+str(width)+'-'+('dark' if dark else 'light')+'.png')))
+   kt_messen(page,'busch-smart-entities',karte='card',breite=width,thema='dark' if dark else 'light')
+   kt_messen(page,'busch-smart-entities-editor',karte='editor',breite=width,thema='dark' if dark else 'light')
    report.append({'width':width,'dark':dark,'failures':failures})
  page.evaluate("()=>{card.remove();editor.remove();window.__h.requests.length=0;window.cards=Array.from({length:25},()=>{const c=document.createElement('busch-smart-entities');c.setConfig(__config);c.hass=__h;document.body.append(c);return c})}")
  page.wait_for_function('cards.every(c=>c._child)')
@@ -63,5 +81,6 @@ with sync_playwright() as pw:
  assert len(stats['registryRequests'])==len(set(stats['registryRequests'])) and len(stats['registryRequests']) in (0,5)
  assert stats['registryRequests']==[], 'grace period expected: no registry refetch within 30 s'
  browser.close()
-(out/'report.json').write_text(json.dumps({'cases':report,'errors':errors,'performance':stats,'behavior':'include/change/sort/empty/else/device-value/unique/unrelated-no-target-update/editor-change'},indent=2))
+(out/'report.json').write_text(json.dumps({'cases':report,'errors':errors,'performance':stats,**kt,'behavior':'include/change/sort/empty/else/device-value/unique/unrelated-no-target-update/editor-change'},indent=2))
 print(json.dumps({'cases':len(report),'failures':sum(len(r['failures'])for r in report),'errors':errors}));assert not errors and not any(r['failures']for r in report)
+assert regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))

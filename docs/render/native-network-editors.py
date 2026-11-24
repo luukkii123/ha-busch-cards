@@ -2,6 +2,20 @@
 import json,re,sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+# M26 (Abschlusstor 20.11.): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py;
+# contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) of every editor at every width and theme of this matrix.
+for _kandidat in ('/work', str(Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+else:
+    sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+import regeln  # noqa: E402
+AUSNAHMEN=Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+kt={'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}}
+def kt_messen(page,selektor,**fall):
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
 credentials=Path(sys.argv[1]);bundles=[Path(sys.argv[2])];out=Path(sys.argv[3]);out.mkdir(parents=True,exist_ok=True)
 private=json.loads(credentials.read_text());base=private['base_url'].rstrip('/')
 auth={'hassUrl':base,'clientId':base+'/','expires':4102444800000,'expires_in':315360000,'refresh_token':'','access_token':private['token']}
@@ -63,6 +77,7 @@ with sync_playwright() as pw:
     page.evaluate("width=>host.style.width=width+'px'",width)
     overflow=page.evaluate('editor.scrollWidth>editor.clientWidth+1');row['widths'].append({'width':width,'theme':theme,'overflow':overflow})
     page.locator('task5-'+tag+'-editor').screenshot(path=str(out/(tag+f'-{width}-{theme}.png')))
+    kt_messen(page,'task5-'+tag+'-editor',karte=tag+'-editor',breite=width,thema=theme)
   if tag=='busch-smart-entities':
    row['primitives']=page.evaluate("""()=>{editor._showGroup('more');const section=[...editor.shadowRoot.querySelectorAll('.editor-section')].find(e=>e.dataset.section===editor._t.import);section.open=true;const input=section.querySelector('textarea'),button=section.querySelector('button'),error=section.querySelector('[role=alert]');const before=events.length;input.value='{';button.click();const rejected=events.length===before&&input.getAttribute('aria-invalid')==='true'&&!!error.textContent;input.value=JSON.stringify({entities:[],filter:{include:[]},unknown_optional:{flag:false,zero:0}});button.click();const accepted=events.at(-1)?.unknown_optional?.flag===false&&events.at(-1)?.unknown_optional?.zero===0;const summaries=[...editor.shadowRoot.querySelectorAll('.busch-ui-section>summary')].filter(e=>e.getBoundingClientRect().width);const actions=[...editor.shadowRoot.querySelectorAll('.busch-ui-action')].filter(e=>e.getBoundingClientRect().width);return {invalidNoEvent:rejected,validFullSnapshot:accepted,sectionTouch:summaries.every(e=>e.getBoundingClientRect().height>=44),actionTouch:actions.every(e=>e.getBoundingClientRect().height>=44&&e.getBoundingClientRect().width>=44),namedActions:actions.every(e=>!!e.getAttribute('aria-label'))};}""")
    assert all(row['primitives'].values()),row['primitives']
@@ -71,4 +86,4 @@ with sync_playwright() as pw:
   rows.append(row)
   assert all(row[k] for k in ['nativeForm','typed','typingFocus','focusStable','falseSaved','zeroSaved','readonly','fullPayload']),row
   assert not row['shortcutLeaks'] and not any(v['overflow'] for v in row['widths']),row
- result={'version':page.evaluate('nativeHass.config.version'),'editors':rows,'pageErrors':errors,'rejections':page.evaluate('__rejections'),'failedWS':page.evaluate('failedWS'),'earlyWS':page.evaluate('earlyWS'),'wsErrors':ws_errors};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'version':result['version'],'editors':len(rows),'cases':sum(len(r['widths']) for r in rows),'pageErrors':len(errors),'rejections':len(result['rejections'])}));assert not errors and not result['rejections'];browser.close()
+ result={'version':page.evaluate('nativeHass.config.version'),'editors':rows,'pageErrors':errors,'rejections':page.evaluate('__rejections'),'failedWS':page.evaluate('failedWS'),'earlyWS':page.evaluate('earlyWS'),'wsErrors':ws_errors,**kt};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps({'version':result['version'],'editors':len(rows),'cases':sum(len(r['widths']) for r in rows),'pageErrors':len(errors),'rejections':len(result['rejections'])}));assert not errors and not result['rejections'];assert regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt));browser.close()

@@ -1,6 +1,21 @@
 """Generic result mapping, editor round trip and responsive browser regression."""
 import pathlib,sys,json
 from playwright.sync_api import sync_playwright
+# M26 (Abschlusstor 20.11.): shared measuring module hacs/docs/render/regeln.py (/work in the runner container), as in mapcard.py.
+for _kandidat in ('/work', str(pathlib.Path(__file__).resolve().parents[3] / 'docs' / 'render')):
+    if pathlib.Path(_kandidat, 'regeln.py').is_file():
+        sys.path.insert(0, _kandidat)
+        break
+else:
+    sys.exit('regeln.py nicht gefunden: der Container braucht -v "<hacs>/docs/render:/work" (hacs/docs/karten.md).')
+import regeln  # noqa: E402
+# M26: contrast (WCAG 1.4.3/1.4.11) and touch targets (>= 44 px) in every case of this script's own width/theme loop
+# (regeln.messe_kontrast_touch_hier); exceptions only with a reason in kontrast-ausnahmen.json.
+AUSNAHMEN=pathlib.Path(__file__).resolve().parent/'kontrast-ausnahmen.json'
+kt={'kontrast':{'laeufe':[]},'touch':{'mindest_px':44,'laeufe':[]}}
+def kt_messen(page,selektor,**fall):
+ m=regeln.messe_kontrast_touch_hier(page,selektor,ausnahmen=AUSNAHMEN)
+ for bereich in kt:kt[bereich]['laeufe'].append({**fall,**m[bereich]})
 code=pathlib.Path(sys.argv[1]).read_text();out=pathlib.Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(args=['--no-sandbox']);p=b.new_page(viewport={'width':320,'height':1000});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
@@ -36,9 +51,11 @@ with sync_playwright() as pw:
     overflow=p.evaluate("()=>[...editor.shadowRoot.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width&&(r.right>innerWidth+1||r.left< -1)}).length")
     # M31 measuring check: every caption sits above its field (checkbox: caption to the right), all in one column.
     captions=p.evaluate("""()=>{const issues=[];for(const form of editor.shadowRoot.querySelectorAll('ha-form')){if(!form.getBoundingClientRect().height)continue;let left=null;for(const label of form.querySelectorAll('label')){const caption=label.querySelector('span'),control=label.querySelector('input,select'),a=caption.getBoundingClientRect(),b=control.getBoundingClientRect(),l=label.getBoundingClientRect();if(!l.height)continue;if(left===null)left=l.left;if(Math.abs(l.left-left)>1)issues.push({column:caption.textContent});if(control.type==='checkbox'){if(a.left<b.right-1)issues.push({checkbox:caption.textContent});}else if(a.bottom>b.top+1)issues.push({captionNotAbove:caption.textContent});}}return issues}""")
+    kt_messen(p,'busch-smart-entities-editor',karte='editor',sprache=lang,breite=width,thema='dark' if dark else 'light')
     cases.append({'language':lang,'width':width,'dark':dark,'overflow':overflow,'captions':captions})
  # Disabling mapping restores raw-value configuration without erasing value projection.
  p.evaluate("()=>{const f=[...editor.shadowRoot.querySelectorAll('ha-form')].find(f=>f.schema.some(x=>x.name==='item_enabled'));f.dispatchEvent(new CustomEvent('value-changed',{detail:{value:{item_enabled:false}}}))}")
  assert p.evaluate("!Object.hasOwn(saved,'item')&&!Object.hasOwn(saved,'item_param')&&saved.value.type==='device_id'")
- result={'cases':cases,'errors':errors,'mapping':True,'debug':True,'editorRoundTrip':True};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(x['overflow']==0 and not x['captions'] for x in cases)
+ result={'cases':cases,'errors':errors,'mapping':True,'debug':True,'editorRoundTrip':True,**kt};(out/'report.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));assert not errors and all(x['overflow']==0 and not x['captions'] for x in cases)
+ assert regeln.bewerte(kt)==0,('Kontrast/Touch (M26): report.json kontrast/touch',regeln.zaehle(kt))
  b.close()

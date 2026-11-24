@@ -197,3 +197,13 @@ test("#1320: controls and graphics of busch-cards reach 3:1 (quick range, busy r
   assert.equal(all.length, 28);
   assert.deepEqual(lines, []);
 });
+
+test("M26 (Abschlusstor): free inputs and selects of the smart/network editors are 44 px touch targets", () => {
+  // network-cards.py editor-*: the rule value input (BuschUI.ha.input native) and the field select of buschNetworkRuleEditor,
+  // and the typed object editor (buschSmartObject), only had 8 px padding (about 35 px high, R06/WCAG 2.5.5).
+  const rules = [...SMART.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim(), body }));
+  for (const tag of ["input", "select"]) {
+    const hit = rules.find((r) => r.sel.split(",").map((s) => s.trim()).includes(tag) && /min-height:\s*var\(--ha-space-11,\s*44px\)/.test(r.body));
+    assert.ok(hit, tag + " carries min-height 44 px for every editor using BUSCH_SMART_EDITOR_CSS");
+  }
+});
