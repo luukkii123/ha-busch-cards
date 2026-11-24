@@ -215,6 +215,8 @@ Sammlung für alles, was zu keiner eigenen Integration gehört.
 
 ## Geprüft
 
+**24.11.2026 · 0.31.0, Nachholetappe J2 (#1349, Tag `v0.31.0`)** — Kern 1.5.1 nennt das Bundle in der Konfliktwarnung (M9), Rennen-Test Zeitplan (M12), Kontrast/Touch und ha-icon in allen Renderskripten (M26, M79), Editoren bei 360/390 (M76), letzte feste Abstände auf --ha-space-* (M63), wartende Terminzeile ohne Abblenden. Abschlusslauf `karten-20261124-124054-53d328` 58/58 grün, Bildprüfung ok, Beleg gleich; Nachlauf `karten-20261124-132433-5d300f` 32/32 grün.
+
 **24.11.2026 · 0.30.0, Nachholetappe J (#1326, Tag `v0.30.0`)** — Zeitplan über `schedule/subscribe`, Kalender über `calendar/event/subscribe` je Monat, REST nur Rückfall (M12/M39, Nutzerentscheid); Netzwerk/FRITZ ohne count 12 Zeilen (M30); Konfigurationsfehler als Zustandsblock (M27); Kontrast/Touch in allen Renderskripten, Editorfelder und Smart-Einklapper 44 px (M26). Abschlusslauf `karten-20261124-104659-fea696` grün (58/58, Volllauf, 2752 Node-Tests), `--beleg-pruefen` gleich; Bilder am Bild geprüft (Sonnet).
 
 **20.11.2026 · 0.29.1, Repo-CI (#1321, Tag `v0.29.1`)** — leere Geräte-Unterzeile ohne Herstellerlogo nimmt keinen Platz mehr ein (im Repo-CI ohne Netz gefunden); Vertragsjob `contracts` grün. Abschlusslauf `karten-20261120-003418-9d0f74` grün (57/57, Volllauf), `--beleg-pruefen` gleich; Bildabweichungen gegen den Vorlauf nur am Gerätekopf (gewollt) und Rauschen.
